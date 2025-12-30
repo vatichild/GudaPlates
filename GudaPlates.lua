@@ -184,6 +184,16 @@ local function HandleNamePlate(frame)
         nameplate.original.raidicon:SetDrawLayer("OVERLAY")
     end
     
+    -- Also reparent ShaguTweaks raid icon if present (frame.raidicon)
+    if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
+        frame.raidicon:SetParent(nameplate.health)
+        frame.raidicon:ClearAllPoints()
+        frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        frame.raidicon:SetWidth(24)
+        frame.raidicon:SetHeight(24)
+        frame.raidicon:SetDrawLayer("OVERLAY")
+    end
+    
     -- Target highlight borders (left and right)
     nameplate.health.targetLeft = nameplate.health:CreateTexture(nil, "OVERLAY")
     nameplate.health.targetLeft:SetTexture(1, 1, 1, 1)
@@ -241,8 +251,8 @@ local function UpdateNamePlate(frame)
         if region and region.GetObjectType then
             local otype = region:GetObjectType()
             if otype == "Texture" then
-                -- Skip raid icon (6th region) - we reparented it
-                if region ~= nameplate.original.raidicon then
+                -- Skip raid icons - we reparented them
+                if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
                     region:SetTexture("")
                     region:SetTexCoord(0, 0, 0, 0)
                     region:SetAlpha(0)
@@ -254,11 +264,11 @@ local function UpdateNamePlate(frame)
         end
     end
     
-    -- Hide ShaguTweaks new frame elements if present
+    -- Hide ShaguTweaks new frame elements if present (but not raidicon)
     if frame.new then
         frame.new:SetAlpha(0)
         for _, region in ipairs({frame.new:GetRegions()}) do
-            if region then
+            if region and region ~= frame.raidicon then
                 if region.SetTexture then region:SetTexture("") end
                 if region.SetAlpha then region:SetAlpha(0) end
                 if region.SetWidth and region.GetObjectType and region:GetObjectType() == "FontString" then
