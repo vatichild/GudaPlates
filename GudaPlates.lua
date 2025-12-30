@@ -115,10 +115,15 @@ local function HandleNamePlate(frame)
     end
     
     -- Find name and level from regions before hiding
-    for _, region in ipairs({frame:GetRegions()}) do
+    -- Get regions by index (vanilla nameplate order: border, glow, name, level, levelicon, raidicon)
+    local regions = {frame:GetRegions()}
+    for i, region in ipairs(regions) do
         if region and region.GetObjectType then
             local rtype = region:GetObjectType()
-            if rtype == "FontString" then
+            if i == 6 then
+                -- 6th region is raid icon
+                nameplate.original.raidicon = region
+            elseif rtype == "FontString" then
                 local text = region:GetText()
                 if text then
                     if tonumber(text) then
@@ -155,7 +160,7 @@ local function HandleNamePlate(frame)
     nameplate.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     nameplate.health:SetHeight(10)
     nameplate.health:SetWidth(120)
-    nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 12)
+    nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
     
     -- Dark background
     nameplate.health.bg = nameplate.health:CreateTexture(nil, "BACKGROUND")
@@ -168,6 +173,14 @@ local function HandleNamePlate(frame)
     nameplate.health.border:SetPoint("TOPLEFT", nameplate.health, "TOPLEFT", -1, 1)
     nameplate.health.border:SetPoint("BOTTOMRIGHT", nameplate.health, "BOTTOMRIGHT", 1, -1)
     nameplate.health.border:SetDrawLayer("BACKGROUND", -1)
+    
+    -- Create our own raid icon (don't rely on original)
+    nameplate.raidicon = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.raidicon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    nameplate.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+    nameplate.raidicon:SetWidth(24)
+    nameplate.raidicon:SetHeight(24)
+    nameplate.raidicon:Hide()
     
     -- Target highlight borders (left and right)
     nameplate.health.targetLeft = nameplate.health:CreateTexture(nil, "OVERLAY")
@@ -184,19 +197,25 @@ local function HandleNamePlate(frame)
     nameplate.health.targetRight:SetPoint("BOTTOMLEFT", nameplate.health, "BOTTOMRIGHT", 1, -2)
     nameplate.health.targetRight:Hide()
     
-    -- Name on the left
-    nameplate.name = nameplate.health:CreateFontString(nil, "OVERLAY")
+    -- Name below the health bar (like in Plater)
+    nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
     nameplate.name:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
-    nameplate.name:SetPoint("LEFT", nameplate.health, "LEFT", 2, 0)
+    nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
     nameplate.name:SetTextColor(1, 1, 1, 1)
-    nameplate.name:SetJustifyH("LEFT")
+    nameplate.name:SetJustifyH("CENTER")
     
-    -- Percentage on the right
-    nameplate.perc = nameplate.health:CreateFontString(nil, "OVERLAY")
-    nameplate.perc:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
-    nameplate.perc:SetPoint("RIGHT", nameplate.health, "RIGHT", -2, 0)
-    nameplate.perc:SetTextColor(1, 1, 1, 1)
-    nameplate.perc:SetJustifyH("RIGHT")
+    -- Level above the health bar on the right
+    nameplate.level = nameplate:CreateFontString(nil, "OVERLAY")
+    nameplate.level:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
+    nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+    nameplate.level:SetTextColor(1, 1, 0.6, 1)
+    nameplate.level:SetJustifyH("RIGHT")
+    
+    -- Health text centered on bar
+    nameplate.healthtext = nameplate.health:CreateFontString(nil, "OVERLAY")
+    nameplate.healthtext:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+    nameplate.healthtext:SetTextColor(1, 1, 1, 1)
     
     frame.nameplate = nameplate
     registry[frame] = nameplate
@@ -215,14 +234,17 @@ local function UpdateNamePlate(frame)
     original.healthbar:SetStatusBarTexture("")
     original.healthbar:SetAlpha(0)
     
-    -- Hide regions on main frame
+    -- Hide regions on main frame (except raid icon)
     for _, region in ipairs({frame:GetRegions()}) do
         if region and region.GetObjectType then
             local otype = region:GetObjectType()
             if otype == "Texture" then
-                region:SetTexture("")
-                region:SetTexCoord(0, 0, 0, 0)
-                region:SetAlpha(0)
+                -- Skip raid icon - we want to keep it visible
+                if region ~= nameplate.original.raidicon then
+                    region:SetTexture("")
+                    region:SetTexCoord(0, 0, 0, 0)
+                    region:SetAlpha(0)
+                end
             elseif otype == "FontString" then
                 region:SetWidth(0.001)
                 region:SetAlpha(0)
@@ -251,9 +273,33 @@ local function UpdateNamePlate(frame)
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
     
-    -- Calculate percentage
+    -- Calculate percentage and format health text like Plater "1.3K (30.6%)"
     local perc = math.floor((hp / hpmax) * 100)
-    nameplate.perc:SetText(perc .. "%")
+    local hpText = ""
+    if hpmax > 1000 then
+        hpText = string.format("%.1fK (%.1f%%)", hp / 1000, (hp / hpmax) * 100)
+    else
+        hpText = string.format("%d (%.1f%%)", hp, (hp / hpmax) * 100)
+    end
+    nameplate.healthtext:SetText(hpText)
+    
+    -- Update level from original
+    if original.level and original.level.GetText then
+        local levelText = original.level:GetText()
+        if levelText then
+            nameplate.level:SetText(levelText)
+        end
+    end
+    
+    -- Update raid icon from original
+    if nameplate.original.raidicon and nameplate.original.raidicon:IsShown() then
+        -- Copy texcoords from original raid icon to show correct icon
+        local left, right, top, bottom = nameplate.original.raidicon:GetTexCoord()
+        nameplate.raidicon:SetTexCoord(left, right, top, bottom)
+        nameplate.raidicon:Show()
+    else
+        nameplate.raidicon:Hide()
+    end
     
     -- Plater-style colors with threat support
     local r, g, b = original.healthbar:GetStatusBarColor()
