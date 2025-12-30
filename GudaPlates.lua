@@ -20,6 +20,13 @@ local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon
 local superwow_active = SpellInfo ~= nil -- SuperWoW detection
 local twthreat_active = UnitThreat ~= nil -- TurtleWoW TWThreat detection
 
+-- Debuff settings
+local MAX_DEBUFFS = 5
+local DEBUFF_SIZE = 16
+
+-- Debuff tracking for non-SuperWoW
+local debuffTracker = {}
+
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
 
@@ -94,6 +101,8 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
 
 local function HandleNamePlate(frame)
     if not frame then return end
@@ -272,10 +281,48 @@ local function HandleNamePlate(frame)
     nameplate.castbar.icon:SetHeight(12)
     nameplate.castbar.icon:SetPoint("RIGHT", nameplate.castbar, "LEFT", -2, 0)
 
+    -- Debuff icons
+    nameplate.debuffs = {}
+    for i = 1, MAX_DEBUFFS do
+        local debuff = CreateFrame("Frame", nil, nameplate)
+        debuff:SetWidth(DEBUFF_SIZE)
+        debuff:SetHeight(DEBUFF_SIZE)
+        
+        if i == 1 then
+            debuff:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 14)
+        else
+            debuff:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
+        end
+        
+        debuff.icon = debuff:CreateTexture(nil, "OVERLAY")
+        debuff.icon:SetAllPoints()
+        debuff.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        
+        debuff.border = debuff:CreateTexture(nil, "BACKGROUND")
+        debuff.border:SetTexture(0, 0, 0, 1)
+        debuff.border:SetPoint("TOPLEFT", debuff, "TOPLEFT", -1, 1)
+        debuff.border:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, -1)
+        
+        debuff.cd = debuff:CreateFontString(nil, "OVERLAY")
+        debuff.cd:SetFont("Fonts\\ARIALN.TTF", 10, "OUTLINE")
+        debuff.cd:SetPoint("CENTER", debuff, "CENTER", 0, 0)
+        debuff.cd:SetTextColor(1, 1, 0, 1) -- Yellow for better visibility
+        
+        debuff:Hide()
+        nameplate.debuffs[i] = debuff
+    end
+
     frame.nameplate = nameplate
     registry[frame] = nameplate
     
     Print("Hooked: " .. platename)
+end
+
+local function FormatTime(seconds)
+    if seconds >= 60 then
+        return math.floor(seconds / 60) .. "m"
+    end
+    return math.floor(seconds)
 end
 
 local function UpdateNamePlate(frame)
@@ -612,6 +659,78 @@ local function UpdateNamePlate(frame)
     else
         nameplate.castbar:Hide()
     end
+
+    -- Update Debuffs
+    for i = 1, MAX_DEBUFFS do
+        nameplate.debuffs[i]:Hide()
+    end
+
+    local debuffIndex = 1
+    if superwow_active and hasValidGUID then
+        for i = 1, 40 do
+            if debuffIndex > MAX_DEBUFFS then break end
+            local texture, count, expirationTime, duration, isMine = UnitAura(unitstr, i, "HARMFUL")
+            if not texture then break end
+            
+            if isMine then
+                local debuff = nameplate.debuffs[debuffIndex]
+                debuff.icon:SetTexture(texture)
+                
+                if expirationTime and expirationTime > 0 then
+                    local timeLeft = expirationTime - GetTime()
+                    if timeLeft > 0 then
+                        debuff.cd:SetText(FormatTime(timeLeft))
+                    else
+                        debuff.cd:SetText("")
+                    end
+                else
+                    debuff.cd:SetText("")
+                end
+                
+                debuff:Show()
+                debuffIndex = debuffIndex + 1
+            end
+        end
+    elseif isTarget then
+        -- Fallback for non-SuperWoW: only show for target
+        for i = 1, 16 do
+            if debuffIndex > MAX_DEBUFFS then break end
+            local texture, count = UnitDebuff("target", i)
+            if not texture then break end
+            
+            local debuff = nameplate.debuffs[debuffIndex]
+            debuff.icon:SetTexture(texture)
+            
+            -- Try to find timer in our local tracker (by unit name match)
+            local foundTimer = false
+            local targetName = UnitName("target")
+            if targetName then
+                -- Check for common debuffs on this target
+                for key, data in pairs(debuffTracker) do
+                    if data.unit == targetName and data.endTime > GetTime() then
+                        -- Since we don't have texture in tracker, and UnitDebuff only gives texture,
+                        -- this is still a bit of a guess if there are multiple debuffs.
+                        -- However, for the player's own target, it's often correct enough.
+                        -- To improve, we could try to map texture -> spell name.
+                        -- For now, let's just show the first matching timer that isn't used yet.
+                        if not data.usedThisFrame then
+                            debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
+                            data.usedThisFrame = true
+                            foundTimer = true
+                            break
+                        end
+                    end
+                end
+            end
+            
+            if not foundTimer then
+                debuff.cd:SetText("")
+            end
+
+            debuff:Show()
+            debuffIndex = debuffIndex + 1
+        end
+    end
 end
 
 -- Check if ShaguTweaks libnameplate is available
@@ -645,6 +764,13 @@ local usingShaguTweaks = false
 local scanCount = 0
 local lastChildCount = 0
 GudaPlates:SetScript("OnUpdate", function()
+    -- Reset tracking flags for non-SuperWoW timers once per frame
+    if not superwow_active then
+        for _, data in pairs(debuffTracker) do
+            data.usedThisFrame = nil
+        end
+    end
+
     -- Try to hook ShaguTweaks once
     if not usingShaguTweaks and ShaguTweaks and ShaguTweaks.libnameplate then
         if TryShaguTweaksHook() then
@@ -724,6 +850,9 @@ end)
 
 GudaPlates:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
+        -- Clear trackers on zone/load
+        debuffTracker = {}
+        castTracker = {}
         Print("Initialized. Scanning...")
         if twthreat_active then
             Print("TWThreat detected - full threat colors enabled")
@@ -773,6 +902,43 @@ GudaPlates:SetScript("OnEvent", function()
         
         if interruptedUnit and castTracker[interruptedUnit] then
             castTracker[interruptedUnit] = nil
+        end
+
+        -- Debuff tracking for non-SuperWoW
+        -- Pattern: "Unit is afflicted by Spell."
+        for unit, spell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
+            -- We need a small database of durations or assume something
+            -- Let's use a very basic one for common spells
+            local durations = {
+                ["Corruption"] = 18,
+                ["Immolate"] = 15,
+                ["Curse of Agony"] = 24,
+                ["Siphon Life"] = 30,
+                ["Shadow Word: Pain"] = 18,
+                ["Rend"] = 15,
+                ["Deep Wound"] = 12,
+                ["Serpent Sting"] = 15,
+                ["Moonfire"] = 12,
+                ["Insect Swarm"] = 12,
+                ["Deadly Poison"] = 12,
+            }
+            local duration = durations[spell] or 15
+            
+            -- We don't have texture here, but we can try to guess it from spell name if we had a mapping
+            -- For now, we'll store it by unit and spell name. 
+            -- Note: in Vanilla, textures for common spells are often predictable but we don't have a lookup table here.
+            -- However, UnitDebuff returns the texture, so we can match by texture in UpdateNamePlate if we know it.
+            -- To make it work, we'll store it and if a debuff with unknown timer appears, we try to match.
+            debuffTracker[unit .. spell] = {
+                endTime = GetTime() + duration,
+                spell = spell,
+                unit = unit,
+            }
+        end
+
+        -- Pattern: "Spell fades from Unit."
+        for spell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
+            debuffTracker[unit .. spell] = nil
         end
     end
 end)
