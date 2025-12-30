@@ -164,12 +164,12 @@ local function UpdateNamePlateDimensions(frame)
             if i == 1 then
                 nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
             else
-                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below debuffs
+        -- Adjust castbar to be below debuffs (2pt gap)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 6))
+        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 4))
     else
         -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
@@ -178,10 +178,10 @@ local function UpdateNamePlateDimensions(frame)
             if i == 1 then
                 nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
             else
-                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below name
+        -- Adjust castbar to be below name (2pt gap)
         nameplate.castbar:ClearAllPoints()
         nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
     end
@@ -783,45 +783,97 @@ local function UpdateNamePlate(frame)
                 debuffIndex = debuffIndex + 1
             end
         end
-    elseif isTarget then
-        -- Fallback for non-SuperWoW: only show for target
-        for i = 1, 16 do
-            if debuffIndex > MAX_DEBUFFS then break end
-            local texture, count = UnitDebuff("target", i)
-            if not texture then break end
-            
-            local debuff = nameplate.debuffs[debuffIndex]
-            debuff.icon:SetTexture(texture)
-            
-            -- Try to find timer in our local tracker (by unit name match)
-            local foundTimer = false
-            local targetName = UnitName("target")
-            if targetName then
-                -- Check for common debuffs on this target
-                for key, data in pairs(debuffTracker) do
-                    if data.unit == targetName and data.endTime > GetTime() then
-                        -- Since we don't have texture in tracker, and UnitDebuff only gives texture,
-                        -- this is still a bit of a guess if there are multiple debuffs.
-                        -- However, for the player's own target, it's often correct enough.
-                        -- To improve, we could try to map texture -> spell name.
-                        -- For now, let's just show the first matching timer that isn't used yet.
-                        if not data.usedThisFrame then
-                            debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
-                            data.usedThisFrame = true
-                            foundTimer = true
-                            break
+    elseif plateName then
+        -- Fallback for non-SuperWoW: use debuffTracker for all nameplates
+        -- Also use UnitDebuff if it's the target for better accuracy
+        if isTarget then
+            for i = 1, 16 do
+                if debuffIndex > MAX_DEBUFFS then break end
+                local texture, count = UnitDebuff("target", i)
+                if not texture then break end
+                
+                local debuff = nameplate.debuffs[debuffIndex]
+                debuff.icon:SetTexture(texture)
+                
+                -- Try to find timer in our local tracker (by unit name match)
+                local foundTimer = false
+                local targetName = UnitName("target")
+                if targetName then
+                    -- Check for common debuffs on this target
+                    for key, data in pairs(debuffTracker) do
+                        if data.unit == targetName and data.endTime > GetTime() then
+                            -- Since we don't have texture in tracker, and UnitDebuff only gives texture,
+                            -- this is still a bit of a guess if there are multiple debuffs.
+                            -- However, for the player's own target, it's often correct enough.
+                            -- To improve, we could try to map texture -> spell name.
+                            -- For now, let's just show the first matching timer that isn't used yet.
+                            if not data.usedThisFrame then
+                                debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
+                                data.usedThisFrame = true
+                                foundTimer = true
+                                break
+                            end
                         end
                     end
                 end
-            end
-            
-            if not foundTimer then
-                debuff.cd:SetText("")
-            end
+                
+                if not foundTimer then
+                    debuff.cd:SetText("")
+                end
 
-            debuff:Show()
-            debuffIndex = debuffIndex + 1
+                debuff:Show()
+                debuffIndex = debuffIndex + 1
+            end
+        else
+            -- Not target: only use debuffTracker based on plateName
+            for key, data in pairs(debuffTracker) do
+                if debuffIndex > MAX_DEBUFFS then break end
+                if data.unit == plateName and data.endTime > GetTime() and data.texture then
+                    local debuff = nameplate.debuffs[debuffIndex]
+                    debuff.icon:SetTexture(data.texture)
+                    debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
+                    debuff:Show()
+                    debuffIndex = debuffIndex + 1
+                end
+            end
         end
+    end
+
+    -- Centering logic
+    local numDebuffs = debuffIndex - 1
+    if numDebuffs > 0 then
+        local totalWidth = (numDebuffs * DEBUFF_SIZE) + (numDebuffs - 1) * 1
+        local startOffset = -totalWidth / 2
+        
+        for i = 1, numDebuffs do
+            local debuff = nameplate.debuffs[i]
+            debuff:ClearAllPoints()
+            local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
+            if swapNameDebuff then
+                -- Debuffs below healthbar
+                debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, -2)
+                
+                -- Adjust name and castbar if they might overlap
+                nameplate.name:ClearAllPoints()
+                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+                
+                nameplate.castbar:ClearAllPoints()
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 4))
+            else
+                -- Debuffs above healthbar
+                debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 2)
+                
+                -- Adjust name and castbar
+                nameplate.name:ClearAllPoints()
+                nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+                
+                nameplate.castbar:ClearAllPoints()
+                nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
+            end
+        end
+    else
+        -- Reset positions if no debuffs
+        UpdateNamePlateDimensions(frame)
     end
 end
 
@@ -1020,14 +1072,33 @@ GudaPlates:SetScript("OnEvent", function()
             -- Note: in Vanilla, textures for common spells are often predictable but we don't have a lookup table here.
             -- However, UnitDebuff returns the texture, so we can match by texture in UpdateNamePlate if we know it.
             -- To make it work, we'll store it and if a debuff with unknown timer appears, we try to match.
+            local textures = {
+                ["Corruption"] = "Interface\\Icons\\Spell_Shadow_AbominationExplosion",
+                ["Immolate"] = "Interface\\Icons\\Spell_Fire_Immolation",
+                ["Curse of Agony"] = "Interface\\Icons\\Spell_Shadow_CurseOfSargeras",
+                ["Siphon Life"] = "Interface\\Icons\\Spell_Shadow_Requiem",
+                ["Shadow Word: Pain"] = "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
+                ["Rend"] = "Interface\\Icons\\Ability_Gouge",
+                ["Deep Wound"] = "Interface\\Icons\\Ability_BackStab",
+                ["Serpent Sting"] = "Interface\\Icons\\Ability_Hunter_Quickshot",
+                ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
+                ["Insect Swarm"] = "Interface\\Icons\\Spell_Nature_InsectSwarm",
+                ["Deadly Poison"] = "Interface\\Icons\\Ability_Rogue_DualWield",
+            }
+
             debuffTracker[unit .. spell] = {
                 endTime = GetTime() + duration,
                 spell = spell,
                 unit = unit,
+                texture = textures[spell],
             }
         end
 
         -- Pattern: "Spell fades from Unit."
+        for spell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
+            debuffTracker[unit .. spell] = nil
+        end
+    elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" and arg1 then
         for spell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
             debuffTracker[unit .. spell] = nil
         end
