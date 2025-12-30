@@ -46,6 +46,10 @@ local healthFontSize = 10
 local levelFontSize = 10
 local nameFontSize = 10
 
+-- New settings
+local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
+local swapNameDebuff = false -- false: name below, debuffs above. true: debuffs below, name above.
+
 -- Plater-style threat colors
 local THREAT_COLORS = {
     -- DPS/Healer colors
@@ -113,6 +117,91 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+
+local function UpdateNamePlateDimensions(frame)
+    local nameplate = frame.nameplate
+    if not nameplate then return end
+    
+    nameplate.health:SetHeight(healthbarHeight)
+    nameplate.health:SetWidth(healthbarWidth)
+    nameplate.castbar:SetWidth(healthbarWidth)
+
+    local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
+    nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
+    
+    local levelFont, _, levelFlags = nameplate.level:GetFont()
+    nameplate.level:SetFont(levelFont, levelFontSize, levelFlags)
+    
+    local nameFont, _, nameFlags = nameplate.name:GetFont()
+    nameplate.name:SetFont(nameFont, nameFontSize, nameFlags)
+
+    -- Update Raid Icon position
+    if nameplate.original.raidicon then
+        nameplate.original.raidicon:ClearAllPoints()
+        if raidIconPosition == "LEFT" then
+            nameplate.original.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        else
+            nameplate.original.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
+        end
+    end
+    if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
+        frame.raidicon:ClearAllPoints()
+        if raidIconPosition == "LEFT" then
+            frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        else
+            frame.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
+        end
+    end
+
+    -- Update Name and Debuff positions
+    nameplate.name:ClearAllPoints()
+    if swapNameDebuff then
+        -- Name above
+        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+        -- Debuffs below (at the beginning of nameplate, which I interpret as left-aligned)
+        for i = 1, MAX_DEBUFFS do
+            nameplate.debuffs[i]:ClearAllPoints()
+            if i == 1 then
+                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
+            else
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
+            end
+        end
+        -- Adjust castbar to be below debuffs
+        nameplate.castbar:ClearAllPoints()
+        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 6))
+    else
+        -- Default: Name below, Debuffs above
+        nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+        for i = 1, MAX_DEBUFFS do
+            nameplate.debuffs[i]:ClearAllPoints()
+            if i == 1 then
+                nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
+            else
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
+            end
+        end
+        -- Adjust castbar to be below name
+        nameplate.castbar:ClearAllPoints()
+        nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
+    end
+    
+    -- When stacking, we also need to update the parent frame size
+    -- so the game's stacking logic uses the new dimensions
+    if not nameplateOverlap then
+        local npWidth = healthbarWidth * UIParent:GetScale()
+        local npHeight = (healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
+        frame:SetWidth(npWidth)
+        frame:SetHeight(npHeight)
+        nameplate:SetAllPoints(frame)
+    else
+        -- In overlap mode, frame is 1x1 but nameplate should be clickable
+        nameplate:ClearAllPoints()
+        nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        nameplate:SetWidth(healthbarWidth)
+        nameplate:SetHeight(healthbarHeight + 20)
+    end
+end
 
 local function HandleNamePlate(frame)
     if not frame then return end
@@ -245,7 +334,6 @@ local function HandleNamePlate(frame)
     -- Name below the health bar (like in Plater)
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
     nameplate.name:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
-    nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
     nameplate.name:SetTextColor(1, 1, 1, 1)
     nameplate.name:SetJustifyH("CENTER")
     
@@ -266,8 +354,6 @@ local function HandleNamePlate(frame)
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     nameplate.castbar:SetHeight(8)
-    nameplate.castbar:SetWidth(healthbarWidth)
-    nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
     nameplate.castbar:SetStatusBarColor(1, 0.7, 0, 1)
     nameplate.castbar:Hide()
     
@@ -298,12 +384,6 @@ local function HandleNamePlate(frame)
         debuff:SetWidth(DEBUFF_SIZE)
         debuff:SetHeight(DEBUFF_SIZE)
         
-        if i == 1 then
-            debuff:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 14)
-        else
-            debuff:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 2, 0)
-        end
-        
         debuff.icon = debuff:CreateTexture(nil, "OVERLAY")
         debuff.icon:SetAllPoints()
         debuff.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -322,6 +402,8 @@ local function HandleNamePlate(frame)
         nameplate.debuffs[i] = debuff
     end
 
+    UpdateNamePlateDimensions(frame)
+
     frame.nameplate = nameplate
     registry[frame] = nameplate
     
@@ -333,40 +415,6 @@ local function FormatTime(seconds)
         return math.floor(seconds / 60) .. "m"
     end
     return math.floor(seconds)
-end
-
-local function UpdateNamePlateDimensions(frame)
-    local nameplate = frame.nameplate
-    if not nameplate then return end
-    
-    nameplate.health:SetHeight(healthbarHeight)
-    nameplate.health:SetWidth(healthbarWidth)
-    nameplate.castbar:SetWidth(healthbarWidth)
-
-    local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
-    nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
-    
-    local levelFont, _, levelFlags = nameplate.level:GetFont()
-    nameplate.level:SetFont(levelFont, levelFontSize, levelFlags)
-    
-    local nameFont, _, nameFlags = nameplate.name:GetFont()
-    nameplate.name:SetFont(nameFont, nameFontSize, nameFlags)
-    
-    -- When stacking, we also need to update the parent frame size
-    -- so the game's stacking logic uses the new dimensions
-    if not nameplateOverlap then
-        local npWidth = healthbarWidth * UIParent:GetScale()
-        local npHeight = (healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
-        frame:SetWidth(npWidth)
-        frame:SetHeight(npHeight)
-        nameplate:SetAllPoints(frame)
-    else
-        -- In overlap mode, frame is 1x1 but nameplate should be clickable
-        nameplate:ClearAllPoints()
-        nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        nameplate:SetWidth(healthbarWidth)
-        nameplate:SetHeight(healthbarHeight + 20)
-    end
 end
 
 local function UpdateNamePlate(frame)
@@ -1030,6 +1078,8 @@ local function SaveSettings()
     GudaPlatesDB.healthFontSize = healthFontSize
     GudaPlatesDB.levelFontSize = levelFontSize
     GudaPlatesDB.nameFontSize = nameFontSize
+    GudaPlatesDB.raidIconPosition = raidIconPosition
+    GudaPlatesDB.swapNameDebuff = swapNameDebuff
 end
 
 local function LoadSettings()
@@ -1056,6 +1106,12 @@ local function LoadSettings()
     end
     if GudaPlatesDB.nameFontSize then
         nameFontSize = GudaPlatesDB.nameFontSize
+    end
+    if GudaPlatesDB.raidIconPosition then
+        raidIconPosition = GudaPlatesDB.raidIconPosition
+    end
+    if GudaPlatesDB.swapNameDebuff ~= nil then
+        swapNameDebuff = GudaPlatesDB.swapNameDebuff
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -1159,7 +1215,7 @@ end)
 -- Options Frame
 local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
 optionsFrame:SetWidth(500)
-optionsFrame:SetHeight(480)
+optionsFrame:SetHeight(580)
 optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 optionsFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -1421,6 +1477,38 @@ nameFontSlider:SetScript("OnValueChanged", function()
     end
 end)
 
+-- Raid Mark Position Checkbox
+local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", optionsFrame, "UICheckButtonTemplate")
+raidMarkCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -420)
+local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
+raidMarkLabel:SetText("Raid Mark on Right")
+raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+raidMarkCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        raidIconPosition = "RIGHT"
+    else
+        raidIconPosition = "LEFT"
+    end
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Swap Name and Debuffs Checkbox
+local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", optionsFrame, "UICheckButtonTemplate")
+swapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -420)
+local swapLabel = getglobal(swapCheckbox:GetName().."Text")
+swapLabel:SetText("Swap Name and Debuffs")
+swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+swapCheckbox:SetScript("OnClick", function()
+    swapNameDebuff = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
@@ -1434,6 +1522,8 @@ optionsFrame:SetScript("OnShow", function()
     getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
     nameFontSlider:SetValue(nameFontSize)
     getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
+    swapCheckbox:SetChecked(swapNameDebuff)
 end)
 
 -- Reset to defaults button
@@ -1455,6 +1545,8 @@ resetButton:SetScript("OnClick", function()
     healthFontSize = 10
     levelFontSize = 10
     nameFontSize = 10
+    raidIconPosition = "LEFT"
+    swapNameDebuff = false
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and sliders
@@ -1472,6 +1564,8 @@ resetButton:SetScript("OnClick", function()
     getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
     nameFontSlider:SetValue(nameFontSize)
     getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    raidMarkCheckbox:SetChecked(false)
+    swapCheckbox:SetChecked(false)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
