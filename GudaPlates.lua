@@ -1122,72 +1122,74 @@ local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton
 closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
 
 -- Role Selection
-local roleLabel = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-roleLabel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
-roleLabel:SetText("Role:")
-
-local tankButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
-tankButton:SetWidth(80)
-tankButton:SetHeight(25)
-tankButton:SetPoint("LEFT", roleLabel, "RIGHT", 20, 0)
-tankButton:SetText("Tank")
-tankButton:SetScript("OnClick", function()
-    playerRole = "TANK"
+local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", optionsFrame, "UICheckButtonTemplate")
+tankCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
+local tankLabel = getglobal(tankCheckbox:GetName().."Text")
+tankLabel:SetText("Tank Mode")
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        playerRole = "TANK"
+    else
+        playerRole = "DPS"
+    end
     SaveSettings()
-    Print("Role set to TANK")
+    Print("Role set to " .. playerRole)
 end)
-
-local dpsButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
-dpsButton:SetWidth(80)
-dpsButton:SetHeight(25)
-dpsButton:SetPoint("LEFT", tankButton, "RIGHT", 10, 0)
-dpsButton:SetText("DPS/Healer")
-dpsButton:SetScript("OnClick", function()
-    playerRole = "DPS"
-    SaveSettings()
-    Print("Role set to DPS/HEALER")
+tankCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Tank Mode")
+    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+tankCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
 end)
 
 -- Nameplate Mode Selection
-local modeLabel = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-modeLabel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -80)
-modeLabel:SetText("Nameplates:")
-
-local stackButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
-stackButton:SetWidth(80)
-stackButton:SetHeight(25)
-stackButton:SetPoint("LEFT", modeLabel, "RIGHT", 20, 0)
-stackButton:SetText("Stacking")
-stackButton:SetScript("OnClick", function()
-    nameplateOverlap = false
+local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", optionsFrame, "UICheckButtonTemplate")
+overlapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -80)
+local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
+overlapLabel:SetText("Overlapping Nameplates")
+overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+overlapCheckbox:SetScript("OnClick", function()
+    nameplateOverlap = this:GetChecked() == 1
     SaveSettings()
-    Print("Nameplates set to STACKING")
+    if nameplateOverlap then
+        Print("Nameplates set to OVERLAPPING")
+    else
+        Print("Nameplates set to STACKING")
+    end
 end)
-
-local overlapButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
-overlapButton:SetWidth(80)
-overlapButton:SetHeight(25)
-overlapButton:SetPoint("LEFT", stackButton, "RIGHT", 10, 0)
-overlapButton:SetText("Overlapping")
-overlapButton:SetScript("OnClick", function()
-    nameplateOverlap = true
-    SaveSettings()
-    Print("Nameplates set to OVERLAPPING")
+overlapCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Overlapping Nameplates")
+    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode (default).", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+overlapCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
 end)
 
 -- Color picker helper
 local function ShowColorPicker(r, g, b, callback)
-    ColorPickerFrame:SetColorRGB(r, g, b)
-    ColorPickerFrame.previousValues = {r, g, b}
-    ColorPickerFrame.func = callback
-    ColorPickerFrame.cancelFunc = function()
-        callback(unpack(ColorPickerFrame.previousValues))
+    ColorPickerFrame.func = function()
+        local r, g, b = ColorPickerFrame:GetColorRGB()
+        callback(r, g, b)
     end
+    ColorPickerFrame.hasOpacity = false
+    ColorPickerFrame.previousValues = {r, g, b}
+    ColorPickerFrame.cancelFunc = function()
+        local prev = ColorPickerFrame.previousValues
+        callback(prev[1], prev[2], prev[3])
+    end
+    ColorPickerFrame:SetColorRGB(r, g, b)
     ColorPickerFrame:Hide()
     ColorPickerFrame:Show()
 end
 
 -- Create color swatch
+local swatches = {}
 local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     swatchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -1215,6 +1217,9 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     end
     UpdateSwatchColor()
     
+    -- Store for global updates
+    table.insert(swatches, UpdateSwatchColor)
+    
     swatch:SetScript("OnClick", function()
         local c = colorTable[colorKey]
         ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
@@ -1222,6 +1227,12 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
                 colorTable[colorKey] = {r, g, b, 1}
                 UpdateSwatchColor()
                 SaveSettings()
+                -- Force refresh of all visible nameplates
+                for plate, _ in pairs(registry) do
+                    if plate:IsShown() then
+                        UpdateNamePlate(plate)
+                    end
+                end
             end
         end)
     end)
@@ -1277,6 +1288,8 @@ end
 
 optionsFrame:SetScript("OnShow", function()
     UpdateStatusLabel()
+    overlapCheckbox:SetChecked(nameplateOverlap)
+    tankCheckbox:SetChecked(playerRole == "TANK")
 end)
 
 -- Reset to defaults button
@@ -1293,8 +1306,17 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 1.0, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     SaveSettings()
-    Print("Colors reset to defaults. Reopen settings to see changes.")
-    optionsFrame:Hide()
+    Print("Colors reset to defaults.")
+    -- Update all swatches
+    for _, updateFunc in ipairs(swatches) do
+        updateFunc()
+    end
+    -- Force refresh of all visible nameplates
+    for plate, _ in pairs(registry) do
+        if plate:IsShown() then
+            UpdateNamePlate(plate)
+        end
+    end
 end)
 
 -- Load settings on addon load
