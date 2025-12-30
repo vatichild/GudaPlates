@@ -37,19 +37,28 @@ local minimapAngle = 220
 -- Nameplate overlap setting: true = overlapping, false = stacking (default)
 local nameplateOverlap = false
 
+-- Healthbar dimensions
+local healthbarHeight = 14
+local healthbarWidth = 110
+
+-- Font sizes
+local healthFontSize = 10
+local levelFontSize = 10
+local nameFontSize = 10
+
 -- Plater-style threat colors
 local THREAT_COLORS = {
     -- DPS/Healer colors
     DPS = {
-        AGGRO = {0.85, 0.2, 0.2, 1},       -- Red: mob attacking you (BAD)
+        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue: mob attacking you (BAD)
         HIGH_THREAT = {1.0, 0.6, 0.0, 1},  -- Orange: high threat, about to pull (WARNING)
-        NO_AGGRO = {0.41, 0.35, 0.76, 1},  -- Blue: tank has aggro (GOOD)
+        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red: tank has aggro (GOOD)
     },
     -- Tank colors
     TANK = {
-        AGGRO = {0.41, 0.35, 0.76, 1},     -- Blue: you have aggro (GOOD)
-        LOSING_AGGRO = {1.0, 1.0, 0.0, 1}, -- Yellow: losing aggro (WARNING)
-        NO_AGGRO = {0.85, 0.2, 0.2, 1},    -- Red: no aggro, need to taunt (BAD)
+        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue (matching DPS AGGRO)
+        LOSING_AGGRO = {1.0, 0.6, 0.0, 1}, -- Orange (matching DPS HIGH_THREAT)
+        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
         OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
     },
 }
@@ -182,8 +191,8 @@ local function HandleNamePlate(frame)
     nameplate.health = CreateFrame("StatusBar", nil, nameplate)
     nameplate.health:SetFrameLevel(frame:GetFrameLevel() + 11)
     nameplate.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.health:SetHeight(10)
-    nameplate.health:SetWidth(120)
+    nameplate.health:SetHeight(healthbarHeight)
+    nameplate.health:SetWidth(healthbarWidth)
     nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
     
     -- Dark background
@@ -257,7 +266,7 @@ local function HandleNamePlate(frame)
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     nameplate.castbar:SetHeight(8)
-    nameplate.castbar:SetWidth(120)
+    nameplate.castbar:SetWidth(healthbarWidth)
     nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
     nameplate.castbar:SetStatusBarColor(1, 0.7, 0, 1)
     nameplate.castbar:Hide()
@@ -324,6 +333,40 @@ local function FormatTime(seconds)
         return math.floor(seconds / 60) .. "m"
     end
     return math.floor(seconds)
+end
+
+local function UpdateNamePlateDimensions(frame)
+    local nameplate = frame.nameplate
+    if not nameplate then return end
+    
+    nameplate.health:SetHeight(healthbarHeight)
+    nameplate.health:SetWidth(healthbarWidth)
+    nameplate.castbar:SetWidth(healthbarWidth)
+
+    local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
+    nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
+    
+    local levelFont, _, levelFlags = nameplate.level:GetFont()
+    nameplate.level:SetFont(levelFont, levelFontSize, levelFlags)
+    
+    local nameFont, _, nameFlags = nameplate.name:GetFont()
+    nameplate.name:SetFont(nameFont, nameFontSize, nameFlags)
+    
+    -- When stacking, we also need to update the parent frame size
+    -- so the game's stacking logic uses the new dimensions
+    if not nameplateOverlap then
+        local npWidth = healthbarWidth * UIParent:GetScale()
+        local npHeight = (healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
+        frame:SetWidth(npWidth)
+        frame:SetHeight(npHeight)
+        nameplate:SetAllPoints(frame)
+    else
+        -- In overlap mode, frame is 1x1 but nameplate should be clickable
+        nameplate:ClearAllPoints()
+        nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        nameplate:SetWidth(healthbarWidth)
+        nameplate:SetHeight(healthbarHeight + 20)
+    end
 end
 
 local function UpdateNamePlate(frame)
@@ -796,6 +839,9 @@ GudaPlates:SetScript("OnUpdate", function()
                     plate:EnableMouse(true)
                     nameplate:EnableMouse(false)
                 end
+                
+                -- Ensure dimensions are correct
+                UpdateNamePlateDimensions(plate)
             end
         end
         return
@@ -816,36 +862,32 @@ GudaPlates:SetScript("OnUpdate", function()
     end
     
     for plate, nameplate in pairs(registry) do
-        if plate:IsShown() then
-            UpdateNamePlate(plate)
-            
-            -- Apply overlap/stacking setting
-            if nameplateOverlap then
-                -- Overlapping: disable parent mouse and shrink to 1px
-                -- This prevents game's collision avoidance from moving nameplates
-                plate:EnableMouse(false)
+            if plate:IsShown() then
+                UpdateNamePlate(plate)
                 
-                if plate:GetWidth() > 1 then
-                    plate:SetWidth(1)
-                    plate:SetHeight(1)
+                -- Apply overlap/stacking setting
+                if nameplateOverlap then
+                    -- Overlapping: disable parent mouse and shrink to 1px
+                    -- This prevents game's collision avoidance from moving nameplates
+                    plate:EnableMouse(false)
+                    
+                    if plate:GetWidth() > 1 then
+                        plate:SetWidth(1)
+                        plate:SetHeight(1)
+                    end
+                    
+                    -- Z-index is handled in UpdateNamePlate (target > attacking > others)
+                    -- Enable clicking on nameplate itself
+                    nameplate:EnableMouse(true)
+                else
+                    -- Stacking: restore parent frame size so game stacks them
+                    plate:EnableMouse(true)
+                    nameplate:EnableMouse(false)
                 end
                 
-                -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                -- Enable clicking on nameplate itself
-                nameplate:EnableMouse(true)
-            else
-                -- Stacking: restore parent frame size so game stacks them
-                plate:EnableMouse(true)
-                
-                local npWidth = nameplate:GetWidth() * UIParent:GetScale()
-                local npHeight = nameplate:GetHeight() * UIParent:GetScale()
-                if math.floor(plate:GetWidth()) ~= math.floor(npWidth) then
-                    plate:SetWidth(npWidth)
-                    plate:SetHeight(npHeight)
-                end
-                nameplate:EnableMouse(false)
+                -- Ensure dimensions are correct
+                UpdateNamePlateDimensions(plate)
             end
-        end
     end
 end)
 
@@ -983,6 +1025,11 @@ local function SaveSettings()
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
     GudaPlatesDB.minimapAngle = minimapAngle
+    GudaPlatesDB.healthbarHeight = healthbarHeight
+    GudaPlatesDB.healthbarWidth = healthbarWidth
+    GudaPlatesDB.healthFontSize = healthFontSize
+    GudaPlatesDB.levelFontSize = levelFontSize
+    GudaPlatesDB.nameFontSize = nameFontSize
 end
 
 local function LoadSettings()
@@ -994,6 +1041,21 @@ local function LoadSettings()
     end
     if GudaPlatesDB.minimapAngle then
         minimapAngle = GudaPlatesDB.minimapAngle
+    end
+    if GudaPlatesDB.healthbarHeight then
+        healthbarHeight = GudaPlatesDB.healthbarHeight
+    end
+    if GudaPlatesDB.healthbarWidth then
+        healthbarWidth = GudaPlatesDB.healthbarWidth
+    end
+    if GudaPlatesDB.healthFontSize then
+        healthFontSize = GudaPlatesDB.healthFontSize
+    end
+    if GudaPlatesDB.levelFontSize then
+        levelFontSize = GudaPlatesDB.levelFontSize
+    end
+    if GudaPlatesDB.nameFontSize then
+        nameFontSize = GudaPlatesDB.nameFontSize
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -1096,8 +1158,8 @@ end)
 
 -- Options Frame
 local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
-optionsFrame:SetWidth(350)
-optionsFrame:SetHeight(430)
+optionsFrame:SetWidth(500)
+optionsFrame:SetHeight(480)
 optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 optionsFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -1121,34 +1183,9 @@ title:SetText("GudaPlates Settings")
 local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
 closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
 
--- Role Selection
-local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", optionsFrame, "UICheckButtonTemplate")
-tankCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
-local tankLabel = getglobal(tankCheckbox:GetName().."Text")
-tankLabel:SetText("Tank Mode")
-tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-tankCheckbox:SetScript("OnClick", function()
-    if this:GetChecked() == 1 then
-        playerRole = "TANK"
-    else
-        playerRole = "DPS"
-    end
-    SaveSettings()
-    Print("Role set to " .. playerRole)
-end)
-tankCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Tank Mode")
-    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-tankCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
-
 -- Nameplate Mode Selection
 local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", optionsFrame, "UICheckButtonTemplate")
-overlapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -80)
+overlapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
 local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
 overlapLabel:SetText("Overlapping Nameplates")
 overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
@@ -1168,6 +1205,31 @@ overlapCheckbox:SetScript("OnEnter", function()
     GameTooltip:Show()
 end)
 overlapCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Role Selection
+local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", optionsFrame, "UICheckButtonTemplate")
+tankCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -50)
+local tankLabel = getglobal(tankCheckbox:GetName().."Text")
+tankLabel:SetText("Tank Mode")
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        playerRole = "TANK"
+    else
+        playerRole = "DPS"
+    end
+    SaveSettings()
+    Print("Role set to " .. playerRole)
+end)
+tankCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Tank Mode")
+    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+tankCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
@@ -1252,44 +1314,126 @@ end
 
 -- DPS Colors Section
 local dpsHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-dpsHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -120)
+dpsHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -100)
 dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
 
-CreateColorSwatch(optionsFrame, 20, -145, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
-CreateColorSwatch(optionsFrame, 20, -170, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
-CreateColorSwatch(optionsFrame, 20, -195, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
+CreateColorSwatch(optionsFrame, 20, -125, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
+CreateColorSwatch(optionsFrame, 20, -150, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
+CreateColorSwatch(optionsFrame, 20, -175, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
 
 -- Tank Colors Section
 local tankHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-tankHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -230)
+tankHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -100)
 tankHeader:SetText("|cff00ff00Tank Colors:|r")
 
-CreateColorSwatch(optionsFrame, 20, -255, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(optionsFrame, 20, -280, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(optionsFrame, 20, -305, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+CreateColorSwatch(optionsFrame, 250, -125, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(optionsFrame, 250, -150, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(optionsFrame, 250, -175, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
 
--- Status info
-local statusLabel = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-statusLabel:SetPoint("BOTTOMLEFT", optionsFrame, "BOTTOMLEFT", 20, 40)
+-- Dimensions Sliders
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -220)
+heightSlider:SetWidth(460)
+heightSlider:SetMinMaxValues(10, 30)
+heightSlider:SetValueStep(1)
+local heightText = getglobal(heightSlider:GetName() .. "Text")
+heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(heightSlider:GetName() .. "Low"):SetText("10")
+getglobal(heightSlider:GetName() .. "High"):SetText("30")
+heightSlider:SetScript("OnValueChanged", function()
+    healthbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
 
-local function UpdateStatusLabel()
-    local status = "Status: "
-    if superwow_active then
-        status = status .. "|cff00ff00SuperWoW|r "
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", optionsFrame, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -260)
+widthSlider:SetWidth(460)
+widthSlider:SetMinMaxValues(72, 120)
+widthSlider:SetValueStep(1)
+local widthText = getglobal(widthSlider:GetName() .. "Text")
+widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(widthSlider:GetName() .. "Low"):SetText("72")
+getglobal(widthSlider:GetName() .. "High"):SetText("120")
+widthSlider:SetScript("OnValueChanged", function()
+    healthbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
-    if twthreat_active then
-        status = status .. "|cff00ff00TWThreat|r "
+end)
+
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -300)
+healthFontSlider:SetWidth(460)
+healthFontSlider:SetMinMaxValues(8, 20)
+healthFontSlider:SetValueStep(1)
+local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
+healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(healthFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
+healthFontSlider:SetScript("OnValueChanged", function()
+    healthFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
-    if not superwow_active and not twthreat_active then
-        status = status .. "|cffff0000Basic Mode|r"
+end)
+
+local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", optionsFrame, "OptionsSliderTemplate")
+levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -340)
+levelFontSlider:SetWidth(460)
+levelFontSlider:SetMinMaxValues(8, 20)
+levelFontSlider:SetValueStep(1)
+local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
+levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
+levelFontSlider:SetScript("OnValueChanged", function()
+    levelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
-    statusLabel:SetText(status)
-end
+end)
+
+local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", optionsFrame, "OptionsSliderTemplate")
+nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -380)
+nameFontSlider:SetWidth(460)
+nameFontSlider:SetMinMaxValues(8, 20)
+nameFontSlider:SetValueStep(1)
+local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
+nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
+nameFontSlider:SetScript("OnValueChanged", function()
+    nameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
 
 optionsFrame:SetScript("OnShow", function()
-    UpdateStatusLabel()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
+    heightSlider:SetValue(healthbarHeight)
+    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
+    widthSlider:SetValue(healthbarWidth)
+    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
+    healthFontSlider:SetValue(healthFontSize)
+    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
+    levelFontSlider:SetValue(levelFontSize)
+    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
+    nameFontSlider:SetValue(nameFontSize)
+    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
 end)
 
 -- Reset to defaults button
@@ -1299,21 +1443,39 @@ resetButton:SetHeight(25)
 resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 20)
 resetButton:SetText("Reset Defaults")
 resetButton:SetScript("OnClick", function()
-    THREAT_COLORS.DPS.AGGRO = {0.85, 0.2, 0.2, 1}
+    playerRole = "DPS"
+    THREAT_COLORS.DPS.AGGRO = {0.41, 0.35, 0.76, 1}
     THREAT_COLORS.DPS.HIGH_THREAT = {1.0, 0.6, 0.0, 1}
-    THREAT_COLORS.DPS.NO_AGGRO = {0.41, 0.35, 0.76, 1}
+    THREAT_COLORS.DPS.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TANK.AGGRO = {0.41, 0.35, 0.76, 1}
-    THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 1.0, 0.0, 1}
+    THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
+    healthbarHeight = 14
+    healthbarWidth = 110
+    healthFontSize = 10
+    levelFontSize = 10
+    nameFontSize = 10
     SaveSettings()
-    Print("Colors reset to defaults.")
-    -- Update all swatches
+    Print("Settings reset to defaults.")
+    -- Update all swatches and sliders
     for _, updateFunc in ipairs(swatches) do
         updateFunc()
     end
+    tankCheckbox:SetChecked(false)
+    heightSlider:SetValue(healthbarHeight)
+    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
+    widthSlider:SetValue(healthbarWidth)
+    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
+    healthFontSlider:SetValue(healthFontSize)
+    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
+    levelFontSlider:SetValue(levelFontSize)
+    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
+    nameFontSlider:SetValue(nameFontSize)
+    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
+            UpdateNamePlateDimensions(plate)
             UpdateNamePlate(plate)
         end
     end
