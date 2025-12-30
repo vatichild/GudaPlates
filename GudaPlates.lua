@@ -445,6 +445,14 @@ local function UpdateNamePlate(frame)
             end
         end
     end
+
+    -- Hide all other children frames (like Blizzard or other addon castbars)
+    for i, child in ipairs({frame:GetChildren()}) do
+        if child and child ~= nameplate and child ~= original.healthbar then
+            child:SetAlpha(0)
+            if child.Hide then child:Hide() end
+        end
+    end
     
     -- Hide ShaguTweaks new frame elements if present (but not raidicon)
     if frame.new then
@@ -735,12 +743,8 @@ local function UpdateNamePlate(frame)
             nameplate.castbar:SetMinMaxValues(0, duration)
             nameplate.castbar:SetValue((now - start) * 1000)
             nameplate.castbar.text:SetText(casting.spell)
-            if casting.icon then
-                nameplate.castbar.icon:SetTexture(casting.icon)
-                nameplate.castbar.icon:Show()
-            else
-                nameplate.castbar.icon:Hide()
-            end
+            -- Always hide the icon as requested by user
+            nameplate.castbar.icon:Hide()
             nameplate.castbar:Show()
         else
             nameplate.castbar:Hide()
