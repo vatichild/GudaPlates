@@ -298,12 +298,17 @@ local function UpdateNamePlate(frame)
     end
     nameplate.healthtext:SetText(hpText)
     
-    -- Update level from original
+    -- Update level from original or ShaguTweaks
+    local levelText = nil
     if original.level and original.level.GetText then
-        local levelText = original.level:GetText()
-        if levelText then
-            nameplate.level:SetText(levelText)
-        end
+        levelText = original.level:GetText()
+    end
+    -- ShaguTweaks stores level on frame.level
+    if not levelText and frame.level and frame.level.GetText then
+        levelText = frame.level:GetText()
+    end
+    if levelText then
+        nameplate.level:SetText(levelText)
     end
     
     -- Plater-style colors with threat support
