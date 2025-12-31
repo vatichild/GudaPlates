@@ -353,7 +353,7 @@ local function HandleNamePlate(frame)
     -- Cast Bar below the name
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.castbar:SetHeight(8)
+    nameplate.castbar:SetHeight(12)
     nameplate.castbar:SetStatusBarColor(1, 0.8, 0, 1) -- Gold/Yellow color
     nameplate.castbar:Hide()
     
@@ -369,7 +369,7 @@ local function HandleNamePlate(frame)
     
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
     nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
-    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
+    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 18, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.text:SetJustifyH("LEFT")
 
@@ -380,9 +380,9 @@ local function HandleNamePlate(frame)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
-    nameplate.castbar.icon:SetWidth(healthbarHeight + 8) -- Make it square and slightly taller than healthbar
-    nameplate.castbar.icon:SetHeight(healthbarHeight + 8)
-    nameplate.castbar.icon:SetPoint("LEFT", nameplate.castbar, "LEFT", -2, 0)
+    nameplate.castbar.icon:SetWidth(16) -- Slightly larger than the new 12 height
+    nameplate.castbar.icon:SetHeight(16)
+    nameplate.castbar.icon:SetPoint("LEFT", nameplate.castbar, "LEFT", 0, 0)
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     nameplate.castbar.icon.border = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
@@ -448,12 +448,9 @@ local function UpdateNamePlate(frame)
             if otype == "Texture" then
                 -- Skip raid icons - we reparented them
                 if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
-                    region:SetTexture("")
-                    region:SetTexCoord(0, 0, 0, 0)
                     region:SetAlpha(0)
                 end
             elseif otype == "FontString" then
-                region:SetWidth(0.001)
                 region:SetAlpha(0)
             end
         end
@@ -462,7 +459,9 @@ local function UpdateNamePlate(frame)
     -- Hide all other children frames (like Blizzard or other addon castbars)
     for i, child in ipairs({frame:GetChildren()}) do
         if child and child ~= nameplate and child ~= original.healthbar then
-            child:SetAlpha(0)
+            -- Only hide if it's not a known useful child (like the original castbar if we want it)
+            -- ShaguPlates disables the original castbar explicitly.
+            if child.SetAlpha then child:SetAlpha(0) end
             if child.Hide then child:Hide() end
         end
     end
@@ -737,13 +736,68 @@ local function UpdateNamePlate(frame)
     -- Update Cast Bar
     local casting = nil
     if superwow_active and hasValidGUID then
-        casting = SpellInfo(unitstr)
+        -- Try UnitCastingInfo/UnitChannelInfo first (SuperWoW 1.5+)
+        if UnitCastingInfo then
+            local spell, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(unitstr)
+            if spell then
+                casting = {
+                    spell = spell,
+                    startTime = startTime / 1000,
+                    duration = endTime - startTime,
+                    icon = texture
+                }
+            end
+        end
+
+        if not casting and UnitChannelInfo then
+            local spell, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitChannelInfo(unitstr)
+            if spell then
+                casting = {
+                    spell = spell,
+                    startTime = startTime / 1000,
+                    duration = endTime - startTime,
+                    icon = texture
+                }
+            end
+        end
+
+        if not casting then
+            -- Fallback to SpellInfo
+            casting = SpellInfo(unitstr)
+            if not casting and plateName then
+                casting = SpellInfo(plateName)
+            end
+        end
     elseif plateName and castTracker[plateName] then
-        -- Fallback: only show castbar if this is the current target
-        -- In Vanilla, we can't reliably know WHICH same-named mob is casting
-        -- unless it's our target.
-        if isTarget then
-            casting = castTracker[plateName]
+        -- Fallback: handle multiple same-named mobs
+        local now = GetTime()
+        local myID = tostring(frame)
+        
+        -- Find a suitable cast for this plate
+        for i, cast in ipairs(castTracker[plateName]) do
+            -- Check if cast expired
+            if now > cast.startTime + (cast.duration / 1000) then
+                table.remove(castTracker[plateName], i)
+            else
+                -- Try to match by ID if possible
+                local isMatch = false
+                if cast.targetID == myID then
+                    isMatch = true
+                elseif not cast.targetID and (isTarget or isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow) then
+                    -- If no specific ID assigned, and this mob is in combat, it's a candidate
+                    -- We check if another plate already "claimed" this cast this frame
+                    if not cast.claimedBy or cast.claimedBy == myID or (now - (cast.lastClaimTime or 0) > 0.1) then
+                        isMatch = true
+                    end
+                end
+
+                if isMatch then
+                    casting = cast
+                    cast.claimedBy = myID
+                    cast.lastClaimTime = now
+                    break
+                end
+            end
         end
     end
     
@@ -764,17 +818,23 @@ local function UpdateNamePlate(frame)
                 nameplate.castbar.icon:SetTexture(casting.icon)
                 nameplate.castbar.icon:Show()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
+                nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 18, 0)
             else
                 nameplate.castbar.icon:Hide()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Hide() end
+                nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
             end
             
             nameplate.castbar:Show()
+            
+            -- Move nameplate elements to avoid overlap with castbar
+            if swapNameDebuff then
+                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
+            else
+                nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
+            end
         else
             nameplate.castbar:Hide()
-            if not superwow_active and plateName then
-                castTracker[plateName] = nil
-            end
         end
     else
         nameplate.castbar:Hide()
@@ -789,27 +849,34 @@ local function UpdateNamePlate(frame)
     if superwow_active and hasValidGUID then
         for i = 1, 40 do
             if debuffIndex > MAX_DEBUFFS then break end
-            local texture, count, expirationTime, duration, isMine = UnitAura(unitstr, i, "HARMFUL")
+            
+            -- In SuperWoW, UnitAura might be nil, use UnitBuff/UnitDebuff with 3+ return values
+            -- UnitDebuff(unit, index) returns texture, count, expirationTime, duration, isMine in SuperWow
+            local UnitAuraFunc = UnitAura or UnitDebuff
+            if not UnitAuraFunc then break end
+            local texture, count, expirationTime, duration, isMine = UnitAuraFunc(unitstr, i, "HARMFUL")
             if not texture then break end
             
-            if isMine then
-                local debuff = nameplate.debuffs[debuffIndex]
-                debuff.icon:SetTexture(texture)
-                
-                if expirationTime and expirationTime > 0 then
-                    local timeLeft = expirationTime - GetTime()
-                    if timeLeft > 0 then
-                        debuff.cd:SetText(FormatTime(timeLeft))
-                    else
-                        debuff.cd:SetText("")
-                    end
+            -- Show all debuffs, same as ShaguPlates (relaxed filter)
+            local debuff = nameplate.debuffs[debuffIndex]
+            debuff.icon:SetTexture(texture)
+            
+            if expirationTime and expirationTime > 0 then
+                local timeLeft = expirationTime - GetTime()
+                if timeLeft > 0 then
+                    debuff.cd:SetText(FormatTime(timeLeft))
                 else
                     debuff.cd:SetText("")
                 end
-                
-                debuff:Show()
-                debuffIndex = debuffIndex + 1
+            elseif duration and duration > 0 then
+                -- Some SuperWoW versions might return duration but not expirationTime for some spells
+                debuff.cd:SetText("")
+            else
+                debuff.cd:SetText("")
             end
+            
+            debuff:Show()
+            debuffIndex = debuffIndex + 1
         end
     elseif plateName then
         -- Fallback for non-SuperWoW: use debuffTracker for all nameplates
@@ -830,12 +897,8 @@ local function UpdateNamePlate(frame)
                     -- Check for common debuffs on this target
                     for key, data in pairs(debuffTracker) do
                         if data.unit == targetName and data.endTime > GetTime() then
-                            -- Since we don't have texture in tracker, and UnitDebuff only gives texture,
-                            -- this is still a bit of a guess if there are multiple debuffs.
-                            -- However, for the player's own target, it's often correct enough.
-                            -- To improve, we could try to map texture -> spell name.
-                            -- For now, let's just show the first matching timer that isn't used yet.
-                            if not data.usedThisFrame then
+                            -- Match by texture if available in tracker
+                            if (not data.texture or data.texture == texture) and not data.usedThisFrame then
                                 debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
                                 data.usedThisFrame = true
                                 foundTimer = true
@@ -851,18 +914,6 @@ local function UpdateNamePlate(frame)
 
                 debuff:Show()
                 debuffIndex = debuffIndex + 1
-            end
-        else
-            -- Not target: only use debuffTracker based on plateName
-            for key, data in pairs(debuffTracker) do
-                if debuffIndex > MAX_DEBUFFS then break end
-                if data.unit == plateName and data.endTime > GetTime() and data.texture then
-                    local debuff = nameplate.debuffs[debuffIndex]
-                    debuff.icon:SetTexture(data.texture)
-                    debuff.cd:SetText(FormatTime(data.endTime - GetTime()))
-                    debuff:Show()
-                    debuffIndex = debuffIndex + 1
-                end
             end
         end
     end
@@ -1055,12 +1106,61 @@ GudaPlates:SetScript("OnEvent", function()
             -- Many mob spells are around 2-3 seconds
             local duration = 2000
             
-            castTracker[unit] = {
+            local castIcons = {
+                ["Fireball"] = "Interface\\Icons\\Spell_Fire_FlameBolt",
+                ["Frostbolt"] = "Interface\\Icons\\Spell_Frost_FrostBolt02",
+                ["Shadow Bolt"] = "Interface\\Icons\\Spell_Shadow_ShadowBolt",
+                ["Greater Heal"] = "Interface\\Icons\\Spell_Holy_GreaterHeal",
+                ["Flash Heal"] = "Interface\\Icons\\Spell_Holy_FlashHeal",
+                ["Lightning Bolt"] = "Interface\\Icons\\Spell_Nature_Lightning",
+                ["Chain Lightning"] = "Interface\\Icons\\Spell_Nature_ChainLightning",
+                ["Earthbind Totem"] = "Interface\\Icons\\Spell_Nature_StrengthOfEarthTotem02",
+                ["Healing Wave"] = "Interface\\Icons\\Spell_Nature_MagicImmunity",
+                ["Fear"] = "Interface\\Icons\\Spell_Shadow_Possession",
+                ["Polymorph"] = "Interface\\Icons\\Spell_Nature_Polymorph",
+                ["Scorching Totem"] = "Interface\\Icons\\Spell_Fire_ScorchingTotem",
+                ["Slowing Poison"] = "Interface\\Icons\\Ability_PoisonSting",
+                ["Web"] = "Interface\\Icons\\Ability_Ensnare",
+                ["Cursed Blood"] = "Interface\\Icons\\Spell_Shadow_RitualOfSacrifice",
+                ["Shrink"] = "Interface\\Icons\\Spell_Shadow_AntiShadow",
+                ["Shadow Weaving"] = "Interface\\Icons\\Spell_Shadow_BlackPlague",
+                ["Smite"] = "Interface\\Icons\\Spell_Holy_HolySmite",
+                ["Mind Blast"] = "Interface\\Icons\\Spell_Shadow_UnholyFrenzy",
+                ["Holy Light"] = "Interface\\Icons\\Spell_Holy_HolyLight",
+                ["Starfire"] = "Interface\\Icons\\Spell_Arcane_StarFire",
+                ["Wrath"] = "Interface\\Icons\\Spell_Nature_AbolishMagic",
+                ["Entangling Roots"] = "Interface\\Icons\\Spell_Nature_StrangleVines",
+                ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
+                ["Regrowth"] = "Interface\\Icons\\Spell_Nature_ResistNature",
+                ["Rejuvenation"] = "Interface\\Icons\\Spell_Nature_Rejuvenation",
+            }
+            
+            -- Store multiple casts per name to support same-named mobs
+            if not castTracker[unit] then castTracker[unit] = {} end
+            
+            -- If we have a target with this name, assume it's the one casting
+            local targetID = nil
+            if UnitExists("target") and UnitName("target") == unit then
+                -- Find the nameplate for the target
+                for plate, nameplate in pairs(registry) do
+                    if plate:IsShown() and plate:GetAlpha() == 1 then
+                        targetID = tostring(plate)
+                        break
+                    end
+                end
+            end
+
+            -- Create cast entry
+            local newCast = {
                 spell = spell,
                 startTime = GetTime(),
                 duration = duration,
-                -- icon = nil -- We don't have icons easily without a DB
+                icon = castIcons[spell],
+                targetID = targetID -- If we identified a specific plate
             }
+            
+            -- Add to list of active casts for this name
+            table.insert(castTracker[unit], newCast)
         end
         
         -- Check for interrupts/failures
@@ -1072,7 +1172,8 @@ GudaPlates:SetScript("OnEvent", function()
         end
         
         if interruptedUnit and castTracker[interruptedUnit] then
-            castTracker[interruptedUnit] = nil
+            -- Remove the oldest cast for this unit (or try to match spell if we had it in the log message)
+            table.remove(castTracker[interruptedUnit], 1)
         end
 
         -- Debuff tracking for non-SuperWoW
