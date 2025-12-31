@@ -167,9 +167,9 @@ local function UpdateNamePlateDimensions(frame)
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below debuffs (2pt gap)
+        -- Adjust castbar to be on top of name (covering it)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 4))
+        nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
     else
         -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
@@ -181,9 +181,9 @@ local function UpdateNamePlateDimensions(frame)
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below name (2pt gap)
+        -- Adjust castbar to be on top of name (covering it)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
+        nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
     end
     
     -- When stacking, we also need to update the parent frame size
@@ -354,11 +354,11 @@ local function HandleNamePlate(frame)
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     nameplate.castbar:SetHeight(8)
-    nameplate.castbar:SetStatusBarColor(1, 0.7, 0, 1)
+    nameplate.castbar:SetStatusBarColor(1, 0.8, 0, 1) -- Gold/Yellow color
     nameplate.castbar:Hide()
     
     nameplate.castbar.bg = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
-    nameplate.castbar.bg:SetTexture(0, 0, 0, 0.8)
+    nameplate.castbar.bg:SetTexture(0, 0, 0, 1.0)
     nameplate.castbar.bg:SetAllPoints()
     
     nameplate.castbar.border = nameplate.castbar:CreateTexture(nil, "OVERLAY")
@@ -368,14 +368,27 @@ local function HandleNamePlate(frame)
     nameplate.castbar.border:SetDrawLayer("BACKGROUND", -1)
     
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 7, "OUTLINE")
-    nameplate.castbar.text:SetPoint("CENTER", nameplate.castbar, "CENTER", 0, 0)
+    nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
+    nameplate.castbar.text:SetJustifyH("LEFT")
+
+    nameplate.castbar.timer = nameplate.castbar:CreateFontString(nil, "OVERLAY")
+    nameplate.castbar.timer:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.timer:SetPoint("RIGHT", nameplate.castbar, "RIGHT", -2, 0)
+    nameplate.castbar.timer:SetTextColor(1, 1, 1, 1)
+    nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
-    nameplate.castbar.icon:SetWidth(12)
-    nameplate.castbar.icon:SetHeight(12)
-    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.castbar, "LEFT", -2, 0)
+    nameplate.castbar.icon:SetWidth(healthbarHeight + 8) -- Make it square and slightly taller than healthbar
+    nameplate.castbar.icon:SetHeight(healthbarHeight + 8)
+    nameplate.castbar.icon:SetPoint("LEFT", nameplate.castbar, "LEFT", -2, 0)
+    nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    nameplate.castbar.icon.border = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
+    nameplate.castbar.icon.border:SetTexture(0, 0, 0, 1)
+    nameplate.castbar.icon.border:SetPoint("TOPLEFT", nameplate.castbar.icon, "TOPLEFT", -1, 1)
+    nameplate.castbar.icon.border:SetPoint("BOTTOMRIGHT", nameplate.castbar.icon, "BOTTOMRIGHT", 1, -1)
 
     -- Debuff icons
     nameplate.debuffs = {}
@@ -743,8 +756,19 @@ local function UpdateNamePlate(frame)
             nameplate.castbar:SetMinMaxValues(0, duration)
             nameplate.castbar:SetValue((now - start) * 1000)
             nameplate.castbar.text:SetText(casting.spell)
-            -- Always hide the icon as requested by user
-            nameplate.castbar.icon:Hide()
+            
+            local timeLeft = (start + (duration / 1000)) - now
+            nameplate.castbar.timer:SetText(string.format("%.1fs", timeLeft))
+
+            if casting.icon then
+                nameplate.castbar.icon:SetTexture(casting.icon)
+                nameplate.castbar.icon:Show()
+                if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
+            else
+                nameplate.castbar.icon:Hide()
+                if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Hide() end
+            end
+            
             nameplate.castbar:Show()
         else
             nameplate.castbar:Hide()
@@ -862,7 +886,7 @@ local function UpdateNamePlate(frame)
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
                 
                 nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 4))
+                nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
             else
                 -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 2)
@@ -872,7 +896,7 @@ local function UpdateNamePlate(frame)
                 nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
                 
                 nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("TOP", nameplate.name, "BOTTOM", 0, -2)
+                nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
             end
         end
     else
