@@ -28,6 +28,10 @@ local showDebuffTimers = true -- Toggle for debuff countdowns
 -- Debuff tracking for non-SuperWoW
 local debuffTracker = {}
 
+-- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
+-- This prevents timer reset every frame
+local debuffTimers = {}
+
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
 
@@ -67,6 +71,9 @@ local THREAT_COLORS = {
         OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
     },
 }
+
+-- Load spell database if available
+local SpellDB = GudaPlates_SpellDB
 
 local function IsNamePlate(frame)
     if not frame then return nil end
@@ -157,7 +164,7 @@ local function UpdateNamePlateDimensions(frame)
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
     if swapNameDebuff then
-        -- Name above
+    -- Name above
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
         -- Debuffs below
         for i = 1, MAX_DEBUFFS do
@@ -172,7 +179,7 @@ local function UpdateNamePlateDimensions(frame)
         nameplate.castbar:ClearAllPoints()
         nameplate.castbar:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
     else
-        -- Default: Name below, Debuffs above
+    -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
@@ -196,12 +203,38 @@ local function UpdateNamePlateDimensions(frame)
         frame:SetHeight(npHeight)
         nameplate:SetAllPoints(frame)
     else
-        -- In overlap mode, frame is 1x1 but nameplate should be clickable
+    -- In overlap mode, frame is 1x1 but nameplate should be clickable
         nameplate:ClearAllPoints()
         nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
         nameplate:SetWidth(healthbarWidth)
         nameplate:SetHeight(healthbarHeight + 20)
     end
+end
+
+
+local function round(input, places)
+    if not places then places = 0 end
+    if type(input) == "number" and type(places) == "number" then
+        local pow = 1
+        for i = 1, places do pow = pow * 10 end
+        return math.floor(input * pow + 0.5) / pow
+    end
+end
+
+local function FormatTime(remaining)
+    if not remaining or remaining < 0 then return "", 1, 1, 1, 1 end
+    if remaining > 356400 then -- 99 hours
+        return round(remaining / 86400) .. "d", 0.2, 0.2, 1, 1
+    elseif remaining > 5940 then -- 99 minutes
+        return round(remaining / 3600) .. "h", 0.2, 0.5, 1, 1
+    elseif remaining > 99 then
+        return round(remaining / 60) .. "m", 0.2, 1, 1, 1
+    elseif remaining > 5 then
+        return round(remaining) .. "", 1, 1, 1, 1
+    elseif remaining > 0 then
+        return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
+    end
+    return "", 1, 1, 1, 1
 end
 
 local function HandleNamePlate(frame)
@@ -241,10 +274,10 @@ local function HandleNamePlate(frame)
         if region and region.GetObjectType then
             local rtype = region:GetObjectType()
             if i == 2 then
-                -- 2nd region is glow texture
+            -- 2nd region is glow texture
                 nameplate.original.glow = region
             elseif i == 6 then
-                -- 6th region is raid icon
+            -- 6th region is raid icon
                 nameplate.original.raidicon = region
             elseif rtype == "FontString" then
                 local text = region:GetText()
@@ -411,25 +444,32 @@ local function HandleNamePlate(frame)
         debuff.border:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, -1)
         debuff.border:SetDrawLayer("BACKGROUND")
 
+        -- Create a container frame for countdown text (ensure proper layering)
+        debuff.cdframe = CreateFrame("Frame", nil, debuff)
+        debuff.cdframe:SetAllPoints(debuff)
+        debuff.cdframe:SetFrameLevel(debuff:GetFrameLevel() + 2)
+
         -- Text on top of the icon
-        debuff.cd = debuff:CreateFontString(nil, "OVERLAY")
+        debuff.cd = debuff.cdframe:CreateFontString(nil, "OVERLAY")
         debuff.cd:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-        debuff.cd:SetPoint("CENTER", debuff, "CENTER", 0, 1)
+        debuff.cd:SetPoint("CENTER", debuff.cdframe, "CENTER", 0, 0)
         debuff.cd:SetTextColor(1, 1, 1, 1)
         debuff.cd:SetText("")
+        debuff.cd:SetDrawLayer("OVERLAY", 7)
 
-        debuff.count = debuff:CreateFontString(nil, "OVERLAY")
-        debuff.count:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-        debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 0, 0)
+        debuff.count = debuff.cdframe:CreateFontString(nil, "OVERLAY")
+        debuff.count:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, 0)
         debuff.count:SetTextColor(1, 1, 1, 1)
         debuff.count:SetText("")
+        debuff.count:SetDrawLayer("OVERLAY", 7)
 
         debuff:SetScript("OnUpdate", function()
             local now = GetTime()
             if (this.tick or 0) > now then return else this.tick = now + 0.1 end
 
             if not this.expirationTime or this.expirationTime == 0 then
-                if this.cd:GetAlpha() > 0 then
+                if this.cd and this.cd:GetAlpha() > 0 then
                     this.cd:SetText("")
                     this.cd:SetAlpha(0)
                 end
@@ -440,16 +480,20 @@ local function HandleNamePlate(frame)
 
             if timeLeft > 0 then
                 local text, r, g, b, a = FormatTime(timeLeft)
-                this.cd:SetText(text)
-                if r then
-                    this.cd:SetTextColor(r, g, b, a or 1)
-                end
-                if this.cd:GetAlpha() < 1 then
-                    this.cd:SetAlpha(1)
+                if this.cd and text and text ~= "" then
+                    this.cd:SetText(text)
+                    if r then
+                        this.cd:SetTextColor(r, g, b, a or 1)
+                    end
+                    if this.cd:GetAlpha() < 1 then
+                        this.cd:SetAlpha(1)
+                    end
                 end
             else
-                this.cd:SetText("")
-                this.cd:SetAlpha(0)
+                if this.cd then
+                    this.cd:SetText("")
+                    this.cd:SetAlpha(0)
+                end
                 this.expirationTime = 0
             end
         end)
@@ -466,31 +510,7 @@ local function HandleNamePlate(frame)
     Print("Hooked: " .. platename)
 end
 
-local function round(input, places)
-    if not places then places = 0 end
-    if type(input) == "number" and type(places) == "number" then
-        local pow = 1
-        for i = 1, places do pow = pow * 10 end
-        return math.floor(input * pow + 0.5) / pow
-    end
-end
 
-local function FormatTime(remaining)
-    if not remaining or remaining < 0 then return "" end
-
-    if remaining > 356400 then -- 99 hours
-        return round(remaining / 86400) .. "d", 0.2, 0.2, 1 -- Day color (Dark Blue-ish)
-    elseif remaining > 5940 then -- 99 minutes
-        return round(remaining / 3600) .. "h", 0.2, 0.5, 1 -- Hour color (Blue)
-    elseif remaining > 99 then
-        return round(remaining / 60) .. "m", 0.2, 1, 1 -- Minute color (Cyan)
-    elseif remaining > 5 then
-        return round(remaining) .. "", 1, 1, 1 -- Normal color (White)
-    elseif remaining > 0 then
-        return string.format("%.1f", remaining), 1, 0.2, 0.2 -- Low color (Red)
-    end
-    return ""
-end
 
 local function UpdateNamePlate(frame)
     local nameplate = frame.nameplate
@@ -508,7 +528,7 @@ local function UpdateNamePlate(frame)
         if region and region.GetObjectType then
             local otype = region:GetObjectType()
             if otype == "Texture" then
-                -- Skip raid icons - we reparented them
+            -- Skip raid icons - we reparented them
                 if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
                     region:SetAlpha(0)
                 end
@@ -521,8 +541,8 @@ local function UpdateNamePlate(frame)
     -- Hide all other children frames (like Blizzard or other addon castbars)
     for i, child in ipairs({frame:GetChildren()}) do
         if child and child ~= nameplate and child ~= original.healthbar then
-            -- Only hide if it's not a known useful child (like the original castbar if we want it)
-            -- ShaguPlates disables the original castbar explicitly.
+        -- Only hide if it's not a known useful child (like the original castbar if we want it)
+        -- ShaguPlates disables the original castbar explicitly.
             if child.SetAlpha then child:SetAlpha(0) end
             if child.Hide then child:Hide() end
         end
@@ -611,7 +631,7 @@ local function UpdateNamePlate(frame)
             nameplate.isAttackingPlayer = true
             nameplate.lastAttackTime = GetTime()
         else
-            -- Check if this specific plate was recently attacking
+        -- Check if this specific plate was recently attacking
             if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
                 isAttackingPlayer = true
             else
@@ -619,10 +639,10 @@ local function UpdateNamePlate(frame)
             end
         end
     else
-        -- Fallback: use name-based tracking (has same-name mob limitation)
+    -- Fallback: use name-based tracking (has same-name mob limitation)
         if plateName then
-            -- Use original glow texture as primary indicator if available
-            -- Glow usually appears when unit is in combat and has threat
+        -- Use original glow texture as primary indicator if available
+        -- Glow usually appears when unit is in combat and has threat
             if hasAggroGlow then
                 isAttackingPlayer = true
                 nameplate.isAttackingPlayer = true
@@ -636,16 +656,16 @@ local function UpdateNamePlate(frame)
 
             -- If we're targeting this mob, verify and update tracking
             if UnitExists("target") and UnitName("target") == plateName then
-                -- Check if target is actually this nameplate (alpha check is a common vanilla trick)
-                -- Usually target nameplate has alpha 1.0, others might be 0.x
-                -- Note: GetAlpha might be affected by UI modifications, but 1.0 is default for target
+            -- Check if target is actually this nameplate (alpha check is a common vanilla trick)
+            -- Usually target nameplate has alpha 1.0, others might be 0.x
+            -- Note: GetAlpha might be affected by UI modifications, but 1.0 is default for target
                 if frame:GetAlpha() > 0.9 then
                     if UnitExists("targettarget") and UnitIsUnit("targettarget", "player") then
                         nameplate.isAttackingPlayer = true
                         nameplate.lastAttackTime = GetTime()
                         isAttackingPlayer = true
                     elseif UnitExists("targettarget") and not UnitIsUnit("targettarget", "player") then
-                        -- Mob is targeting someone else, clear tracking
+                    -- Mob is targeting someone else, clear tracking
                         nameplate.isAttackingPlayer = false
                         nameplate.lastAttackTime = nil
                         isAttackingPlayer = false
@@ -668,7 +688,7 @@ local function UpdateNamePlate(frame)
     local threatStatus = 0
 
     if twthreat_active and unitstr and isHostile then
-        -- UnitThreat returns: isTanking, status, threatpct, rawthreatpct, threatvalue
+    -- UnitThreat returns: isTanking, status, threatpct, rawthreatpct, threatvalue
         local tanking, status, pct = UnitThreat("player", unitstr)
         if tanking ~= nil then
             isTanking = tanking
@@ -681,51 +701,51 @@ local function UpdateNamePlate(frame)
     if isFriendly then
         nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
     elseif isNeutral and not isAttackingPlayer then
-        -- Neutral and not attacking - yellow
+    -- Neutral and not attacking - yellow
         nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
     elseif isHostile or (isNeutral and isAttackingPlayer) then
-        -- Hostile OR neutral that is attacking player
-        -- Check if mob is in combat (has a target)
+    -- Hostile OR neutral that is attacking player
+    -- Check if mob is in combat (has a target)
         local mobInCombat = false
 
         if hasValidGUID then
             local mobTarget = unitstr .. "target"
             mobInCombat = UnitExists(mobTarget)
         else
-            -- Fallback: assume in combat if attacking player or we have threat data or has glow
+        -- Fallback: assume in combat if attacking player or we have threat data or has glow
             mobInCombat = isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow
         end
 
         if not mobInCombat then
-            -- Not in combat - default hostile red
+        -- Not in combat - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif hasValidGUID and twthreat_active then
-            -- Full threat-based coloring (mob is in combat, has GUID and threat data)
+        -- Full threat-based coloring (mob is in combat, has GUID and threat data)
             if playerRole == "TANK" then
                 if isTanking or isAttackingPlayer then
-                    -- Tank has aggro (GOOD)
+                -- Tank has aggro (GOOD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 elseif threatPct > 80 then
-                    -- Losing aggro (WARNING)
+                -- Losing aggro (WARNING)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 else
-                    -- No aggro, need to taunt (BAD)
+                -- No aggro, need to taunt (BAD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                 end
             else -- DPS/Healer
                 if isAttackingPlayer or isTanking then
-                    -- Mob attacking you (BAD)
+                -- Mob attacking you (BAD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 elseif threatPct > 80 then
-                    -- High threat, about to pull (WARNING)
+                -- High threat, about to pull (WARNING)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
-                    -- Tank has aggro (GOOD)
+                -- Tank has aggro (GOOD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
             end
         elseif hasValidGUID then
-            -- Has GUID but no TWThreat - use targeting-based colors
+        -- Has GUID but no TWThreat - use targeting-based colors
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
@@ -740,7 +760,7 @@ local function UpdateNamePlate(frame)
                 end
             end
         else
-            -- No GUID (no SuperWoW) - fallback with name-based detection (has same-name limitation)
+        -- No GUID (no SuperWoW) - fallback with name-based detection (has same-name limitation)
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
@@ -770,7 +790,7 @@ local function UpdateNamePlate(frame)
     if UnitExists("target") and plateName then
         local targetName = UnitName("target")
         if targetName and targetName == plateName then
-            -- Additional check: verify via alpha (target nameplate has alpha 1)
+        -- Additional check: verify via alpha (target nameplate has alpha 1)
             if frame:GetAlpha() == 1 then
                 isTarget = true
             end
@@ -798,7 +818,7 @@ local function UpdateNamePlate(frame)
     -- Update Cast Bar
     local casting = nil
     if superwow_active and hasValidGUID then
-        -- Try UnitCastingInfo/UnitChannelInfo first (SuperWoW 1.5+)
+    -- Try UnitCastingInfo/UnitChannelInfo first (SuperWoW 1.5+)
         if UnitCastingInfo then
             local spell, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(unitstr)
             if spell then
@@ -824,30 +844,30 @@ local function UpdateNamePlate(frame)
         end
 
         if not casting then
-            -- Fallback to SpellInfo
+        -- Fallback to SpellInfo
             casting = SpellInfo(unitstr)
             if not casting and plateName then
                 casting = SpellInfo(plateName)
             end
         end
     elseif plateName and castTracker[plateName] then
-        -- Fallback: handle multiple same-named mobs
+    -- Fallback: handle multiple same-named mobs
         local now = GetTime()
         local myID = tostring(frame)
 
         -- Find a suitable cast for this plate
         for i, cast in ipairs(castTracker[plateName]) do
-            -- Check if cast expired
+        -- Check if cast expired
             if now > cast.startTime + (cast.duration / 1000) then
                 table.remove(castTracker[plateName], i)
             else
-                -- Try to match by ID if possible
+            -- Try to match by ID if possible
                 local isMatch = false
                 if cast.targetID == myID then
                     isMatch = true
                 elseif not cast.targetID and (isTarget or isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow) then
-                    -- If no specific ID assigned, and this mob is in combat, it's a candidate
-                    -- We check if another plate already "claimed" this cast this frame
+                -- If no specific ID assigned, and this mob is in combat, it's a candidate
+                -- We check if another plate already "claimed" this cast this frame
                     if not cast.claimedBy or cast.claimedBy == myID or (now - (cast.lastClaimTime or 0) > 0.1) then
                         isMatch = true
                     end
@@ -914,24 +934,8 @@ local function UpdateNamePlate(frame)
         for i = 1, 40 do
             if debuffIndex > MAX_DEBUFFS then break end
 
-            local results = { UnitDebuff(unitstr, i) }
-            if not results[1] then break end
-
-            local texture, count, expirationTime, duration
-            if type(results[1]) == "string" and (string.find(results[1], "\\") or string.find(results[1], "/")) then
-                -- Looks like Vanilla-style: texture is first
-                texture = results[1]
-                count = results[2]
-                expirationTime = results[3]
-                duration = results[4]
-            else
-                -- Looks like 2.0-style: name is first, texture is 3rd
-                texture = results[3]
-                count = results[4]
-                duration = results[6]
-                expirationTime = results[7]
-            end
-
+            -- In Vanilla WoW 1.12.1, UnitDebuff returns: texture, count, applications, spellId
+            local texture, count = UnitDebuff(unitstr, i)
             if not texture then break end
 
             local debuff = nameplate.debuffs[debuffIndex]
@@ -946,33 +950,80 @@ local function UpdateNamePlate(frame)
                 debuff.count:SetAlpha(0)
             end
 
-            local expirationTimestamp = 0
-            if expirationTime and expirationTime > 0 then
-                -- Heuristic to determine if it's relative or absolute
-                if expirationTime > (GetTime() + 3600 * 24) then
-                    -- Likely absolute milliseconds
-                    expirationTimestamp = expirationTime / 1000
-                elseif expirationTime > GetTime() then
-                    -- Likely absolute seconds
-                    expirationTimestamp = expirationTime
-                else
-                    -- Likely relative seconds
-                    expirationTimestamp = GetTime() + expirationTime
-                end
-            elseif duration and duration > 0 then
-                expirationTimestamp = GetTime() + duration
+            -- Get duration from spell database
+            local duration = nil
+            if SpellDB then
+                duration = SpellDB:GetDurationFromTexture(texture)
             end
 
-            if expirationTimestamp > 0 and showDebuffTimers then
-                debuff.expirationTime = expirationTimestamp
-                -- Ensure text is shown immediately
-                local text, r, g, b, a = FormatTime(expirationTimestamp - GetTime())
-                debuff.cd:SetText(text)
-                if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                debuff.cd:SetAlpha(1)
+            -- Fallback: use defaults based on texture hints
+            if not duration then
+                if texture and (string.find(texture, "Stun") or string.find(texture, "Gouge") or string.find(texture, "Kidney") or string.find(texture, "Cheap")) then
+                    duration = 4 -- Short CC
+                elseif texture and (string.find(texture, "Fear") or string.find(texture, "Polymorph") or string.find(texture, "Sap") or string.find(texture, "Hibernate")) then
+                    duration = 20 -- Long CC
+                elseif texture and (string.find(texture, "Poison") or string.find(texture, "Curse") or string.find(texture, "Corruption") or string.find(texture, "Immolate")) then
+                    duration = 18 -- DoTs
+                elseif texture and string.find(texture, "ShockWave") then
+                    duration = 30 -- Thunder Clap
+                elseif texture and string.find(texture, "FrostNova") then
+                    duration = 8 -- Frost Nova
+                else
+                    duration = 15 -- Default
+                end
+            end
+
+            -- Create unique key for this debuff on this target
+            -- Use GUID if available (SuperWoW), otherwise use plateName
+            local targetKey = unitstr or plateName or tostring(frame)
+            local debuffKey = targetKey .. "_" .. texture
+
+            -- Only set start time if we're NOT already tracking this debuff
+            -- This is the critical fix: don't reset timer every frame!
+            local now = GetTime()
+            if not debuffTimers[debuffKey] then
+                debuffTimers[debuffKey] = {
+                    startTime = now,
+                    duration = duration
+                }
+            end
+
+            -- Calculate expiration from the ORIGINAL start time
+            local tracked = debuffTimers[debuffKey]
+            local expirationTimestamp = tracked.startTime + tracked.duration
+
+            -- Mark this debuff as "seen this frame" for cleanup
+            tracked.lastSeen = now
+
+            if showDebuffTimers then
+                local timeLeft = expirationTimestamp - now
+                if timeLeft > 0 then
+                    debuff.expirationTime = expirationTimestamp
+                    local text, r, g, b, a = FormatTime(timeLeft)
+                    if debuff.cd and text and text ~= "" then
+                        debuff.cd:SetText(text)
+                        if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                        debuff.cd:SetAlpha(1)
+                        debuff.cd:Show()
+                    end
+                    if debuff.cdframe then
+                        debuff.cdframe:Show()
+                    end
+                else
+                    -- Timer expired, clean up tracking
+                    debuffTimers[debuffKey] = nil
+                    debuff.expirationTime = 0
+                    if debuff.cd then
+                        debuff.cd:SetText("")
+                        debuff.cd:SetAlpha(0)
+                    end
+                end
             else
                 debuff.expirationTime = 0
-                debuff.cd:SetAlpha(0)
+                if debuff.cd then
+                    debuff.cd:SetText("")
+                    debuff.cd:SetAlpha(0)
+                end
             end
 
             debuff:Show()
@@ -980,8 +1031,8 @@ local function UpdateNamePlate(frame)
             debuffIndex = debuffIndex + 1
         end
     elseif plateName then
-        -- Fallback for non-SuperWoW: use debuffTracker for all nameplates
-        -- Also use UnitDebuff if it's the target for better accuracy
+    -- Fallback for non-SuperWoW: use debuffTracker for all nameplates
+    -- Also use UnitDebuff if it's the target for better accuracy
         if isTarget then
             for i = 1, 16 do
                 if debuffIndex > MAX_DEBUFFS then break end
@@ -1000,34 +1051,77 @@ local function UpdateNamePlate(frame)
                     debuff.count:SetAlpha(0)
                 end
 
-                -- Try to find timer in our local tracker (by unit name match)
-                local foundTimer = false
-                local targetName = UnitName("target")
-                if targetName then
-                    -- Check for common debuffs on this target
-                    for key, data in pairs(debuffTracker) do
-                        if data.unit == targetName and data.endTime > GetTime() then
-                            -- Match by texture if available in tracker
-                            if (not data.texture or data.texture == texture) and not data.usedThisFrame then
-                                if showDebuffTimers then
-                                    debuff.expirationTime = data.endTime
-                                    -- Ensure cd text is shown
-                                    local text, r, g, b, a = FormatTime(data.endTime - GetTime())
-                                    debuff.cd:SetText(text)
-                                    if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                                    debuff.cd:SetAlpha(1)
-                                    foundTimer = true
-                                end
-                                data.usedThisFrame = true
-                                break
-                            end
-                        end
+                -- Get duration from spell database or use defaults
+                local duration = nil
+                if SpellDB then
+                    duration = SpellDB:GetDurationFromTexture(texture)
+                end
+
+                -- Fallback: use defaults based on texture hints
+                if not duration then
+                    if texture and (string.find(texture, "Stun") or string.find(texture, "Gouge") or string.find(texture, "Kidney") or string.find(texture, "Cheap")) then
+                        duration = 4 -- Short CC
+                    elseif texture and (string.find(texture, "Fear") or string.find(texture, "Polymorph") or string.find(texture, "Sap") or string.find(texture, "Hibernate")) then
+                        duration = 20 -- Long CC
+                    elseif texture and (string.find(texture, "Poison") or string.find(texture, "Curse") or string.find(texture, "Corruption") or string.find(texture, "Immolate")) then
+                        duration = 18 -- DoTs
+                    elseif texture and string.find(texture, "ShockWave") then
+                        duration = 30 -- Thunder Clap
+                    elseif texture and string.find(texture, "FrostNova") then
+                        duration = 8 -- Frost Nova
+                    else
+                        duration = 15 -- Default
                     end
                 end
 
-                if not foundTimer then
+                -- Create unique key for this debuff on this target
+                local debuffKey = plateName .. "_" .. texture
+
+                -- Only set start time if we're NOT already tracking this debuff
+                local now = GetTime()
+                if not debuffTimers[debuffKey] then
+                    debuffTimers[debuffKey] = {
+                        startTime = now,
+                        duration = duration
+                    }
+                end
+
+                -- Calculate expiration from the ORIGINAL start time
+                local tracked = debuffTimers[debuffKey]
+                local expirationTimestamp = tracked.startTime + tracked.duration
+
+                -- Mark this debuff as "seen this frame" for cleanup
+                tracked.lastSeen = now
+
+                if showDebuffTimers then
+                    local timeLeft = expirationTimestamp - now
+                    if timeLeft > 0 then
+                        debuff.expirationTime = expirationTimestamp
+                        local text, r, g, b, a = FormatTime(timeLeft)
+                        if debuff.cd and text and text ~= "" then
+                            debuff.cd:SetText(text)
+                            if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                            debuff.cd:SetAlpha(1)
+                            debuff.cd:Show()
+                        end
+                        if debuff.cdframe then
+                            debuff.cdframe:Show()
+                        end
+                    else
+                        -- Timer expired, clean up tracking
+                        debuffTimers[debuffKey] = nil
+                        debuff.expirationTime = 0
+                        if debuff.cd then
+                            debuff.cd:SetText("")
+                            debuff.cd:SetAlpha(0)
+                        end
+                    end
+                else
                     debuff.expirationTime = 0
-                    debuff.cd:SetAlpha(0)
+                    if debuff.cd then
+                        debuff.cd:SetText("")
+                        debuff.cd:SetAlpha(0)
+                    end
                 end
 
                 debuff:Show()
@@ -1048,7 +1142,7 @@ local function UpdateNamePlate(frame)
             debuff:ClearAllPoints()
             local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
             if swapNameDebuff then
-                -- Debuffs below healthbar
+            -- Debuffs below healthbar
                 debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, -6)
 
                 -- Adjust name and castbar if they might overlap
@@ -1058,7 +1152,7 @@ local function UpdateNamePlate(frame)
                 nameplate.castbar:ClearAllPoints()
                 nameplate.castbar:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
             else
-                -- Debuffs above healthbar
+            -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
 
                 -- Adjust name and castbar
@@ -1070,7 +1164,7 @@ local function UpdateNamePlate(frame)
             end
         end
     else
-        -- Reset positions if no debuffs
+    -- Reset positions if no debuffs
         UpdateNamePlateDimensions(frame)
     end
 end
@@ -1105,11 +1199,26 @@ end
 local usingShaguTweaks = false
 local scanCount = 0
 local lastChildCount = 0
+-- Throttle for debuff timer cleanup
+local lastDebuffCleanup = 0
+
 GudaPlates:SetScript("OnUpdate", function()
-    -- Reset tracking flags for non-SuperWoW timers once per frame
+-- Reset tracking flags for non-SuperWoW timers once per frame
     if not superwow_active then
         for _, data in pairs(debuffTracker) do
             data.usedThisFrame = nil
+        end
+    end
+
+    -- Cleanup stale debuff timers every 1 second
+    -- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
+    local now = GetTime()
+    if now - lastDebuffCleanup > 1 then
+        lastDebuffCleanup = now
+        for key, data in pairs(debuffTimers) do
+            if data.lastSeen and (now - data.lastSeen > 2) then
+                debuffTimers[key] = nil
+            end
         end
     end
 
@@ -1124,7 +1233,7 @@ GudaPlates:SetScript("OnUpdate", function()
     if usingShaguTweaks then
         for plate, nameplate in pairs(registry) do
             if plate:IsShown() then
-                -- Apply overlap/stacking setting
+            -- Apply overlap/stacking setting
                 if nameplateOverlap then
                     plate:EnableMouse(false)
                     if plate:GetWidth() > 1 then
@@ -1160,38 +1269,38 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 
     for plate, nameplate in pairs(registry) do
-            if plate:IsShown() then
-                UpdateNamePlate(plate)
+        if plate:IsShown() then
+            UpdateNamePlate(plate)
 
-                -- Apply overlap/stacking setting
-                if nameplateOverlap then
-                    -- Overlapping: disable parent mouse and shrink to 1px
-                    -- This prevents game's collision avoidance from moving nameplates
-                    plate:EnableMouse(false)
+            -- Apply overlap/stacking setting
+            if nameplateOverlap then
+            -- Overlapping: disable parent mouse and shrink to 1px
+            -- This prevents game's collision avoidance from moving nameplates
+                plate:EnableMouse(false)
 
-                    if plate:GetWidth() > 1 then
-                        plate:SetWidth(1)
-                        plate:SetHeight(1)
-                    end
-
-                    -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                    -- Enable clicking on nameplate itself
-                    nameplate:EnableMouse(true)
-                else
-                    -- Stacking: restore parent frame size so game stacks them
-                    plate:EnableMouse(true)
-                    nameplate:EnableMouse(false)
+                if plate:GetWidth() > 1 then
+                    plate:SetWidth(1)
+                    plate:SetHeight(1)
                 end
 
-                -- Ensure dimensions are correct
-                UpdateNamePlateDimensions(plate)
+                -- Z-index is handled in UpdateNamePlate (target > attacking > others)
+                -- Enable clicking on nameplate itself
+                nameplate:EnableMouse(true)
+            else
+            -- Stacking: restore parent frame size so game stacks them
+                plate:EnableMouse(true)
+                nameplate:EnableMouse(false)
             end
+
+            -- Ensure dimensions are correct
+            UpdateNamePlateDimensions(plate)
+        end
     end
 end)
 
 GudaPlates:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
-        -- Clear trackers on zone/load
+    -- Clear trackers on zone/load
         debuffTracker = {}
         castTracker = {}
         Print("Initialized. Scanning...")
@@ -1205,8 +1314,8 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
     elseif not superwow_active and arg1 then
-        -- Fallback spell tracking using combat log messages
-        -- Pattern: "Unit begins to cast Spell." or "Unit begins to perform Spell."
+    -- Fallback spell tracking using combat log messages
+    -- Pattern: "Unit begins to cast Spell." or "Unit begins to perform Spell."
         local unit, spell = nil, nil
 
         -- Try "begins to cast"
@@ -1222,10 +1331,10 @@ GudaPlates:SetScript("OnEvent", function()
         end
 
         if unit and spell then
-            -- We don't have duration easily in Vanilla without a database
-            -- But we can assume some default or use a small library if we had one
-            -- For now, let's use a 2s default or try to find it if we can
-            -- Many mob spells are around 2-3 seconds
+        -- We don't have duration easily in Vanilla without a database
+        -- But we can assume some default or use a small library if we had one
+        -- For now, let's use a 2s default or try to find it if we can
+        -- Many mob spells are around 2-3 seconds
             local duration = 2000
 
             local castIcons = {
@@ -1263,7 +1372,7 @@ GudaPlates:SetScript("OnEvent", function()
             -- If we have a target with this name, assume it's the one casting
             local targetID = nil
             if UnitExists("target") and UnitName("target") == unit then
-                -- Find the nameplate for the target
+            -- Find the nameplate for the target
                 for plate, nameplate in pairs(registry) do
                     if plate:IsShown() and plate:GetAlpha() == 1 then
                         targetID = tostring(plate)
@@ -1294,72 +1403,46 @@ GudaPlates:SetScript("OnEvent", function()
         end
 
         if interruptedUnit and castTracker[interruptedUnit] then
-            -- Remove the oldest cast for this unit (or try to match spell if we had it in the log message)
+        -- Remove the oldest cast for this unit (or try to match spell if we had it in the log message)
             table.remove(castTracker[interruptedUnit], 1)
         end
 
         -- Debuff tracking for non-SuperWoW
         -- Pattern: "Unit is afflicted by Spell."
         for unit, spell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
-            -- We need a small database of durations or assume something
-            -- Let's use a very basic one for common spells
-            local durations = {
-                ["Corruption"] = 18,
-                ["Immolate"] = 15,
-                ["Curse of Agony"] = 24,
-                ["Siphon Life"] = 30,
-                ["Shadow Word: Pain"] = 18,
-                ["Rend"] = 15,
-                ["Deep Wound"] = 12,
-                ["Serpent Sting"] = 15,
-                ["Moonfire"] = 12,
-                ["Insect Swarm"] = 12,
-                ["Deadly Poison"] = 12,
-                ["Siphon Life"] = 30,
-                ["Shadow Word: Pain"] = 18,
-                ["Rend"] = 15,
-                ["Deep Wound"] = 12,
-                ["Serpent Sting"] = 15,
-                ["Moonfire"] = 12,
-                ["Insect Swarm"] = 12,
-                ["Deadly Poison"] = 12,
-                ["Fear"] = 20,
-                ["Polymorph"] = 20,
-                ["Hammer of Justice"] = 6,
-                ["Kidney Shot"] = 6,
-                ["Cheap Shot"] = 4,
-                ["Sap"] = 20,
-                ["Hibernate"] = 20,
-                ["Entangling Roots"] = 15,
-                ["Frost Nova"] = 8,
-                ["Slowing Poison"] = 12,
-            }
-            local duration = durations[spell] or 15
+        -- Try to find duration from database (this is tricky without texture)
+            local duration = 15 -- default fallback
+            local texture = nil
 
-            -- We don't have texture here, but we can try to guess it from spell name if we had a mapping
-            -- For now, we'll store it by unit and spell name.
-            -- Note: in Vanilla, textures for common spells are often predictable but we don't have a lookup table here.
-            -- However, UnitDebuff returns the texture, so we can match by texture in UpdateNamePlate if we know it.
-            -- To make it work, we'll store it and if a debuff with unknown timer appears, we try to match.
-            local textures = {
-                ["Corruption"] = "Interface\\Icons\\Spell_Shadow_AbominationExplosion",
-                ["Immolate"] = "Interface\\Icons\\Spell_Fire_Immolation",
-                ["Curse of Agony"] = "Interface\\Icons\\Spell_Shadow_CurseOfSargeras",
-                ["Siphon Life"] = "Interface\\Icons\\Spell_Shadow_Requiem",
-                ["Shadow Word: Pain"] = "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
-                ["Rend"] = "Interface\\Icons\\Ability_Gouge",
-                ["Deep Wound"] = "Interface\\Icons\\Ability_BackStab",
-                ["Serpent Sting"] = "Interface\\Icons\\Ability_Hunter_Quickshot",
-                ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
-                ["Insect Swarm"] = "Interface\\Icons\\Spell_Nature_InsectSwarm",
-                ["Deadly Poison"] = "Interface\\Icons\\Ability_Rogue_DualWield",
-            }
+            -- Try to guess texture based on spell name
+            if spell == "Gouge" then
+                duration = 4.5 -- Average Gouge duration
+                texture = "Interface\\Icons\\Ability_Gouge"
+            elseif spell == "Thunder Clap" then
+                duration = 30
+                texture = "Interface\\Icons\\Ability_ShockWave"
+            elseif spell == "Corruption" then
+                duration = 18
+                texture = "Interface\\Icons\\Spell_Shadow_AbominationExplosion"
+            elseif spell == "Immolate" then
+                duration = 15
+                texture = "Interface\\Icons\\Spell_Fire_Immolation"
+            elseif spell == "Frost Nova" then
+                duration = 8
+                texture = "Interface\\Icons\\Spell_Frost_FrostNova"
+            elseif spell == "Polymorph" then
+                duration = 20
+                texture = "Interface\\Icons\\Spell_Nature_Polymorph"
+            elseif spell == "Fear" then
+                duration = 20
+                texture = "Interface\\Icons\\Spell_Shadow_Possession"
+            end
 
             debuffTracker[unit .. spell] = {
                 endTime = GetTime() + duration,
                 spell = spell,
                 unit = unit,
-                texture = textures[spell],
+                texture = texture,
             }
         end
 
@@ -1949,6 +2032,21 @@ loadFrame:SetScript("OnEvent", function()
     LoadSettings()
     UpdateMinimapButtonPosition()
     Print("Settings loaded.")
+
+    -- Test the spell database
+    if SpellDB then
+        Print("✓ Spell database loaded successfully")
+        Print("  Functions available: " .. tostring(SpellDB.GetDurationFromTexture ~= nil))
+
+        -- Quick test
+        local testTex = "Interface\\Icons\\Ability_Gouge"
+        local duration = SpellDB:GetDurationFromTexture(testTex)
+        Print("  Test - " .. testTex .. " -> " .. tostring(duration) .. "s")
+    else
+        Print("✗ ERROR: Spell database not loaded!")
+        Print("  Check that GudaPlates_SpellDB.lua exists in AddOns folder")
+        Print("  Check .toc file includes: GudaPlates_SpellDB.lua")
+    end
 end)
 
 Print("Loaded. Use /gp tank or /gp dps to set role.")
