@@ -379,9 +379,14 @@ local function FormatTime(remaining)
         return round(remaining / 3600) .. "h", 0.2, 0.5, 1, 1
     elseif remaining > 99 then
         return round(remaining / 60) .. "m", 0.2, 1, 1, 1
-    elseif remaining > 5 then
+    elseif remaining > 10 then
+        -- White: more than 10 seconds
         return round(remaining) .. "", 1, 1, 1, 1
+    elseif remaining > 5 then
+        -- Yellow: 5-10 seconds
+        return round(remaining) .. "", 1, 1, 0, 1
     elseif remaining > 0 then
+        -- Red: less than 5 seconds
         return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
     end
     return "", 1, 1, 1, 1
@@ -1092,12 +1097,16 @@ local function UpdateNamePlate(frame)
             -- Try to get effect name and tracked data from SpellDB
             local effect, duration, timeleft = nil, nil, nil
             if SpellDB then
-                -- Try tooltip scanning (may fail with GUID, will fallback to "target" if it matches)
+                -- Try tooltip scanning (may fail with GUID, will fallback to "target" if GUID matches)
                 effect = SpellDB:ScanDebuff(unitstr, i)
 
-                -- If GUID scanning failed, try "target" if this nameplate is the target
-                if (not effect or effect == "") and plateName and UnitName("target") == plateName then
-                    effect = SpellDB:ScanDebuff("target", i)
+                -- If GUID scanning failed, try "target" ONLY if this exact GUID is the target
+                -- (not just same name - could be different mob with same name)
+                if (not effect or effect == "") then
+                    local targetGUID = UnitGUID and UnitGUID("target")
+                    if targetGUID and targetGUID == unitstr then
+                        effect = SpellDB:ScanDebuff("target", i)
+                    end
                 end
 
                 -- Last resort: try texture-to-spell cache directly
@@ -1105,47 +1114,54 @@ local function UpdateNamePlate(frame)
                     effect = SpellDB.textureToSpell[texture]
                 end
 
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[Display]|r plateName=" .. tostring(plateName) .. " effect=" .. tostring(effect) .. " hasObjects=" .. tostring(SpellDB.objects[plateName] ~= nil))
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[Display]|r unitstr=" .. tostring(unitstr) .. " plateName=" .. tostring(plateName) .. " effect=" .. tostring(effect))
 
                 -- Try to get tracked data from SpellDB.objects
-                if effect and effect ~= "" and plateName then
+                -- First try by GUID (unitstr), then by name (plateName)
+                if effect and effect ~= "" then
                     local unitlevel = UnitLevel(unitstr) or 0
                     local data = nil
 
-                    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[Display]|r Looking for objects[" .. tostring(plateName) .. "][" .. tostring(unitlevel) .. "][" .. tostring(effect) .. "]")
-
-                    if SpellDB.objects[plateName] then
-                        -- Try exact level, then level 0, then any level
-                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
-                            data = SpellDB.objects[plateName][unitlevel][effect]
-                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at exact level " .. unitlevel)
-                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
-                            data = SpellDB.objects[plateName][0][effect]
-                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at level 0")
+                    -- Try GUID lookup first (most accurate for multiple mobs with same name)
+                    if SpellDB.objects[unitstr] then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found objects by GUID")
+                        if SpellDB.objects[unitstr][unitlevel] and SpellDB.objects[unitstr][unitlevel][effect] then
+                            data = SpellDB.objects[unitstr][unitlevel][effect]
+                        elseif SpellDB.objects[unitstr][0] and SpellDB.objects[unitstr][0][effect] then
+                            data = SpellDB.objects[unitstr][0][effect]
                         else
-                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
+                            for lvl, effects in pairs(SpellDB.objects[unitstr]) do
                                 if effects[effect] then
                                     data = effects[effect]
-                                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at level " .. lvl)
                                     break
                                 end
                             end
                         end
-                    else
-                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r No objects entry for plateName=" .. tostring(plateName))
+                    end
+
+                    -- Fallback to name lookup
+                    if not data and plateName and SpellDB.objects[plateName] then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Fallback to name lookup: " .. plateName)
+                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
+                            data = SpellDB.objects[plateName][unitlevel][effect]
+                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
+                            data = SpellDB.objects[plateName][0][effect]
+                        else
+                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
+                                if effects[effect] then
+                                    data = effects[effect]
+                                    break
+                                end
+                            end
+                        end
                     end
 
                     if data and data.start and data.duration then
-                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r data.start=" .. data.start .. " data.duration=" .. data.duration .. " now=" .. now)
+                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r data.duration=" .. data.duration .. " timeleft=" .. (data.duration + data.start - now))
                         if data.start + data.duration > now then
                             duration = data.duration
                             timeleft = data.duration + data.start - now
-                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r timeleft=" .. timeleft)
-                        else
-                            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r Debuff expired (start+duration < now)")
                         end
-                    else
-                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r No valid data found")
                     end
                 end
 
@@ -1169,13 +1185,20 @@ local function UpdateNamePlate(frame)
 
             -- Calculate time left for display
             local displayTimeLeft = nil
+            -- Use GUID (unitstr) for unique cache key, not plateName (multiple mobs can have same name)
+            local debuffKey = unitstr .. "_" .. (effect or texture)
 
             if timeleft and timeleft > 0 then
                 -- Use accurate tracked data from SpellDB
                 displayTimeLeft = timeleft
+                -- Update cache with correct data so fallback stays in sync
+                debuffTimers[debuffKey] = {
+                    startTime = now - (duration - timeleft),
+                    duration = duration,
+                    lastSeen = now
+                }
             else
-                -- Fallback: use debuffTimers cache (key by texture for reliability)
-                local debuffKey = (plateName or unitstr) .. "_" .. texture
+                -- Fallback: use debuffTimers cache
                 local fallbackDuration = duration or 15  -- Default 15s if unknown
 
                 if not debuffTimers[debuffKey] then

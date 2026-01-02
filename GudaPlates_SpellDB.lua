@@ -278,11 +278,22 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 		return
 	end
 
-	self.pending[1] = unit
+	-- Try to get GUID for unique identification (SuperWoW)
+	local unitKey = unit
+	if UnitGUID and UnitExists("target") and UnitName("target") == unit then
+		local guid = UnitGUID("target")
+		if guid then
+			unitKey = guid
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r Using GUID as key: " .. guid)
+		end
+	end
+
+	self.pending[1] = unitKey
 	self.pending[2] = unitlevel or 0
 	self.pending[3] = effect
 	self.pending[4] = duration
-	DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r AddPending SUCCESS: " .. effect .. " on " .. unit .. " for " .. duration .. "s")
+	self.pending[5] = unit  -- Store original name for fallback lookups
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r AddPending SUCCESS: " .. effect .. " on " .. unitKey .. " for " .. duration .. "s")
 end
 
 function GudaPlates_SpellDB:RemovePending()
@@ -290,6 +301,7 @@ function GudaPlates_SpellDB:RemovePending()
 	self.pending[2] = nil
 	self.pending[3] = nil
 	self.pending[4] = nil
+	self.pending[5] = nil
 end
 
 function GudaPlates_SpellDB:PersistPending(effect)
@@ -301,7 +313,12 @@ function GudaPlates_SpellDB:PersistPending(effect)
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
 		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r PersistPending: calling AddEffect for " .. tostring(self.pending[3]))
+		-- Store by GUID (pending[1]) for accurate per-mob tracking
 		self:AddEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
+		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
+		if self.pending[5] and self.pending[5] ~= self.pending[1] then
+			self:AddEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4])
+		end
 	end
 
 	self:RemovePending()
