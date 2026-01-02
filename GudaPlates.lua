@@ -123,35 +123,49 @@ local function StripSpellRank(spellString)
 	return spellString, 0
 end
 
--- Hook original CastSpell
+-- Hook original CastSpell (ShaguPlates-style)
 local Original_CastSpell = CastSpell
 CastSpell = function(spellId, bookType)
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpell hook: spellId=" .. tostring(spellId) .. " bookType=" .. tostring(bookType))
 	-- Get spell info before casting
 	if SpellDB and spellId and bookType then
-		local spellName, rank = GetSpellInfoFromBook(spellId, bookType)
+		local spellName, rank = GetSpellName(spellId, bookType)
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpell: spellName=" .. tostring(spellName) .. " rank=" .. tostring(rank))
 		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
 			local targetName = UnitName("target")
+			local targetLevel = UnitLevel("target") or 0
 			local duration = SpellDB:GetDuration(spellName, rank)
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpell: target=" .. tostring(targetName) .. " duration=" .. tostring(duration))
 			if duration and duration > 0 then
-				SpellDB:AddPending(targetName, spellName, rank, duration)
+				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+			else
+				DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r CastSpell: duration is 0 or nil, not adding pending")
 			end
+		else
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r CastSpell: no valid target or spell")
 		end
+	else
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r CastSpell: SpellDB or spellId/bookType is nil")
 	end
 	-- Call original
 	return Original_CastSpell(spellId, bookType)
 end
 
--- Hook original CastSpellByName
+-- Hook original CastSpellByName (ShaguPlates-style)
 local Original_CastSpellByName = CastSpellByName
 CastSpellByName = function(spellString, onSelf)
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpellByName hook: spellString=" .. tostring(spellString))
 	-- Parse spell name and rank
 	if SpellDB and spellString then
 		local spellName, rank = ParseSpellName(spellString)
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpellByName: parsed spellName=" .. tostring(spellName) .. " rank=" .. tostring(rank))
 		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
 			local targetName = UnitName("target")
+			local targetLevel = UnitLevel("target") or 0
 			local duration = SpellDB:GetDuration(spellName, rank)
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r CastSpellByName: target=" .. tostring(targetName) .. " duration=" .. tostring(duration))
 			if duration and duration > 0 then
-				SpellDB:AddPending(targetName, spellName, rank, duration)
+				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
 			end
 		end
 	end
@@ -159,31 +173,26 @@ CastSpellByName = function(spellString, onSelf)
 	return Original_CastSpellByName(spellString, onSelf)
 end
 
--- Hook UseAction (for action bar clicks)
+-- Hook UseAction (for action bar clicks) (ShaguPlates-style)
 local Original_UseAction = UseAction
 UseAction = function(slot, checkCursor, onSelf)
 	-- Try to get spell info from action bar slot
+	-- We're a pre-hook, so we check BEFORE the action is used
 	if SpellDB and slot then
-		-- Check if this action is a spell (not an item/macro)
-		if GetActionText(slot) == nil and not GetActionTexture(slot) == nil then
-			-- Use tooltip scanning to get spell name
-			if SpellDB.scanner then
-				SpellDB.scanner:ClearLines()
-				SpellDB.scanner:SetAction(slot)
-				local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
-				if textLeft then
-					local spellName = textLeft:GetText()
-					local textRight = getglobal("GudaPlatesDebuffScannerTextRight1")
-					local rankStr = textRight and textRight:GetText()
-					local rank = GetRankNumber(rankStr)
-
-					if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
-						local targetName = UnitName("target")
-						local duration = SpellDB:GetDuration(spellName, rank)
-						if duration and duration > 0 then
-							SpellDB:AddPending(targetName, spellName, rank, duration)
-						end
-					end
+		-- GetActionText returns macro name, so nil means not a macro
+		-- GetActionTexture returns nil if slot is empty
+		-- Skip if it's a macro or empty slot
+		if GetActionText(slot) == nil and GetActionTexture(slot) ~= nil then
+			-- Use tooltip scanning to get spell name and rank
+			local spellName, rank = SpellDB:ScanAction(slot)
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r UseAction: slot=" .. tostring(slot) .. " spell=" .. tostring(spellName) .. " rank=" .. tostring(rank))
+			if spellName and UnitExists("target") then
+				local targetName = UnitName("target")
+				local targetLevel = UnitLevel("target") or 0
+				local duration = SpellDB:GetDuration(spellName, rank)
+				DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r UseAction: target=" .. tostring(targetName) .. " duration=" .. tostring(duration))
+				if duration and duration > 0 then
+					SpellDB:AddPending(targetName, targetLevel, spellName, duration)
 				end
 			end
 		end
@@ -247,6 +256,25 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+-- ShaguPlates-style events for debuff tracking
+GudaPlates:RegisterEvent("SPELLCAST_STOP")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
+GudaPlates:RegisterEvent("PLAYER_TARGET_CHANGED")
+GudaPlates:RegisterEvent("UNIT_AURA")
+
+-- Patterns for removing pending spells (ShaguPlates-style)
+local REMOVE_PENDING_PATTERNS = {
+	SPELLIMMUNESELFOTHER or "%s is immune to your %s.",
+	IMMUNEDAMAGECLASSSELFOTHER or "%s is immune to your %s damage.",
+	SPELLMISSSELFOTHER or "Your %s missed %s.",
+	SPELLRESISTSELFOTHER or "Your %s was resisted by %s.",
+	SPELLEVADEDSELFOTHER or "Your %s was evaded by %s.",
+	SPELLDODGEDSELFOTHER or "Your %s was dodged by %s.",
+	SPELLDEFLECTEDSELFOTHER or "Your %s was deflected by %s.",
+	SPELLREFLECTSELFOTHER or "Your %s was reflected back by %s.",
+	SPELLPARRIEDSELFOTHER or "Your %s was parried by %s.",
+	SPELLLOGABSORBSELFOTHER or "Your %s is absorbed by %s.",
+}
 
 local function UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate
@@ -1052,104 +1080,128 @@ local function UpdateNamePlate(frame)
     end
 
     local debuffIndex = 1
+    local now = GetTime()
     if superwow_active and hasValidGUID then
         for i = 1, 40 do
             if debuffIndex > MAX_DEBUFFS then break end
 
-            -- In Vanilla WoW 1.12.1, UnitDebuff returns: texture, count, applications, spellId
-            local texture, count = UnitDebuff(unitstr, i)
+            -- Get debuff info from the game
+            local texture, stacks = UnitDebuff(unitstr, i)
             if not texture then break end
+
+            -- Try to get effect name and tracked data from SpellDB
+            local effect, duration, timeleft = nil, nil, nil
+            if SpellDB then
+                -- Try tooltip scanning (may fail with GUID, will fallback to "target" if it matches)
+                effect = SpellDB:ScanDebuff(unitstr, i)
+
+                -- If GUID scanning failed, try "target" if this nameplate is the target
+                if (not effect or effect == "") and plateName and UnitName("target") == plateName then
+                    effect = SpellDB:ScanDebuff("target", i)
+                end
+
+                -- Last resort: try texture-to-spell cache directly
+                if (not effect or effect == "") and SpellDB.textureToSpell and SpellDB.textureToSpell[texture] then
+                    effect = SpellDB.textureToSpell[texture]
+                end
+
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[Display]|r plateName=" .. tostring(plateName) .. " effect=" .. tostring(effect) .. " hasObjects=" .. tostring(SpellDB.objects[plateName] ~= nil))
+
+                -- Try to get tracked data from SpellDB.objects
+                if effect and effect ~= "" and plateName then
+                    local unitlevel = UnitLevel(unitstr) or 0
+                    local data = nil
+
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[Display]|r Looking for objects[" .. tostring(plateName) .. "][" .. tostring(unitlevel) .. "][" .. tostring(effect) .. "]")
+
+                    if SpellDB.objects[plateName] then
+                        -- Try exact level, then level 0, then any level
+                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
+                            data = SpellDB.objects[plateName][unitlevel][effect]
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at exact level " .. unitlevel)
+                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
+                            data = SpellDB.objects[plateName][0][effect]
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at level 0")
+                        else
+                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
+                                if effects[effect] then
+                                    data = effects[effect]
+                                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r Found data at level " .. lvl)
+                                    break
+                                end
+                            end
+                        end
+                    else
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r No objects entry for plateName=" .. tostring(plateName))
+                    end
+
+                    if data and data.start and data.duration then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r data.start=" .. data.start .. " data.duration=" .. data.duration .. " now=" .. now)
+                        if data.start + data.duration > now then
+                            duration = data.duration
+                            timeleft = data.duration + data.start - now
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[Display]|r timeleft=" .. timeleft)
+                        else
+                            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r Debuff expired (start+duration < now)")
+                        end
+                    else
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[Display]|r No valid data found")
+                    end
+                end
+
+                -- Get duration from database if we don't have tracked data
+                if effect and effect ~= "" and not duration then
+                    duration = SpellDB:GetDuration(effect, 0)
+                end
+            end
 
             local debuff = nameplate.debuffs[debuffIndex]
             debuff.icon:SetTexture(texture)
 
             -- Set stacks
-            if count and count > 1 then
-                debuff.count:SetText(count)
+            if stacks and stacks > 1 then
+                debuff.count:SetText(stacks)
                 debuff.count:SetAlpha(1)
             else
                 debuff.count:SetText("")
                 debuff.count:SetAlpha(0)
             end
 
-            -- Get spell name via tooltip scanning (more reliable than texture mapping)
-            local spellName = nil
-            local trackedDebuff = nil
-            local now = GetTime()
+            -- Calculate time left for display
+            local displayTimeLeft = nil
 
-            if SpellDB then
-                -- Use tooltip scanning to get actual spell name
-                spellName = SpellDB:ScanDebuff(unitstr, i)
-
-                -- Check if we have a tracked debuff with correct rank from combat log
-                if spellName and plateName then
-                    trackedDebuff = SpellDB:GetTrackedDebuff(plateName, spellName)
-                end
-            end
-
-            -- Calculate expiration timestamp
-            local expirationTimestamp = 0
-
-            if trackedDebuff then
-                -- Use tracked debuff data (has correct rank-based duration from our cast hooks)
-                expirationTimestamp = trackedDebuff.start + trackedDebuff.duration
+            if timeleft and timeleft > 0 then
+                -- Use accurate tracked data from SpellDB
+                displayTimeLeft = timeleft
             else
-                -- Try to get duration from spell name (using max rank as fallback)
-                local duration = nil
-                if SpellDB and spellName then
-                    duration = SpellDB:GetDuration(spellName, 0)
-                end
+                -- Fallback: use debuffTimers cache (key by texture for reliability)
+                local debuffKey = (plateName or unitstr) .. "_" .. texture
+                local fallbackDuration = duration or 15  -- Default 15s if unknown
 
-                -- Fallback: use generic defaults
-                if not duration then
-                    duration = 15 -- Default fallback
-                end
-
-                -- Create unique key for this debuff on this target
-                -- Use spell name if available, otherwise texture
-                local targetKey = unitstr or plateName or tostring(frame)
-                local debuffKey = targetKey .. "_" .. (spellName or texture)
-
-                -- Only set start time if we're NOT already tracking this debuff
                 if not debuffTimers[debuffKey] then
                     debuffTimers[debuffKey] = {
                         startTime = now,
-                        duration = duration
+                        duration = fallbackDuration
                     }
                 end
-
-                -- Calculate expiration from the ORIGINAL start time
-                local tracked = debuffTimers[debuffKey]
-                expirationTimestamp = tracked.startTime + tracked.duration
-                tracked.lastSeen = now
+                local cached = debuffTimers[debuffKey]
+                cached.lastSeen = now
+                displayTimeLeft = cached.duration - (now - cached.startTime)
             end
 
-            if showDebuffTimers then
-                local timeLeft = expirationTimestamp - now
-                if timeLeft > 0 then
-                    debuff.expirationTime = expirationTimestamp
-                    local text, r, g, b, a = FormatTime(timeLeft)
-                    if debuff.cd and text and text ~= "" then
-                        debuff.cd:SetText(text)
-                        if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                        debuff.cd:SetAlpha(1)
-                        debuff.cd:Show()
-                    end
-                    if debuff.cdframe then
-                        debuff.cdframe:Show()
-                    end
-                else
-                    -- Timer expired, clean up tracking (only for non-tracked debuffs)
-                    if not trackedDebuff then
-                        local targetKey = unitstr or plateName or tostring(frame)
-                        local debuffKey = targetKey .. "_" .. (spellName or texture)
-                        debuffTimers[debuffKey] = nil
-                    end
-                    debuff.expirationTime = 0
-                    if debuff.cd then
-                        debuff.cd:SetText("")
-                        debuff.cd:SetAlpha(0)
-                    end
+            -- Display timer
+            if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                debuff.expirationTime = now + displayTimeLeft
+
+                local text, r, g, b, a = FormatTime(displayTimeLeft)
+                if debuff.cd and text and text ~= "" then
+                    debuff.cd:SetText(text)
+                    if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                    debuff.cd:SetAlpha(1)
+                    debuff.cd:Show()
+                end
+                if debuff.cdframe then
+                    debuff.cdframe:Show()
                 end
             else
                 debuff.expirationTime = 0
@@ -1164,114 +1216,66 @@ local function UpdateNamePlate(frame)
             debuffIndex = debuffIndex + 1
         end
     elseif plateName then
-    -- Fallback for non-SuperWoW: use debuffTracker for all nameplates
-    -- Also use UnitDebuff if it's the target for better accuracy
+    -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
         if isTarget then
             for i = 1, 16 do
                 if debuffIndex > MAX_DEBUFFS then break end
-                local texture, count = UnitDebuff("target", i)
+
+                -- Use ShaguPlates-style UnitDebuff wrapper
+                local effect, rank, texture, stacks, dtype, duration, timeleft
+                if SpellDB then
+                    effect, rank, texture, stacks, dtype, duration, timeleft = SpellDB:UnitDebuff("target", i)
+                else
+                    texture, stacks = UnitDebuff("target", i)
+                end
+
                 if not texture then break end
 
                 local debuff = nameplate.debuffs[debuffIndex]
                 debuff.icon:SetTexture(texture)
 
                 -- Set stacks
-                if count and count > 1 then
-                    debuff.count:SetText(count)
+                if stacks and stacks > 1 then
+                    debuff.count:SetText(stacks)
                     debuff.count:SetAlpha(1)
                 else
                     debuff.count:SetText("")
                     debuff.count:SetAlpha(0)
                 end
 
-                -- Get spell name via tooltip scanning (more reliable than texture mapping)
-                local spellName = nil
-                local trackedDebuff = nil
-                local now = GetTime()
+                -- Calculate time left for display
+                local displayTimeLeft = nil
 
-                if SpellDB then
-                    -- Use tooltip scanning to get actual spell name
-                    spellName = SpellDB:ScanDebuff("target", i)
-
-                    -- Check if we have a tracked debuff with correct rank from combat log
-                    if spellName and plateName then
-                        trackedDebuff = SpellDB:GetTrackedDebuff(plateName, spellName)
-                    end
-                end
-
-                -- Calculate expiration timestamp
-                local expirationTimestamp = 0
-
-                if trackedDebuff then
-                    -- Use tracked debuff data (has correct rank-based duration)
-                    expirationTimestamp = trackedDebuff.start + trackedDebuff.duration
-                else
-                    -- Fall back to spell name lookup (uses default/max rank from DB)
-                    local duration = nil
-                    if SpellDB and spellName then
-                        duration = SpellDB:GetDuration(spellName, 0)  -- 0 = default/max rank
-                    end
-
-                    -- Fallback: use defaults based on texture hints if spell not in DB
-                    if not duration then
-                        if texture and (string.find(texture, "Stun") or string.find(texture, "Gouge") or string.find(texture, "Kidney") or string.find(texture, "Cheap")) then
-                            duration = 4 -- Short CC
-                        elseif texture and (string.find(texture, "Fear") or string.find(texture, "Polymorph") or string.find(texture, "Sap") or string.find(texture, "Hibernate")) then
-                            duration = 20 -- Long CC
-                        elseif texture and (string.find(texture, "Poison") or string.find(texture, "Curse") or string.find(texture, "Corruption") or string.find(texture, "Immolate")) then
-                            duration = 18 -- DoTs
-                        elseif texture and string.find(texture, "ShockWave") then
-                            duration = 30 -- Thunder Clap
-                        elseif texture and string.find(texture, "FrostNova") then
-                            duration = 8 -- Frost Nova
-                        else
-                            duration = 15 -- Default
-                        end
-                    end
-
-                    -- Create unique key for this debuff on this target
-                    -- Use spell name when available (more accurate), fall back to texture
-                    local debuffKey = plateName .. "_" .. (spellName or texture)
-
-                    -- Only set start time if we're NOT already tracking this debuff
+                -- If we have valid timeleft from SpellDB (from tracked data), use it directly
+                if timeleft and timeleft > 0 then
+                    displayTimeLeft = timeleft
+                elseif effect and effect ~= "" and duration and duration > 0 then
+                    -- Fallback: use debuffTimers cache to track when we first saw this debuff
+                    local debuffKey = plateName .. "_" .. effect
                     if not debuffTimers[debuffKey] then
                         debuffTimers[debuffKey] = {
                             startTime = now,
                             duration = duration
                         }
                     end
-
-                    -- Calculate expiration from the ORIGINAL start time
-                    local tracked = debuffTimers[debuffKey]
-                    expirationTimestamp = tracked.startTime + tracked.duration
-                    tracked.lastSeen = now
+                    local cached = debuffTimers[debuffKey]
+                    cached.lastSeen = now
+                    displayTimeLeft = cached.duration - (now - cached.startTime)
                 end
 
-                if showDebuffTimers then
-                    local timeLeft = expirationTimestamp - now
-                    if timeLeft > 0 then
-                        debuff.expirationTime = expirationTimestamp
-                        local text, r, g, b, a = FormatTime(timeLeft)
-                        if debuff.cd and text and text ~= "" then
-                            debuff.cd:SetText(text)
-                            if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                            debuff.cd:SetAlpha(1)
-                            debuff.cd:Show()
-                        end
-                        if debuff.cdframe then
-                            debuff.cdframe:Show()
-                        end
-                    else
-                        -- Timer expired, clean up tracking (only for non-tracked debuffs)
-                        if not trackedDebuff then
-                            local debuffKey = plateName .. "_" .. (spellName or texture)
-                            debuffTimers[debuffKey] = nil
-                        end
-                        debuff.expirationTime = 0
-                        if debuff.cd then
-                            debuff.cd:SetText("")
-                            debuff.cd:SetAlpha(0)
-                        end
+                -- Display timer
+                if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                    debuff.expirationTime = now + displayTimeLeft
+
+                    local text, r, g, b, a = FormatTime(displayTimeLeft)
+                    if debuff.cd and text and text ~= "" then
+                        debuff.cd:SetText(text)
+                        if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                        debuff.cd:SetAlpha(1)
+                        debuff.cd:Show()
+                    end
+                    if debuff.cdframe then
+                        debuff.cdframe:Show()
                     end
                 else
                     debuff.expirationTime = 0
@@ -1455,11 +1459,24 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 end)
 
+-- Helper function to match combat log patterns (ShaguPlates-style cmatch)
+local function cmatch(str, pattern)
+    if not str or not pattern then return nil end
+    -- Convert WoW format strings to Lua patterns
+    local pat = gsub(pattern, "%%%d?%$?s", "(.+)")
+    pat = gsub(pat, "%%%d?%$?d", "(%d+)")
+    for a, b, c, d in string.gfind(str, pat) do
+        return a, b, c, d
+    end
+    return nil
+end
+
 GudaPlates:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
     -- Clear trackers on zone/load
         debuffTracker = {}
         castTracker = {}
+        if SpellDB then SpellDB.objects = {} end
         Print("Initialized. Scanning...")
         if twthreat_active then
             Print("TWThreat detected - full threat colors enabled")
@@ -1470,6 +1487,57 @@ GudaPlates:SetScript("OnEvent", function()
                 Print("Debuff countdowns enabled")
             end
         end
+
+    -- ShaguPlates-style event handlers
+    elseif event == "SPELLCAST_STOP" then
+        -- Persist pending spell when cast finishes
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r SPELLCAST_STOP event fired")
+        if SpellDB then
+            SpellDB:PersistPending()
+        end
+
+    elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and arg1 then
+        -- Remove pending spell on failure
+        if SpellDB then
+            for _, pattern in pairs(REMOVE_PENDING_PATTERNS) do
+                local effect = cmatch(arg1, pattern)
+                if effect and SpellDB.pending[3] == effect then
+                    SpellDB:RemovePending()
+                    return
+                end
+            end
+        end
+
+    elseif event == "PLAYER_TARGET_CHANGED" or (event == "UNIT_AURA" and arg1 == "target") then
+        -- Add missing debuffs by iteration (ShaguPlates-style)
+        if SpellDB and UnitExists("target") then
+            local unitname = UnitName("target")
+            local unitlevel = UnitLevel("target") or 0
+            for i = 1, 16 do
+                local effect, rank, texture, stacks, dtype, duration, timeleft = SpellDB:UnitDebuff("target", i)
+                if not texture then break end
+                if effect and effect ~= "" then
+                    -- Don't overwrite existing timers
+                    if not SpellDB.objects[unitname] or not SpellDB.objects[unitname][unitlevel] or not SpellDB.objects[unitname][unitlevel][effect] then
+                        SpellDB:AddEffect(unitname, unitlevel, effect)
+                    end
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
+        -- Track debuff applications from combat log (ShaguPlates-style)
+        if arg1 and SpellDB then
+            -- Pattern: "Unit is afflicted by Spell."
+            local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL or "%s is afflicted by %s.")
+            if unit and effect then
+                local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
+                    SpellDB:AddEffect(unit, unitlevel, effect)
+                end
+            end
+        end
+
     elseif not superwow_active and arg1 then
     -- Fallback spell tracking using combat log messages
     -- Pattern: "Unit begins to cast Spell." or "Unit begins to perform Spell."
@@ -1564,24 +1632,17 @@ GudaPlates:SetScript("OnEvent", function()
             table.remove(castTracker[interruptedUnit], 1)
         end
 
-        -- Debuff tracking using SpellDB (ShaguTweaks-style)
+        -- Debuff tracking using SpellDB (ShaguPlates-style)
         -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (Rank X)."
         for unit, rawSpell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
-            -- Strip rank suffix from spell name (combat log may include it)
             local spell, logRank = StripSpellRank(rawSpell)
-
-            -- Try to confirm pending spell from player cast
             if SpellDB then
-                local confirmed = SpellDB:ConfirmPending(unit, spell)
-                if not confirmed then
-                    -- Not our spell, but still track it with duration from combat log rank or default
-                    local duration = SpellDB:GetDuration(spell, logRank)
-                    if duration and duration > 0 then
-                        SpellDB:AddTrackedDebuff(unit, spell, logRank, duration)
-                    end
+                local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                -- Only add if not already tracked
+                if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][spell] then
+                    SpellDB:AddEffect(unit, unitlevel, spell)
                 end
             end
-
             -- Also update legacy debuffTracker for backward compatibility
             local duration = SpellDB and SpellDB:GetDuration(spell, logRank) or 15
             debuffTracker[unit .. spell] = {
@@ -1591,53 +1652,43 @@ GudaPlates:SetScript("OnEvent", function()
             }
         end
 
-        -- Also track periodic damage events (for DoTs already ticking)
-        -- Pattern: "Unit suffers X damage from Spell."
-        for unit, rawSpell in string.gfind(arg1, "(.+) suffers %d+ .+ from (.+)%.") do
-            local spell, logRank = StripSpellRank(rawSpell)
-            if SpellDB then
-                local confirmed = SpellDB:ConfirmPending(unit, spell)
-                if not confirmed then
-                    local duration = SpellDB:GetDuration(spell, logRank)
-                    if duration and duration > 0 then
-                        -- Only add if not already tracked
-                        if not SpellDB:GetTrackedDebuff(unit, spell) then
-                            SpellDB:AddTrackedDebuff(unit, spell, logRank, duration)
-                        end
-                    end
-                end
-            end
-        end
-
         -- Pattern: "Spell fades from Unit."
         for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
             local spell = StripSpellRank(rawSpell)
             debuffTracker[unit .. spell] = nil
-            -- Also remove from SpellDB tracking
-            if SpellDB and SpellDB.tracked and SpellDB.tracked[unit] then
-                SpellDB.tracked[unit][spell] = nil
+            -- Remove from SpellDB objects (all levels)
+            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                for level, effects in pairs(SpellDB.objects[unit]) do
+                    if effects[spell] then effects[spell] = nil end
+                end
             end
         end
         for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
             local spell = StripSpellRank(rawSpell)
             debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.tracked and SpellDB.tracked[unit] then
-                SpellDB.tracked[unit][spell] = nil
+            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                for level, effects in pairs(SpellDB.objects[unit]) do
+                    if effects[spell] then effects[spell] = nil end
+                end
             end
         end
     elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" and arg1 then
         for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
             local spell = StripSpellRank(rawSpell)
             debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.tracked and SpellDB.tracked[unit] then
-                SpellDB.tracked[unit][spell] = nil
+            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                for level, effects in pairs(SpellDB.objects[unit]) do
+                    if effects[spell] then effects[spell] = nil end
+                end
             end
         end
         for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
             local spell = StripSpellRank(rawSpell)
             debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.tracked and SpellDB.tracked[unit] then
-                SpellDB.tracked[unit][spell] = nil
+            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                for level, effects in pairs(SpellDB.objects[unit]) do
+                    if effects[spell] then effects[spell] = nil end
+                end
             end
         end
     end
@@ -1700,16 +1751,20 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         end
         Print("=== End of debuffs ===")
     elseif msg == "tracked" then
-        -- Show all tracked debuffs in SpellDB
+        -- Show all tracked debuffs in SpellDB (ShaguPlates-style objects)
         Print("=== Tracked Debuffs ===")
-        if SpellDB and SpellDB.tracked then
+        if SpellDB and SpellDB.objects then
             local count = 0
-            for unitName, debuffs in pairs(SpellDB.tracked) do
-                for spellName, data in pairs(debuffs) do
-                    local remaining = data.duration - (GetTime() - data.start)
-                    if remaining > 0 then
-                        Print(unitName .. ": " .. spellName .. " (rank " .. (data.rank or 0) .. ") - " .. string.format("%.1f", remaining) .. "s left")
-                        count = count + 1
+            for unitName, levels in pairs(SpellDB.objects) do
+                for level, debuffs in pairs(levels) do
+                    for spellName, data in pairs(debuffs) do
+                        if data.start and data.duration then
+                            local remaining = data.duration - (GetTime() - data.start)
+                            if remaining > 0 then
+                                Print(unitName .. " (L" .. level .. "): " .. spellName .. " - " .. string.format("%.1f", remaining) .. "s left")
+                                count = count + 1
+                            end
+                        end
                     end
                 end
             end
@@ -1721,15 +1776,14 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         end
         Print("=== End of tracked ===")
     elseif msg == "pending" then
-        -- Show pending spell cast
+        -- Show pending spell cast (ShaguPlates-style array format)
         Print("=== Pending Spell ===")
-        if SpellDB and SpellDB.pending and SpellDB.pending.spell then
+        if SpellDB and SpellDB.pending and SpellDB.pending[3] then
             local p = SpellDB.pending
-            Print("Unit: " .. (p.unit or "nil"))
-            Print("Spell: " .. (p.spell or "nil"))
-            Print("Rank: " .. (p.rank or 0))
-            Print("Duration: " .. (p.duration or "nil") .. "s")
-            Print("Time: " .. string.format("%.2f", GetTime() - (p.time or 0)) .. "s ago")
+            Print("Unit: " .. (p[1] or "nil"))
+            Print("Level: " .. (p[2] or 0))
+            Print("Spell: " .. (p[3] or "nil"))
+            Print("Duration: " .. (p[4] or "nil") .. "s")
         else
             Print("No pending spell.")
         end

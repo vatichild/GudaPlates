@@ -1,5 +1,5 @@
 -- GudaPlates Spell Database
--- Debuff duration tracking with rank support (ShaguTweaks-style)
+-- Debuff duration tracking with rank support (ShaguPlates-style)
 
 GudaPlates_SpellDB = {}
 
@@ -152,173 +152,279 @@ GudaPlates_SpellDB.DEBUFFS = {
 
 -- Dynamic debuffs that scale with combo points
 GudaPlates_SpellDB.COMBO_POINT_DEBUFFS = {
-	["Kidney Shot"] = {base = 1, perPoint = 1}, -- 1s + 1s per CP
-	["Rupture"] = {base = 8, perPoint = 2},     -- 8s + 2s per CP
+	["Kidney Shot"] = true,
+	["Rupture"] = true,
 }
 
--- NOTE: Texture-to-spell mapping removed because many spells share icons
--- (e.g., Rend and Gouge both use Ability_Gouge)
--- Instead, we use tooltip scanning to get the actual spell name
+-- Dynamic debuffs that scale with talents
+GudaPlates_SpellDB.DYN_DEBUFFS = {
+	["Rupture"] = "Rupture",
+	["Kidney Shot"] = "Kidney Shot",
+	["Rend"] = "Rend",
+	["Shadow Word: Pain"] = "Shadow Word: Pain",
+	["Demoralizing Shout"] = "Demoralizing Shout",
+	["Frostbolt"] = "Frostbolt",
+	["Gouge"] = "Gouge",
+}
 
 -- ============================================
--- DEBUFF TRACKING STATE
+-- DEBUFF TRACKING STATE (ShaguPlates-style)
+-- objects[unit][unitlevel][effect] = {effect, start, duration}
 -- ============================================
-GudaPlates_SpellDB.tracked = {}      -- Tracked debuffs: [unitName][spellName] = {start, duration}
-GudaPlates_SpellDB.pending = {}      -- Pending spell cast: {unit, spell, rank, duration}
-GudaPlates_SpellDB.lastComboPoints = 0
+GudaPlates_SpellDB.objects = {}
+GudaPlates_SpellDB.pending = {}  -- Array: [1]=unit, [2]=unitlevel, [3]=effect, [4]=duration
+local lastspell = nil
 
 -- ============================================
 -- DURATION LOOKUP FUNCTIONS
 -- ============================================
 
--- Get duration by spell name and rank
-function GudaPlates_SpellDB:GetDuration(spellName, rank)
-	if not spellName then return nil end
+-- Get max rank for a spell
+function GudaPlates_SpellDB:GetMaxRank(effect)
+	local spellData = self.DEBUFFS[effect]
+	if not spellData then return 0 end
 
-	local spellData = self.DEBUFFS[spellName]
-	if not spellData then return nil end
-
-	rank = rank or 0
-
-	-- Try exact rank first, then fall back to [0] (default/max)
-	return spellData[rank] or spellData[0]
-end
-
--- Get duration from texture - DEPRECATED, use ScanDebuff + GetDuration instead
-function GudaPlates_SpellDB:GetDurationFromTexture(texture)
-	-- Texture mapping removed - textures can be shared by multiple spells
-	-- Use tooltip scanning instead
-	return nil
-end
-
--- Get spell name from texture - DEPRECATED, use ScanDebuff instead
-function GudaPlates_SpellDB:GetSpellFromTexture(texture)
-	-- Texture mapping removed - textures can be shared by multiple spells
-	-- Use tooltip scanning instead
-	return nil
-end
-
--- ============================================
--- DEBUFF TRACKING FUNCTIONS
--- ============================================
-
--- Add a pending spell (called when player starts casting)
-function GudaPlates_SpellDB:AddPending(unitName, spellName, rank, duration)
-	if not unitName or not spellName then return end
-
-	-- Store combo points for combo-point-based abilities
-	if self.COMBO_POINT_DEBUFFS[spellName] then
-		self.lastComboPoints = GetComboPoints("player", "target") or 0
+	local max = 0
+	for id in pairs(spellData) do
+		if id > max then max = id end
 	end
-
-	self.pending = {
-		unit = unitName,
-		spell = spellName,
-		rank = rank or 0,
-		duration = duration,
-		time = GetTime()
-	}
+	return max
 end
 
--- Clear pending spell
-function GudaPlates_SpellDB:ClearPending()
-	self.pending = {}
-end
+-- Get duration by spell name and rank (ShaguPlates-style)
+function GudaPlates_SpellDB:GetDuration(effect, rank)
+	if not effect then return 0 end
 
--- Confirm pending spell was applied (called on combat log confirmation)
-function GudaPlates_SpellDB:ConfirmPending(unitName, spellName)
-	local p = self.pending
-	if not p.spell then return false end
+	local spellData = self.DEBUFFS[effect]
+	if not spellData then return 0 end
 
-	-- Check if this matches our pending spell (within 2 seconds)
-	if p.unit == unitName and p.spell == spellName and (GetTime() - p.time) < 2 then
-		self:AddTrackedDebuff(unitName, spellName, p.rank, p.duration)
-		self:ClearPending()
-		return true
-	end
-
-	return false
-end
-
--- Add/update a tracked debuff
-function GudaPlates_SpellDB:AddTrackedDebuff(unitName, spellName, rank, duration)
-	if not unitName or not spellName then return end
-
-	-- Calculate duration
-	if not duration then
-		-- Check for combo point scaling
-		local cpData = self.COMBO_POINT_DEBUFFS[spellName]
-		if cpData then
-			local cp = self.lastComboPoints or 0
-			duration = cpData.base + (cpData.perPoint * cp)
-		else
-			duration = self:GetDuration(spellName, rank)
-		end
-	end
-
-	if not duration then return end
-
-	-- Initialize tracking table for this unit
-	if not self.tracked[unitName] then
-		self.tracked[unitName] = {}
-	end
-
-	-- Store the debuff
-	self.tracked[unitName][spellName] = {
-		start = GetTime(),
-		duration = duration,
-		rank = rank or 0
-	}
-end
-
--- Get tracked debuff info
-function GudaPlates_SpellDB:GetTrackedDebuff(unitName, spellName)
-	if not unitName or not spellName then return nil end
-	if not self.tracked[unitName] then return nil end
-
-	local debuff = self.tracked[unitName][spellName]
-	if not debuff then return nil end
-
-	-- Check if expired
-	local elapsed = GetTime() - debuff.start
-	if elapsed >= debuff.duration then
-		self.tracked[unitName][spellName] = nil
-		return nil
-	end
-
-	return debuff
-end
-
--- Get time remaining on a tracked debuff
-function GudaPlates_SpellDB:GetTimeRemaining(unitName, spellName)
-	local debuff = self:GetTrackedDebuff(unitName, spellName)
-	if not debuff then return nil end
-
-	return debuff.duration - (GetTime() - debuff.start)
-end
-
--- Clean up expired debuffs
-function GudaPlates_SpellDB:CleanupExpired()
-	local now = GetTime()
-	for unitName, debuffs in pairs(self.tracked) do
-		for spellName, debuff in pairs(debuffs) do
-			if (now - debuff.start) >= debuff.duration then
-				debuffs[spellName] = nil
+	-- Parse rank from string like "Rank 2" if needed
+	local rankNum = 0
+	if rank then
+		if type(rank) == "number" then
+			rankNum = rank
+		elseif type(rank) == "string" then
+			-- Extract number from "Rank X" format
+			for num in string.gfind(rank, "(%d+)") do
+				rankNum = tonumber(num) or 0
+				break
 			end
 		end
-		-- Remove empty unit tables
-		local hasDebuffs = false
-		for _ in pairs(debuffs) do hasDebuffs = true; break end
-		if not hasDebuffs then
-			self.tracked[unitName] = nil
+	end
+
+	-- If exact rank not found, use max rank
+	if not spellData[rankNum] then
+		rankNum = self:GetMaxRank(effect)
+	end
+
+	local duration = spellData[rankNum] or spellData[0] or 0
+
+	-- Handle dynamic duration adjustments
+	if effect == self.DYN_DEBUFFS["Rupture"] then
+		-- Rupture: +2 sec per combo point
+		duration = duration + (GetComboPoints("player", "target") or 0) * 2
+	elseif effect == self.DYN_DEBUFFS["Kidney Shot"] then
+		-- Kidney Shot: +1 sec per combo point
+		duration = duration + (GetComboPoints("player", "target") or 0) * 1
+	elseif effect == self.DYN_DEBUFFS["Demoralizing Shout"] then
+		-- Booming Voice: 10% per talent
+		local _,_,_,_,count = GetTalentInfo(2, 1)
+		if count and count > 0 then
+			duration = duration + (duration / 100 * (count * 10))
 		end
+	elseif effect == self.DYN_DEBUFFS["Shadow Word: Pain"] then
+		-- Improved Shadow Word: Pain: +3s per talent
+		local _,_,_,_,count = GetTalentInfo(3, 4)
+		if count and count > 0 then
+			duration = duration + count * 3
+		end
+	elseif effect == self.DYN_DEBUFFS["Frostbolt"] then
+		-- Permafrost: +1s per talent
+		local _,_,_,_,count = GetTalentInfo(3, 7)
+		if count and count > 0 then
+			duration = duration + count
+		end
+	elseif effect == self.DYN_DEBUFFS["Gouge"] then
+		-- Improved Gouge: +.5s per talent
+		local _,_,_,_,count = GetTalentInfo(2, 1)
+		if count and count > 0 then
+			duration = duration + (count * 0.5)
+		end
+	end
+
+	return duration
+end
+
+-- ============================================
+-- PENDING SPELL TRACKING (ShaguPlates-style)
+-- ============================================
+
+function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[SpellDB]|r AddPending called: unit=" .. tostring(unit) .. " effect=" .. tostring(effect) .. " duration=" .. tostring(duration))
+	if not unit or not effect then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r AddPending REJECTED: unit or effect is nil")
+		return
+	end
+	if not self.DEBUFFS[effect] then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r AddPending REJECTED: effect '" .. tostring(effect) .. "' not in DEBUFFS table")
+		return
+	end
+	if duration <= 0 then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r AddPending REJECTED: duration <= 0")
+		return
+	end
+	if self.pending[3] then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r AddPending REJECTED: already have pending spell: " .. tostring(self.pending[3]))
+		return
+	end
+
+	self.pending[1] = unit
+	self.pending[2] = unitlevel or 0
+	self.pending[3] = effect
+	self.pending[4] = duration
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r AddPending SUCCESS: " .. effect .. " on " .. unit .. " for " .. duration .. "s")
+end
+
+function GudaPlates_SpellDB:RemovePending()
+	self.pending[1] = nil
+	self.pending[2] = nil
+	self.pending[3] = nil
+	self.pending[4] = nil
+end
+
+function GudaPlates_SpellDB:PersistPending(effect)
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[SpellDB]|r PersistPending called: effect=" .. tostring(effect) .. " pending[3]=" .. tostring(self.pending[3]))
+	if not self.pending[3] then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r PersistPending: no pending spell")
+		return
+	end
+
+	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r PersistPending: calling AddEffect for " .. tostring(self.pending[3]))
+		self:AddEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
+	end
+
+	self:RemovePending()
+end
+
+-- ============================================
+-- EFFECT TRACKING (ShaguPlates-style)
+-- ============================================
+
+function GudaPlates_SpellDB:RevertLastAction()
+	if lastspell and lastspell.start_old then
+		lastspell.start = lastspell.start_old
+		lastspell.start_old = nil
+	end
+end
+
+function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration)
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[SpellDB]|r AddEffect called: unit=" .. tostring(unit) .. " level=" .. tostring(unitlevel) .. " effect=" .. tostring(effect) .. " duration=" .. tostring(duration))
+	if not unit or not effect then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[SpellDB]|r AddEffect REJECTED: unit or effect is nil")
+		return
+	end
+	unitlevel = unitlevel or 0
+
+	-- Initialize tables
+	if not self.objects[unit] then self.objects[unit] = {} end
+	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
+	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
+
+	-- Save current effect as lastspell for potential revert
+	lastspell = self.objects[unit][unitlevel][effect]
+
+	self.objects[unit][unitlevel][effect].effect = effect
+	self.objects[unit][unitlevel][effect].start_old = self.objects[unit][unitlevel][effect].start
+	self.objects[unit][unitlevel][effect].start = GetTime()
+	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[SpellDB]|r AddEffect SUCCESS: objects[" .. unit .. "][" .. unitlevel .. "][" .. effect .. "] = start:" .. self.objects[unit][unitlevel][effect].start .. " duration:" .. self.objects[unit][unitlevel][effect].duration)
+end
+
+function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
+	if not unit or not effect or not duration then return end
+	unitlevel = unitlevel or 0
+
+	if self.objects[unit] and self.objects[unit][unitlevel] and self.objects[unit][unitlevel][effect] then
+		self.objects[unit][unitlevel][effect].duration = duration
 	end
 end
 
 -- ============================================
--- TOOLTIP SCANNER (for getting spell name from debuff)
+-- UNITDEBUFF WRAPPER (ShaguPlates-style)
+-- Returns: effect, rank, texture, stacks, dtype, duration, timeleft
+-- ============================================
+function GudaPlates_SpellDB:UnitDebuff(unit, id)
+	local unitname = UnitName(unit)
+	local unitlevel = UnitLevel(unit) or 0
+	local texture, stacks, dtype = UnitDebuff(unit, id)
+	local duration, timeleft = nil, -1
+	local rank = nil
+	local effect = nil
+
+	if texture then
+		-- Get spell name via tooltip scanning
+		-- Try the unit first, but if it's a GUID and that fails, try "target" if it matches
+		effect = self:ScanDebuff(unit, id)
+
+		-- If scanning failed and this unit is the target, try scanning "target" instead
+		if (not effect or effect == "") and UnitName("target") == unitname then
+			effect = self:ScanDebuff("target", id)
+		end
+
+		effect = effect or ""
+	end
+
+	-- Check tracked debuffs with level
+	if effect and effect ~= "" and self.objects[unitname] then
+		local data = nil
+
+		-- Try exact level first
+		if self.objects[unitname][unitlevel] and self.objects[unitname][unitlevel][effect] then
+			data = self.objects[unitname][unitlevel][effect]
+		-- Fallback: check level 0
+		elseif self.objects[unitname][0] and self.objects[unitname][0][effect] then
+			data = self.objects[unitname][0][effect]
+		-- Fallback: check any level for this unit
+		else
+			for lvl, effects in pairs(self.objects[unitname]) do
+				if effects[effect] then
+					data = effects[effect]
+					break
+				end
+			end
+		end
+
+		if data and data.start and data.duration then
+			-- Clean up expired
+			if data.duration + data.start < GetTime() then
+				-- Don't remove here, let it be cleaned up elsewhere
+				data = nil
+			else
+				duration = data.duration
+				timeleft = duration + data.start - GetTime()
+			end
+		end
+	end
+
+	-- Fallback: if we have effect name but no tracked data, get duration from DB
+	-- Don't set timeleft - let the caller handle untracked debuffs with their own timer cache
+	if effect and effect ~= "" and (not duration or duration <= 0) then
+		local dbDuration = self:GetDuration(effect, 0)
+		if dbDuration and dbDuration > 0 then
+			duration = dbDuration
+			-- timeleft stays at -1, signaling caller to use their own timer cache
+		end
+	end
+
+	return effect, rank, texture, stacks, dtype, duration, timeleft
+end
+
+-- ============================================
+-- TOOLTIP SCANNER
 -- ============================================
 GudaPlates_SpellDB.scanner = nil
+GudaPlates_SpellDB.textureToSpell = {}  -- Cache: texture path -> spell name
 
 function GudaPlates_SpellDB:InitScanner()
 	if self.scanner then return end
@@ -328,19 +434,75 @@ function GudaPlates_SpellDB:InitScanner()
 	self.scanner:SetOwner(UIParent, "ANCHOR_NONE")
 end
 
+-- Check if a string looks like a SuperWoW GUID
+local function IsGUID(unit)
+	if not unit or type(unit) ~= "string" then return false end
+	return string.sub(unit, 1, 2) == "0x"
+end
+
 function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if not self.scanner then self:InitScanner() end
 
+	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
+	-- Convert GUID to "target" if it matches the current target
+	local scanUnit = unit
+	if IsGUID(unit) then
+		-- Try to match with target
+		if UnitExists("target") then
+			local targetGUID = UnitGUID and UnitGUID("target")
+			if targetGUID and targetGUID == unit then
+				scanUnit = "target"
+			else
+				-- Can't scan this GUID directly, try texture cache
+				local texture = UnitDebuff(unit, index)
+				if texture and self.textureToSpell[texture] then
+					return self.textureToSpell[texture]
+				end
+				return nil
+			end
+		else
+			-- No target, can't scan GUID
+			local texture = UnitDebuff(unit, index)
+			if texture and self.textureToSpell[texture] then
+				return self.textureToSpell[texture]
+			end
+			return nil
+		end
+	end
+
 	self.scanner:ClearLines()
-	self.scanner:SetUnitDebuff(unit, index)
+	self.scanner:SetUnitDebuff(scanUnit, index)
 
 	local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
 	if textLeft then
-		local text = textLeft:GetText()
-		return text
+		local effect = textLeft:GetText()
+		-- Cache texture -> spell mapping for future GUID lookups
+		if effect and effect ~= "" then
+			local texture = UnitDebuff(scanUnit, index)
+			if texture then
+				self.textureToSpell[texture] = effect
+			end
+		end
+		return effect
 	end
 
 	return nil
+end
+
+-- Get rank from action bar slot tooltip
+function GudaPlates_SpellDB:ScanAction(slot)
+	if not self.scanner then self:InitScanner() end
+
+	self.scanner:ClearLines()
+	self.scanner:SetAction(slot)
+
+	local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
+	local textRight = getglobal("GudaPlatesDebuffScannerTextRight1")
+
+	local effect = textLeft and textLeft:GetText() or nil
+	local rank = textRight and textRight:GetText() or nil
+
+	return effect, rank
 end
 
 -- ============================================
