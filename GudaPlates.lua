@@ -301,8 +301,8 @@ local function UpdateNamePlateDimensions(frame)
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
     if swapNameDebuff then
-        -- Name above, Debuffs below (no gap), Castbar dynamic (below debuffs or healthbar)
-        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
+        -- Name above castbar, Castbar above healthbar, Debuffs below
+        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
         -- Debuffs below (no gap)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
@@ -312,9 +312,9 @@ local function UpdateNamePlateDimensions(frame)
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Default castbar position (no debuffs visible) - directly below healthbar
+        -- Castbar above healthbar (no gap)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
     else
     -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
@@ -1304,9 +1304,9 @@ local function UpdateNamePlate(frame)
                 -- Debuffs below healthbar (no gap)
                 debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
 
-                -- Adjust name
+                -- Adjust name (above castbar which is above healthbar)
                 nameplate.name:ClearAllPoints()
-                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
+                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
             else
             -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
@@ -1325,12 +1325,8 @@ local function UpdateNamePlate(frame)
     if nameplate.castbar:IsShown() then
         nameplate.castbar:ClearAllPoints()
         if swapNameDebuff then
-            -- Swapped mode: castbar below debuffs if any, otherwise below healthbar
-            if numDebuffs > 0 then
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
-            else
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
-            end
+            -- Swapped mode: castbar above healthbar (no gap)
+            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
         else
             -- Default mode: castbar below healthbar, move name down to avoid overlap
             nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
