@@ -1152,7 +1152,6 @@ local function UpdateNamePlate(frame)
                     duration = SpellDB:GetDuration(effect, 0)
                 end
             end
-
             local debuff = nameplate.debuffs[debuffIndex]
             debuff.icon:SetTexture(texture)
 
@@ -1181,7 +1180,7 @@ local function UpdateNamePlate(frame)
                 }
             else
                 -- Fallback: use debuffTimers cache
-                local fallbackDuration = duration or 15  -- Default 15s if unknown
+                local fallbackDuration = duration or 1  -- Default 1s if unknown
 
                 if not debuffTimers[debuffKey] then
                     debuffTimers[debuffKey] = {
@@ -1655,7 +1654,7 @@ GudaPlates:SetScript("OnEvent", function()
                 end
             end
             -- Also update legacy debuffTracker for backward compatibility
-            local duration = SpellDB and SpellDB:GetDuration(spell, logRank) or 15
+            local duration = SpellDB and SpellDB:GetDuration(spell, logRank) or 1
             debuffTracker[unit .. spell] = {
                 endTime = GetTime() + duration,
                 spell = spell,
