@@ -301,20 +301,20 @@ local function UpdateNamePlateDimensions(frame)
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
     if swapNameDebuff then
-    -- Name above, Debuffs below (no gap), Castbar below debuffs
+        -- Name above, Debuffs below (no gap), Castbar dynamic (below debuffs or healthbar)
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
         -- Debuffs below (no gap)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, 0)
+                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below debuffs (swapped mode)
+        -- Default castbar position (no debuffs visible) - directly below healthbar
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
+        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
     else
     -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
@@ -1051,11 +1051,6 @@ local function UpdateNamePlate(frame)
             end
 
             nameplate.castbar:Show()
-
-            -- Move name to avoid overlap with castbar (only needed in default mode)
-            if not swapNameDebuff then
-                nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
-            end
         else
             nameplate.castbar:Hide()
         end
@@ -1306,31 +1301,42 @@ local function UpdateNamePlate(frame)
             debuff:ClearAllPoints()
             local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
             if swapNameDebuff then
-                -- Debuffs below healthbar
+                -- Debuffs below healthbar (no gap)
                 debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
 
-                -- Adjust name and castbar if they might overlap
+                -- Adjust name
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
-
-                -- Castbar below debuffs
-                nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
             else
             -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
 
-                -- Adjust name and castbar
+                -- Adjust name
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
-
-                nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
             end
         end
     else
     -- Reset positions if no debuffs
         UpdateNamePlateDimensions(frame)
+    end
+
+    -- Dynamic castbar positioning based on debuffs (only when castbar is visible)
+    if nameplate.castbar:IsShown() then
+        nameplate.castbar:ClearAllPoints()
+        if swapNameDebuff then
+            -- Swapped mode: castbar below debuffs if any, otherwise below healthbar
+            if numDebuffs > 0 then
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
+            else
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+            end
+        else
+            -- Default mode: castbar below healthbar, move name down to avoid overlap
+            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+            nameplate.name:ClearAllPoints()
+            nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
+        end
     end
 end
 
