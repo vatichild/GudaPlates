@@ -302,7 +302,7 @@ local function UpdateNamePlateDimensions(frame)
     nameplate.name:ClearAllPoints()
     if swapNameDebuff then
         -- Name above castbar, Castbar above healthbar, Debuffs below
-        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
+        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
         -- Debuffs below (no gap)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
@@ -316,12 +316,12 @@ local function UpdateNamePlateDimensions(frame)
         nameplate.castbar:ClearAllPoints()
         nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
     else
-    -- Default: Name below, Debuffs above
+        -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 6)
+                nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
@@ -1308,7 +1308,7 @@ local function UpdateNamePlate(frame)
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
             else
-            -- Debuffs above healthbar
+                -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
 
                 -- Adjust name
