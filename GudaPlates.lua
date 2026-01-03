@@ -27,6 +27,7 @@ local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
 local showDebuffTimers = true -- Toggle for debuff countdowns
+local showOnlyMyDebuffs = true -- Toggle for showing only player's debuffs (true) or all debuffs (false)
 
 -- Debuff tracking for non-SuperWoW
 local debuffTracker = {}
@@ -1148,6 +1149,12 @@ local function UpdateNamePlate(frame)
                     duration = SpellDB:GetDuration(effect, 0)
                 end
             end
+            
+            -- Filter: if showOnlyMyDebuffs is true, skip debuffs not tracked by player
+            local isMyDebuff = (timeleft and timeleft > 0)
+            if showOnlyMyDebuffs and not isMyDebuff then
+                -- Skip this debuff - not tracked as player's
+            else
             local debuff = nameplate.debuffs[debuffIndex]
             debuff.icon:SetTexture(texture)
 
@@ -1214,6 +1221,7 @@ local function UpdateNamePlate(frame)
             debuff:Show()
             debuff.icon:SetAlpha(1)
             debuffIndex = debuffIndex + 1
+            end -- end of showOnlyMyDebuffs filter else block
         end
     elseif plateName then
     -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
@@ -1230,6 +1238,12 @@ local function UpdateNamePlate(frame)
                 end
 
                 if not texture then break end
+                
+                -- Filter: if showOnlyMyDebuffs is true, skip debuffs not tracked by player
+                local isMyDebuff = (timeleft and timeleft > 0)
+                if showOnlyMyDebuffs and not isMyDebuff then
+                    -- Skip this debuff - not tracked as player's
+                else
 
                 local debuff = nameplate.debuffs[debuffIndex]
                 debuff.icon:SetTexture(texture)
@@ -1288,6 +1302,7 @@ local function UpdateNamePlate(frame)
                 debuff:Show()
                 debuff.icon:SetAlpha(1)
                 debuffIndex = debuffIndex + 1
+                end -- end of showOnlyMyDebuffs filter else block
             end
         end
     end
@@ -1873,6 +1888,7 @@ local function SaveSettings()
     GudaPlatesDB.raidIconPosition = raidIconPosition
     GudaPlatesDB.swapNameDebuff = swapNameDebuff
     GudaPlatesDB.showDebuffTimers = showDebuffTimers
+    GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
 end
 
 local function LoadSettings()
@@ -1908,6 +1924,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.showDebuffTimers ~= nil then
         showDebuffTimers = GudaPlatesDB.showDebuffTimers
+    end
+    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
+        showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -2321,6 +2340,20 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Only My Debuffs checkbox
+local myDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesMyDebuffsCheckbox", optionsFrame, "UICheckButtonTemplate")
+myDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -460)
+local myDebuffsLabel = getglobal(myDebuffsCheckbox:GetName().."Text")
+myDebuffsLabel:SetText("Show Only My Debuffs")
+myDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+myDebuffsCheckbox:SetScript("OnClick", function()
+    showOnlyMyDebuffs = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
@@ -2337,6 +2370,7 @@ optionsFrame:SetScript("OnShow", function()
     raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
     swapCheckbox:SetChecked(swapNameDebuff)
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
+    myDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
 end)
 
 -- Reset to defaults button
@@ -2361,6 +2395,7 @@ resetButton:SetScript("OnClick", function()
     raidIconPosition = "LEFT"
     swapNameDebuff = false
     showDebuffTimers = true
+    showOnlyMyDebuffs = true
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and sliders
@@ -2381,6 +2416,7 @@ resetButton:SetScript("OnClick", function()
     raidMarkCheckbox:SetChecked(false)
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
+    myDebuffsCheckbox:SetChecked(true)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
