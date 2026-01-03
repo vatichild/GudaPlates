@@ -54,6 +54,10 @@ GudaPlates includes a comprehensive spell database with correct durations for al
 - Hunter debuffs (Serpent Sting, etc.)
 - And many more...
 
+## Credits
+
+Inspired by ShaguPlates and other classic nameplate addons.
+
 ## License
 
 MIT License - Feel free to modify and distribute.
