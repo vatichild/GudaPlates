@@ -301,20 +301,20 @@ local function UpdateNamePlateDimensions(frame)
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
     if swapNameDebuff then
-    -- Name above
+    -- Name above, Debuffs below (no gap), Castbar below debuffs
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
-        -- Debuffs below
+        -- Debuffs below (no gap)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -6)
+                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, 0)
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be on top of health
+        -- Adjust castbar to be below debuffs (swapped mode)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
     else
     -- Default: Name below, Debuffs above
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
@@ -326,9 +326,9 @@ local function UpdateNamePlateDimensions(frame)
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be on top of name (covering it)
+        -- Adjust castbar to be below healthbar (default mode)
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
+        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
     end
 
     -- When stacking, we also need to update the parent frame size
@@ -545,7 +545,7 @@ local function HandleNamePlate(frame)
 
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
     nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
-    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 18, 0)
+    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.text:SetJustifyH("LEFT")
 
@@ -556,9 +556,9 @@ local function HandleNamePlate(frame)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
-    nameplate.castbar.icon:SetWidth(16) -- Slightly larger than the new 12 height
-    nameplate.castbar.icon:SetHeight(16)
-    nameplate.castbar.icon:SetPoint("LEFT", nameplate.castbar, "LEFT", 0, 0)
+    nameplate.castbar.icon:SetWidth(12)
+    nameplate.castbar.icon:SetHeight(12)
+    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.castbar, "LEFT", -2, 0) -- Outside to the left
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     nameplate.castbar.icon.border = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
@@ -985,14 +985,17 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        if not casting then
+        if not casting and SpellInfo then
         -- Fallback to SpellInfo
             casting = SpellInfo(unitstr)
             if not casting and plateName then
                 casting = SpellInfo(plateName)
             end
         end
-    elseif plateName and castTracker[plateName] then
+    end
+
+    -- Fallback to castTracker (combat log based) if SuperWoW methods didn't find a cast
+    if not casting and plateName and castTracker[plateName] then
     -- Fallback: handle multiple same-named mobs
         local now = GetTime()
         local myID = tostring(frame)
@@ -1042,19 +1045,15 @@ local function UpdateNamePlate(frame)
                 nameplate.castbar.icon:SetTexture(casting.icon)
                 nameplate.castbar.icon:Show()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
-                nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 18, 0)
             else
                 nameplate.castbar.icon:Hide()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Hide() end
-                nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
             end
 
             nameplate.castbar:Show()
 
-            -- Move nameplate elements to avoid overlap with castbar
-            if swapNameDebuff then
-                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
-            else
+            -- Move name to avoid overlap with castbar (only needed in default mode)
+            if not swapNameDebuff then
                 nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
             end
         else
@@ -1307,15 +1306,16 @@ local function UpdateNamePlate(frame)
             debuff:ClearAllPoints()
             local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
             if swapNameDebuff then
-            -- Debuffs below healthbar
-                debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, -6)
+                -- Debuffs below healthbar
+                debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
 
                 -- Adjust name and castbar if they might overlap
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
 
+                -- Castbar below debuffs
                 nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -(DEBUFF_SIZE + 2))
             else
             -- Debuffs above healthbar
                 debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
@@ -1325,7 +1325,7 @@ local function UpdateNamePlate(frame)
                 nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
 
                 nameplate.castbar:ClearAllPoints()
-                nameplate.castbar:SetPoint("CENTER", nameplate.name, "CENTER", 0, 0)
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
             end
         end
     else
@@ -1548,8 +1548,8 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
 
-    elseif not superwow_active and arg1 then
-    -- Fallback spell tracking using combat log messages
+    elseif arg1 then
+    -- Combat log spell tracking (works as primary for non-SuperWoW or fallback for SuperWoW)
     -- Pattern: "Unit begins to cast Spell." or "Unit begins to perform Spell."
         local unit, spell = nil, nil
 
