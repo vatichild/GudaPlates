@@ -289,12 +289,7 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 		time = GetTime()
 	}
 	
-	-- Only one pending spell at a time
-	if self.pending[3] then 
-		DebugDuration("  -> pending blocked by: " .. tostring(self.pending[3]))
-		return 
-	end
-
+	-- Always overwrite pending for tracked debuff spells
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
 	if UnitGUID and UnitExists("target") and UnitName("target") == unit then
@@ -318,10 +313,12 @@ function GudaPlates_SpellDB:RemovePending()
 end
 
 function GudaPlates_SpellDB:PersistPending(effect)
+	DebugDuration("PersistPending called: effect=" .. tostring(effect) .. " pending[3]=" .. tostring(self.pending[3]))
 	if not self.pending[3] then return end
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
 		-- Store by GUID (pending[1]) for accurate per-mob tracking
+		DebugDuration("  -> Refreshing with duration=" .. tostring(self.pending[4]))
 		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
@@ -380,6 +377,11 @@ function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration)
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+	
+	-- Clear recentCasts entry so we don't refresh again until next cast
+	if self.recentCasts[effect] then
+		self.recentCasts[effect] = nil
+	end
 end
 
 function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)

@@ -1628,9 +1628,26 @@ GudaPlates:SetScript("OnEvent", function()
 
     -- ShaguPlates-style event handlers
     elseif event == "SPELLCAST_STOP" then
-        -- Persist pending spell when cast finishes
-        if SpellDB then
-            SpellDB:PersistPending()
+        -- For instant spells that refresh existing debuffs, check recentCasts
+        -- The "afflicted" message doesn't fire on refresh, only on initial apply
+        DebugDuration("SPELLCAST_STOP fired, pending[3]=" .. tostring(SpellDB and SpellDB.pending[3]))
+        if SpellDB and SpellDB.pending[3] then
+            local effect = SpellDB.pending[3]
+            local duration = SpellDB.pending[4]
+            local unitName = SpellDB.pending[5]
+            local unitlevel = SpellDB.pending[2]
+            
+            DebugDuration("  checking: unit=" .. tostring(unitName) .. " level=" .. tostring(unitlevel) .. " effect=" .. tostring(effect))
+            local hasObject = SpellDB.objects[unitName] and SpellDB.objects[unitName][unitlevel] and SpellDB.objects[unitName][unitlevel][effect]
+            DebugDuration("  hasObject=" .. tostring(hasObject ~= nil))
+            
+            -- Check if this debuff already exists on target (refresh case)
+            if unitName and hasObject then
+                DebugDuration("SPELLCAST_STOP: Refreshing existing " .. tostring(effect) .. " duration=" .. tostring(duration))
+                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration)
+                SpellDB:RemovePending()
+            end
+            -- If not existing, wait for combat log "afflicted" message
         end
 
     elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and arg1 then
@@ -1665,6 +1682,7 @@ GudaPlates:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
         -- Track debuff applications from combat log (ShaguPlates-style)
         if arg1 and SpellDB then
+            DebugDuration("PERIODIC raw: " .. tostring(arg1))
             -- Pattern: "Unit is afflicted by Spell."
             local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL or "%s is afflicted by %s.")
             if unit and effect then
@@ -1695,36 +1713,6 @@ GudaPlates:SetScript("OnEvent", function()
         end
 
     elseif arg1 then
-        -- Debuff tracking using SpellDB (ShaguPlates-style)
-        -- Pattern: "Unit is afflicted by Spell."
-        for unit, spell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
-            -- Use recentCasts duration if available and recent (within 3 sec)
-            local duration
-            local recent = SpellDB and SpellDB.recentCasts and SpellDB.recentCasts[spell]
-            local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
-            if isRecentCast then
-                duration = recent.duration
-            else
-                duration = SpellDB and SpellDB:GetDuration(spell, 0) or 1
-            end
-            if SpellDB then
-                local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
-                if isRecentCast then
-                    -- Recent cast - refresh the timer (player reapplied the debuff)
-                    SpellDB:RefreshEffect(unit, unitlevel, spell, duration)
-                elseif not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][spell] then
-                    -- Not our spell, only add if not already tracked
-                    SpellDB:AddEffect(unit, unitlevel, spell, duration)
-                end
-            end
-            -- Also update legacy debuffTracker for backward compatibility
-            debuffTracker[unit .. spell] = {
-                endTime = GetTime() + duration,
-                spell = spell,
-                unit = unit,
-            }
-        end
-
         -- Pattern: "Spell fades from Unit."
         for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
             local spell = StripSpellRank(rawSpell)
