@@ -269,19 +269,10 @@ end
 -- Store recent casts by spell name for combat log fallback
 GudaPlates_SpellDB.recentCasts = {}
 
--- Debug helper
-local function DebugDuration(msg)
-	if DEFAULT_CHAT_FRAME then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[SpellDB-DBG]|r " .. tostring(msg))
-	end
-end
-
 function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	if not unit or not effect then return end
 	if not self.DEBUFFS[effect] then return end
 	if duration <= 0 then return end
-	
-	DebugDuration("AddPending: effect=" .. tostring(effect) .. " duration=" .. tostring(duration) .. " unit=" .. tostring(unit))
 	
 	-- Always store recent cast keyed by spell name (for combat log fallback)
 	self.recentCasts[effect] = {
@@ -313,12 +304,10 @@ function GudaPlates_SpellDB:RemovePending()
 end
 
 function GudaPlates_SpellDB:PersistPending(effect)
-	DebugDuration("PersistPending called: effect=" .. tostring(effect) .. " pending[3]=" .. tostring(self.pending[3]))
 	if not self.pending[3] then return end
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
 		-- Store by GUID (pending[1]) for accurate per-mob tracking
-		DebugDuration("  -> Refreshing with duration=" .. tostring(self.pending[4]))
 		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
@@ -561,4 +550,4 @@ end
 -- ============================================
 -- INITIALIZATION
 -- ============================================
-_G["GudaPlates_SpellDB"] = GudaPlates_SpellDB
+-- GudaPlates_SpellDB is already global from line 4

@@ -6,17 +6,11 @@ if DEFAULT_CHAT_FRAME then
 end
 
 -- Debug flag for duration tracking
-local DEBUG_DURATION = true
+local DEBUG_DURATION = false
 
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[GudaPlates]|r " .. tostring(msg))
-    end
-end
-
-local function DebugDuration(msg)
-    if DEBUG_DURATION and DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[GudaPlates-DBG]|r " .. tostring(msg))
     end
 end
 
@@ -1628,22 +1622,18 @@ GudaPlates:SetScript("OnEvent", function()
 
     -- ShaguPlates-style event handlers
     elseif event == "SPELLCAST_STOP" then
-        -- For instant spells that refresh existing debuffs, check recentCasts
+        -- For instant spells that refresh existing debuffs
         -- The "afflicted" message doesn't fire on refresh, only on initial apply
-        DebugDuration("SPELLCAST_STOP fired, pending[3]=" .. tostring(SpellDB and SpellDB.pending[3]))
         if SpellDB and SpellDB.pending[3] then
             local effect = SpellDB.pending[3]
             local duration = SpellDB.pending[4]
             local unitName = SpellDB.pending[5]
             local unitlevel = SpellDB.pending[2]
             
-            DebugDuration("  checking: unit=" .. tostring(unitName) .. " level=" .. tostring(unitlevel) .. " effect=" .. tostring(effect))
             local hasObject = SpellDB.objects[unitName] and SpellDB.objects[unitName][unitlevel] and SpellDB.objects[unitName][unitlevel][effect]
-            DebugDuration("  hasObject=" .. tostring(hasObject ~= nil))
             
             -- Check if this debuff already exists on target (refresh case)
             if unitName and hasObject then
-                DebugDuration("SPELLCAST_STOP: Refreshing existing " .. tostring(effect) .. " duration=" .. tostring(duration))
                 SpellDB:RefreshEffect(unitName, unitlevel, effect, duration)
                 SpellDB:RemovePending()
             end
@@ -1682,31 +1672,24 @@ GudaPlates:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
         -- Track debuff applications from combat log (ShaguPlates-style)
         if arg1 and SpellDB then
-            DebugDuration("PERIODIC raw: " .. tostring(arg1))
             -- Pattern: "Unit is afflicted by Spell."
             local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL or "%s is afflicted by %s.")
             if unit and effect then
-                DebugDuration("PERIODIC event: unit=" .. tostring(unit) .. " effect=" .. tostring(effect))
                 local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
                 local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
                 local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
                 
                 -- First try to persist pending spell (this has accurate rank/duration from cast hook)
                 if SpellDB.pending[3] == effect then
-                    DebugDuration("  -> Using pending, duration=" .. tostring(SpellDB.pending[4]))
                     SpellDB:PersistPending(effect)
                 elseif isRecentCast then
                     -- Recent cast - refresh the timer (player reapplied the debuff)
-                    DebugDuration("  -> Using recentCasts (refresh), duration=" .. tostring(recent.duration))
                     SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration)
                 else
                     -- Not our spell, only add if not already tracked
                     if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
                         local dbDuration = SpellDB:GetDuration(effect, 0)
-                        DebugDuration("  -> Using default (rank 0), duration=" .. tostring(dbDuration))
                         SpellDB:AddEffect(unit, unitlevel, effect, dbDuration)
-                    else
-                        DebugDuration("  -> Already tracked, skipping")
                     end
                 end
             end
