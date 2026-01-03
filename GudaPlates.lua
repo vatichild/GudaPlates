@@ -79,6 +79,20 @@ local THREAT_COLORS = {
     },
 }
 
+-- Tank class detection for OTHER_TANK coloring
+local TANK_CLASSES = {
+    ["Warrior"] = true,
+    ["Paladin"] = true,
+    ["Druid"] = true,
+}
+
+-- Helper function to check if a unit is a tank class
+local function IsTankClass(unit)
+    if not unit or not UnitExists(unit) then return false end
+    local _, class = UnitClass(unit)
+    return class and TANK_CLASSES[class]
+end
+
 -- Load spell database if available
 local SpellDB = GudaPlates_SpellDB
 
@@ -883,8 +897,15 @@ local function UpdateNamePlate(frame)
                 -- Losing aggro (WARNING)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 else
-                -- No aggro, need to taunt (BAD)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                -- No aggro - check if another tank has it
+                    local mobTarget = unitstr .. "target"
+                    if IsTankClass(mobTarget) then
+                    -- Another tank has aggro (OK - no action needed)
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                    -- Non-tank has aggro, need to taunt (BAD)
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
                 end
             else -- DPS/Healer
                 if isAttackingPlayer or isTanking then
@@ -904,7 +925,13 @@ local function UpdateNamePlate(frame)
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                -- Check if another tank has aggro
+                    local mobTarget = unitstr .. "target"
+                    if IsTankClass(mobTarget) then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
                 end
             else
                 if isAttackingPlayer then
@@ -919,7 +946,18 @@ local function UpdateNamePlate(frame)
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                -- Without GUID, check targettarget if this mob is our target
+                    local otherTankHasAggro = false
+                    if plateName and UnitExists("target") and UnitName("target") == plateName then
+                        if frame:GetAlpha() > 0.9 and UnitExists("targettarget") then
+                            otherTankHasAggro = IsTankClass("targettarget")
+                        end
+                    end
+                    if otherTankHasAggro then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
                 end
             else
                 if isAttackingPlayer then
@@ -1862,8 +1900,49 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             Print("SpellDB loaded: NO")
             Print("GudaPlates_SpellDB: " .. tostring(GudaPlates_SpellDB ~= nil))
         end
+    elseif string.find(msg, "^othertank") then
+        -- Set OTHER_TANK color: /gp othertank <preset> or /gp othertank r g b
+        local args = string.gsub(msg, "^othertank%s*", "")
+        local COLOR_PRESETS = {
+            lightblue = {0.6, 0.8, 1.0, 1},
+            cyan = {0.0, 1.0, 1.0, 1},
+            green = {0.0, 0.8, 0.0, 1},
+            teal = {0.0, 0.5, 0.5, 1},
+            purple = {0.6, 0.4, 0.8, 1},
+            pink = {1.0, 0.6, 0.8, 1},
+            yellow = {1.0, 1.0, 0.0, 1},
+            white = {1.0, 1.0, 1.0, 1},
+            gray = {0.5, 0.5, 0.5, 1},
+        }
+        if args == "" then
+            Print("OTHER_TANK color presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
+            Print("Usage: /gp othertank <preset> or /gp othertank <r> <g> <b> (0-1 values)")
+            local c = THREAT_COLORS.TANK.OTHER_TANK
+            Print("Current: " .. string.format("%.2f %.2f %.2f", c[1], c[2], c[3]))
+        elseif COLOR_PRESETS[args] then
+            THREAT_COLORS.TANK.OTHER_TANK = COLOR_PRESETS[args]
+            SaveSettings()
+            Print("OTHER_TANK color set to: " .. args)
+        else
+            -- Try to parse as RGB values
+            local r, g, b = string.match(args, "([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
+            if r and g and b then
+                r, g, b = tonumber(r), tonumber(g), tonumber(b)
+                if r and g and b and r >= 0 and r <= 1 and g >= 0 and g <= 1 and b >= 0 and b <= 1 then
+                    THREAT_COLORS.TANK.OTHER_TANK = {r, g, b, 1}
+                    SaveSettings()
+                    Print("OTHER_TANK color set to: " .. string.format("%.2f %.2f %.2f", r, g, b))
+                else
+                    Print("Invalid RGB values. Use values between 0 and 1.")
+                end
+            else
+                Print("Unknown preset: " .. args)
+                Print("Available presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
+            end
+        end
     else
         Print("Commands: /gp tank | /gp dps | /gp toggle | /gp config")
+        Print("         /gp othertank <color> - Set Other Tank Aggro color")
         Print("         /gp debug - Show target debuffs with tooltip scanning")
         Print("         /gp tracked - Show all tracked debuffs")
         Print("         /gp pending - Show pending spell cast")
@@ -2200,12 +2279,13 @@ tankHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -100)
 tankHeader:SetText("|cff00ff00Tank Colors:|r")
 
 CreateColorSwatch(optionsFrame, 250, -125, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(optionsFrame, 250, -150, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(optionsFrame, 250, -175, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+CreateColorSwatch(optionsFrame, 250, -150, "Other Tank Aggro (Ok)", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(optionsFrame, 250, -175, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(optionsFrame, 250, -200, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
 
 -- Dimensions Sliders
 local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -220)
+heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -240)
 heightSlider:SetWidth(460)
 heightSlider:SetMinMaxValues(10, 30)
 heightSlider:SetValueStep(1)
@@ -2223,7 +2303,7 @@ heightSlider:SetScript("OnValueChanged", function()
 end)
 
 local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", optionsFrame, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -260)
+widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -280)
 widthSlider:SetWidth(460)
 widthSlider:SetMinMaxValues(72, 150)
 widthSlider:SetValueStep(1)
@@ -2241,7 +2321,7 @@ widthSlider:SetScript("OnValueChanged", function()
 end)
 
 local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -300)
+healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -320)
 healthFontSlider:SetWidth(460)
 healthFontSlider:SetMinMaxValues(8, 20)
 healthFontSlider:SetValueStep(1)
@@ -2259,7 +2339,7 @@ healthFontSlider:SetScript("OnValueChanged", function()
 end)
 
 local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", optionsFrame, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -340)
+levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -360)
 levelFontSlider:SetWidth(460)
 levelFontSlider:SetMinMaxValues(8, 20)
 levelFontSlider:SetValueStep(1)
@@ -2277,7 +2357,7 @@ levelFontSlider:SetScript("OnValueChanged", function()
 end)
 
 local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", optionsFrame, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -380)
+nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -400)
 nameFontSlider:SetWidth(460)
 nameFontSlider:SetMinMaxValues(8, 20)
 nameFontSlider:SetValueStep(1)
@@ -2296,7 +2376,7 @@ end)
 
 -- Raid Mark Position Checkbox
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", optionsFrame, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -420)
+raidMarkCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -440)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark on Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2314,7 +2394,7 @@ end)
 
 -- Swap Name and Debuffs Checkbox
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", optionsFrame, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -420)
+swapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -440)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name and Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2328,7 +2408,7 @@ end)
 
 -- Show Debuff Timers Checkbox
 local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", optionsFrame, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -460)
+debuffTimerCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -480)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
 debuffTimerLabel:SetText("Show Debuff Timers")
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2342,7 +2422,7 @@ end)
 
 -- Only My Debuffs checkbox
 local myDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesMyDebuffsCheckbox", optionsFrame, "UICheckButtonTemplate")
-myDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -460)
+myDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -480)
 local myDebuffsLabel = getglobal(myDebuffsCheckbox:GetName().."Text")
 myDebuffsLabel:SetText("Show Only My Debuffs")
 myDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
