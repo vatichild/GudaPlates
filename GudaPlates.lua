@@ -11,52 +11,34 @@ local function Print(msg)
     end
 end
 
-local initialized = 0
-local parentcount = 0
+-- Core state
 local platecount = 0
 local registry = {}
-local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
--- Track combat state per nameplate frame to avoid issues with same-named mobs
-local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
-local twthreat_active = UnitThreat ~= nil -- TurtleWoW TWThreat detection
+local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil)
+local twthreat_active = UnitThreat ~= nil
 
--- Debuff settings
+-- Constants
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
-local showDebuffTimers = true -- Toggle for debuff countdowns
 
--- Debuff tracking for non-SuperWoW
+-- Runtime tracking tables
 local debuffTracker = {}
-
--- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
--- This prevents timer reset every frame
 local debuffTimers = {}
-
--- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
 local castDB = {}
-
--- Cast tracking for non-SuperWoW
 local castTracker = {}
 
--- Role setting: "TANK" or "DPS" (DPS includes healers)
+-- Settings (loaded from SavedVariables)
 local playerRole = "DPS"
 local minimapAngle = 220
-
--- Nameplate overlap setting: true = overlapping, false = stacking (default)
 local nameplateOverlap = false
-
--- Healthbar dimensions
 local healthbarHeight = 14
 local healthbarWidth = 115
-
--- Font sizes
 local healthFontSize = 10
 local levelFontSize = 10
 local nameFontSize = 10
-
--- New settings
-local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
-local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
+local raidIconPosition = "LEFT"
+local swapNameDebuff = true
+local showDebuffTimers = true
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -71,60 +53,51 @@ local THREAT_COLORS = {
         AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue (matching DPS AGGRO)
         LOSING_AGGRO = {1.0, 0.6, 0.0, 1}, -- Orange (matching DPS HIGH_THREAT)
         NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
-        OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
+        OTHER_TANK = {0.6, 0.8, 1.0, 1},
     },
 }
 
 -- Load spell database if available
 local SpellDB = GudaPlates_SpellDB
-
--- Verify SpellDB loaded correctly
 if not SpellDB then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r ERROR: SpellDB failed to load!")
 end
 
--- ============================================
--- SPELL CAST HOOKS (ShaguTweaks-style)
--- Detects when player casts spells to track debuff durations with correct rank
--- ============================================
+-- Helper: Get threat-based color for nameplate
+local function GetThreatColor(isAttacking, isTanking, threatPct, hasThreatData)
+    local colors = playerRole == "TANK" and THREAT_COLORS.TANK or THREAT_COLORS.DPS
+    if hasThreatData then
+        if playerRole == "TANK" then
+            if isTanking or isAttacking then return colors.AGGRO end
+            if threatPct > 80 then return colors.LOSING_AGGRO end
+            return colors.NO_AGGRO
+        else
+            if isAttacking or isTanking then return colors.AGGRO end
+            if threatPct > 80 then return colors.HIGH_THREAT end
+            return colors.NO_AGGRO
+        end
+    end
+    return isAttacking and colors.AGGRO or colors.NO_AGGRO
+end
 
 -- Helper: Extract rank number from rank string like "Rank 2" (Lua 5.0 compatible)
 local function GetRankNumber(rankStr)
 	if not rankStr then return 0 end
-	-- Lua 5.0 uses string.gfind instead of string.match
 	for num in string.gfind(rankStr, "(%d+)") do
 		return tonumber(num) or 0
 	end
 	return 0
 end
 
--- Helper: Get spell name and rank from spellbook by ID
-local function GetSpellInfoFromBook(spellId, bookType)
-	local name, rank = GetSpellName(spellId, bookType)
-	return name, GetRankNumber(rank)
-end
-
--- Helper: Get spell name and rank from spell name string (e.g., "Rend(Rank 2)")
+-- Helper: Parse spell name and rank from various formats
+-- Handles: "Rend(Rank 2)", "Rend (Rank 2)", "Rend"
 local function ParseSpellName(spellString)
 	if not spellString then return nil, 0 end
-	-- Try to match "SpellName(Rank X)" format (Lua 5.0 compatible)
-	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
-		return name, tonumber(rank) or 0
-	end
-	-- No rank specified, just spell name
-	return spellString, 0
-end
-
--- Strip rank suffix from spell name (for combat log parsing)
--- "Rend (Rank 2)" -> "Rend", rank 2
--- "Rend" -> "Rend", rank 0
-local function StripSpellRank(spellString)
-	if not spellString then return nil, 0 end
-	-- Match "SpellName (Rank X)" with space before parenthesis
+	-- Try "SpellName (Rank X)" with space
 	for name, rank in string.gfind(spellString, "^(.+) %(Rank (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
-	-- Also try without space
+	-- Try "SpellName(Rank X)" without space
 	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
@@ -201,61 +174,32 @@ local function IsNamePlate(frame)
     local objType = frame:GetObjectType()
     if objType ~= "Frame" and objType ~= "Button" then return nil end
 
-    -- Check ALL regions for the nameplate border texture
     local regions = { frame:GetRegions() }
     for _, r in ipairs(regions) do
-        if r and r.GetObjectType and r:GetObjectType() == "Texture" then
-            if r.GetTexture then
-                local tex = r:GetTexture()
-                if tex == "Interface\\Tooltips\\Nameplate-Border" then
-                    return true
-                end
+        if r and r.GetTexture then
+            local tex = r:GetTexture()
+            if tex == "Interface\\Tooltips\\Nameplate-Border" then
+                return true
             end
         end
     end
     return nil
 end
 
-local function DisableObject(object)
-    if not object then return end
-    if object.SetAlpha then object:SetAlpha(0) end
-end
-
-local function HideVisual(object)
-    if not object then return end
-    if object.SetAlpha then object:SetAlpha(0) end
-    if object.GetObjectType then
-        local otype = object:GetObjectType()
-        if otype == "Texture" then
-            object:SetTexture("")
-        elseif otype == "FontString" then
-            object:SetTextColor(0, 0, 0, 0)
-        end
-    end
-end
-
 local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
-GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
--- SuperWoW cast event (provides exact GUID of caster)
-GudaPlates:RegisterEvent("UNIT_CASTEVENT")
--- ShaguPlates-style events for debuff tracking
-GudaPlates:RegisterEvent("SPELLCAST_STOP")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
-GudaPlates:RegisterEvent("PLAYER_TARGET_CHANGED")
-GudaPlates:RegisterEvent("UNIT_AURA")
+-- Register events for cast and debuff tracking
+local events = {
+    "PLAYER_ENTERING_WORLD", "UNIT_CASTEVENT", "SPELLCAST_STOP",
+    "CHAT_MSG_SPELL_FAILED_LOCALPLAYER", "PLAYER_TARGET_CHANGED", "UNIT_AURA",
+    "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE", "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE",
+    "CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE", "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE",
+    "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF", "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF",
+    "CHAT_MSG_SPELL_SELF_DAMAGE", "CHAT_MSG_SPELL_TRADESKILLS",
+    "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE", "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE",
+    "CHAT_MSG_SPELL_AURA_GONE_OTHER", "CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF",
+    "CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF",
+}
+for _, evt in ipairs(events) do GudaPlates:RegisterEvent(evt) end
 
 -- Patterns for removing pending spells (ShaguPlates-style)
 local REMOVE_PENDING_PATTERNS = {
@@ -657,10 +601,31 @@ local function HandleNamePlate(frame)
     frame.nameplate = nameplate
     registry[frame] = nameplate
 
-    Print("Hooked: " .. platename)
+    --Print("Hooked: " .. platename)
 end
 
+-- Helper to find tracked debuff data from SpellDB
+local function GetTrackedDebuffData(unitKey, unitName, effect, unitLevel)
+    if not SpellDB or not SpellDB.objects or not effect or effect == "" then return nil end
+    local now = GetTime()
 
+    -- Helper to search in a unit's tracked debuffs
+    local function SearchUnit(key)
+        if not SpellDB.objects[key] then return nil end
+        local levelData = SpellDB.objects[key][unitLevel] or SpellDB.objects[key][0]
+        if levelData and levelData[effect] then return levelData[effect] end
+        for _, effects in pairs(SpellDB.objects[key]) do
+            if effects[effect] then return effects[effect] end
+        end
+        return nil
+    end
+
+    local data = SearchUnit(unitKey) or (unitName and SearchUnit(unitName))
+    if data and data.start and data.duration and data.start + data.duration > now then
+        return data.duration, data.duration + data.start - now
+    end
+    return nil, nil
+end
 
 local function UpdateNamePlate(frame)
     local nameplate = frame.nameplate
@@ -851,79 +816,17 @@ local function UpdateNamePlate(frame)
     if isFriendly then
         nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
     elseif isNeutral and not isAttackingPlayer then
-    -- Neutral and not attacking - yellow
         nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
     elseif isHostile or (isNeutral and isAttackingPlayer) then
-    -- Hostile OR neutral that is attacking player
-    -- Check if mob is in combat (has a target)
-        local mobInCombat = false
-
-        if hasValidGUID then
-            local mobTarget = unitstr .. "target"
-            mobInCombat = UnitExists(mobTarget)
-        else
-        -- Fallback: assume in combat if attacking player or we have threat data or has glow
-            mobInCombat = isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow
-        end
+        local mobInCombat = hasValidGUID and UnitExists(unitstr .. "target") or
+            (isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow)
 
         if not mobInCombat then
-        -- Not in combat - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
-        elseif hasValidGUID and twthreat_active then
-        -- Full threat-based coloring (mob is in combat, has GUID and threat data)
-            if playerRole == "TANK" then
-                if isTanking or isAttackingPlayer then
-                -- Tank has aggro (GOOD)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                elseif threatPct > 80 then
-                -- Losing aggro (WARNING)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
-                else
-                -- No aggro, need to taunt (BAD)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
-                end
-            else -- DPS/Healer
-                if isAttackingPlayer or isTanking then
-                -- Mob attacking you (BAD)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                elseif threatPct > 80 then
-                -- High threat, about to pull (WARNING)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
-                else
-                -- Tank has aggro (GOOD)
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
-                end
-            end
-        elseif hasValidGUID then
-        -- Has GUID but no TWThreat - use targeting-based colors
-            if playerRole == "TANK" then
-                if isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
-                end
-            else
-                if isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
-                end
-            end
         else
-        -- No GUID (no SuperWoW) - fallback with name-based detection (has same-name limitation)
-            if playerRole == "TANK" then
-                if isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
-                end
-            else
-                if isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                else
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
-                end
-            end
+            local hasThreatData = hasValidGUID and twthreat_active
+            local color = GetThreatColor(isAttackingPlayer, isTanking, threatPct, hasThreatData)
+            nameplate.health:SetStatusBarColor(unpack(color))
         end
     else
         nameplate.health:SetStatusBarColor(r, g, b, 1)
@@ -1094,50 +997,10 @@ local function UpdateNamePlate(frame)
                     effect = SpellDB.textureToSpell[texture]
                 end
 
-                -- Try to get tracked data from SpellDB.objects
-                -- First try by GUID (unitstr), then by name (plateName)
+                -- Get tracked duration and time left
                 if effect and effect ~= "" then
                     local unitlevel = UnitLevel(unitstr) or 0
-                    local data = nil
-
-                    -- Try GUID lookup first (most accurate for multiple mobs with same name)
-                    if SpellDB.objects[unitstr] then
-                        if SpellDB.objects[unitstr][unitlevel] and SpellDB.objects[unitstr][unitlevel][effect] then
-                            data = SpellDB.objects[unitstr][unitlevel][effect]
-                        elseif SpellDB.objects[unitstr][0] and SpellDB.objects[unitstr][0][effect] then
-                            data = SpellDB.objects[unitstr][0][effect]
-                        else
-                            for lvl, effects in pairs(SpellDB.objects[unitstr]) do
-                                if effects[effect] then
-                                    data = effects[effect]
-                                    break
-                                end
-                            end
-                        end
-                    end
-
-                    -- Fallback to name lookup
-                    if not data and plateName and SpellDB.objects[plateName] then
-                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
-                            data = SpellDB.objects[plateName][unitlevel][effect]
-                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
-                            data = SpellDB.objects[plateName][0][effect]
-                        else
-                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
-                                if effects[effect] then
-                                    data = effects[effect]
-                                    break
-                                end
-                            end
-                        end
-                    end
-
-                    if data and data.start and data.duration then
-                        if data.start + data.duration > now then
-                            duration = data.duration
-                            timeleft = data.duration + data.start - now
-                        end
-                    end
+                    duration, timeleft = GetTrackedDebuffData(unitstr, plateName, effect, unitlevel)
                 end
 
                 -- Get duration from database if we don't have tracked data
@@ -1377,7 +1240,6 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 
     -- Cleanup stale debuff timers every 1 second
-    -- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
     local now = GetTime()
     if now - lastDebuffCleanup > 1 then
         lastDebuffCleanup = now
@@ -1395,71 +1257,46 @@ GudaPlates:SetScript("OnUpdate", function()
         end
     end
 
+    -- Helper to apply overlap/stacking settings to a plate
+    local function ApplyPlateSettings(plate, np)
+        if nameplateOverlap then
+            plate:EnableMouse(false)
+            if plate:GetWidth() > 1 then
+                plate:SetWidth(1)
+                plate:SetHeight(1)
+            end
+            np:EnableMouse(true)
+        else
+            plate:EnableMouse(true)
+            np:EnableMouse(false)
+        end
+        UpdateNamePlateDimensions(plate)
+    end
+
     -- If using ShaguTweaks, still apply overlap settings
     if usingShaguTweaks then
-        for plate, nameplate in pairs(registry) do
+        for plate, np in pairs(registry) do
             if plate:IsShown() then
-            -- Apply overlap/stacking setting
-                if nameplateOverlap then
-                    plate:EnableMouse(false)
-                    if plate:GetWidth() > 1 then
-                        plate:SetWidth(1)
-                        plate:SetHeight(1)
-                    end
-                    -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                    nameplate:EnableMouse(true)
-                else
-                    plate:EnableMouse(true)
-                    nameplate:EnableMouse(false)
-                end
-
-                -- Ensure dimensions are correct
-                UpdateNamePlateDimensions(plate)
+                ApplyPlateSettings(plate, np)
             end
         end
         return
     end
 
     -- Our own scanning logic
-    parentcount = WorldFrame:GetNumChildren()
-
+    local parentcount = WorldFrame:GetNumChildren()
     local childs = { WorldFrame:GetChildren() }
     for i = 1, parentcount do
         local plate = childs[i]
-        if plate then
-            local isPlate = IsNamePlate(plate)
-            if isPlate and not registry[plate] then
-                HandleNamePlate(plate)
-            end
+        if plate and IsNamePlate(plate) and not registry[plate] then
+            HandleNamePlate(plate)
         end
     end
 
-    for plate, nameplate in pairs(registry) do
+    for plate, np in pairs(registry) do
         if plate:IsShown() then
             UpdateNamePlate(plate)
-
-            -- Apply overlap/stacking setting
-            if nameplateOverlap then
-            -- Overlapping: disable parent mouse and shrink to 1px
-            -- This prevents game's collision avoidance from moving nameplates
-                plate:EnableMouse(false)
-
-                if plate:GetWidth() > 1 then
-                    plate:SetWidth(1)
-                    plate:SetHeight(1)
-                end
-
-                -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                -- Enable clicking on nameplate itself
-                nameplate:EnableMouse(true)
-            else
-            -- Stacking: restore parent frame size so game stacks them
-                plate:EnableMouse(true)
-                nameplate:EnableMouse(false)
-            end
-
-            -- Ensure dimensions are correct
-            UpdateNamePlateDimensions(plate)
+            ApplyPlateSettings(plate, np)
         end
     end
 end)
@@ -1549,6 +1386,17 @@ local function ParseCastStart(msg)
 
     if interruptedUnit and castTracker[interruptedUnit] then
         table.remove(castTracker[interruptedUnit], 1)
+    end
+end
+
+-- Helper to remove debuff tracking
+local function RemoveDebuffTracking(rawSpell, unit)
+    local spell = ParseSpellName(rawSpell)
+    debuffTracker[unit .. spell] = nil
+    if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+        for level, effects in pairs(SpellDB.objects[unit]) do
+            if effects[spell] then effects[spell] = nil end
+        end
     end
 end
 
@@ -1674,64 +1522,33 @@ GudaPlates:SetScript("OnEvent", function()
         end
 
     elseif arg1 then
-        -- Debuff tracking using SpellDB (ShaguPlates-style)
-        -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (Rank X)."
+        -- Debuff tracking using SpellDB
         for unit, rawSpell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
-            local spell, logRank = StripSpellRank(rawSpell)
+            local spell, logRank = ParseSpellName(rawSpell)
             if SpellDB then
                 local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
-                -- Only add if not already tracked
                 if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][spell] then
                     SpellDB:AddEffect(unit, unitlevel, spell)
                 end
             end
-            -- Also update legacy debuffTracker for backward compatibility
             local duration = SpellDB and SpellDB:GetDuration(spell, logRank) or 1
-            debuffTracker[unit .. spell] = {
-                endTime = GetTime() + duration,
-                spell = spell,
-                unit = unit,
-            }
+            debuffTracker[unit .. spell] = { endTime = GetTime() + duration, spell = spell, unit = unit }
         end
 
-        -- Pattern: "Spell fades from Unit."
+        -- Handle debuff removal patterns
         for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            -- Remove from SpellDB objects (all levels)
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
+            RemoveDebuffTracking(rawSpell, unit)
         end
         for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
+            RemoveDebuffTracking(rawSpell, unit)
         end
+
     elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" and arg1 then
         for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
+            RemoveDebuffTracking(rawSpell, unit)
         end
         for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
+            RemoveDebuffTracking(rawSpell, unit)
         end
     end
 end)
@@ -2182,96 +1999,44 @@ CreateColorSwatch(optionsFrame, 250, -125, "Has Aggro (Good)", THREAT_COLORS.TAN
 CreateColorSwatch(optionsFrame, 250, -150, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
 CreateColorSwatch(optionsFrame, 250, -175, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
 
--- Dimensions Sliders
-local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -220)
-heightSlider:SetWidth(460)
-heightSlider:SetMinMaxValues(10, 30)
-heightSlider:SetValueStep(1)
-local heightText = getglobal(heightSlider:GetName() .. "Text")
-heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(heightSlider:GetName() .. "Low"):SetText("10")
-getglobal(heightSlider:GetName() .. "High"):SetText("30")
-heightSlider:SetScript("OnValueChanged", function()
-    healthbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
+-- Slider helper function
+local sliders = {}
+local function CreateSlider(name, yOffset, minVal, maxVal, label, getValue, setValue)
+    local slider = CreateFrame("Slider", "GudaPlates" .. name .. "Slider", optionsFrame, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, yOffset)
+    slider:SetWidth(460)
+    slider:SetMinMaxValues(minVal, maxVal)
+    slider:SetValueStep(1)
+    getglobal(slider:GetName() .. "Text"):SetFont("Fonts\\FRIZQT__.TTF", 12)
+    getglobal(slider:GetName() .. "Low"):SetText(tostring(minVal))
+    getglobal(slider:GetName() .. "High"):SetText(tostring(maxVal))
+    slider:SetScript("OnValueChanged", function()
+        local val = this:GetValue()
+        setValue(val)
+        getglobal(this:GetName() .. "Text"):SetText(label .. ": " .. val)
+        SaveSettings()
+        for plate, _ in pairs(registry) do UpdateNamePlateDimensions(plate) end
+    end)
+    sliders[name] = { slider = slider, label = label, getValue = getValue }
+    return slider
+end
 
-local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", optionsFrame, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -260)
-widthSlider:SetWidth(460)
-widthSlider:SetMinMaxValues(72, 150)
-widthSlider:SetValueStep(1)
-local widthText = getglobal(widthSlider:GetName() .. "Text")
-widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(widthSlider:GetName() .. "Low"):SetText("72")
-getglobal(widthSlider:GetName() .. "High"):SetText("150")
-widthSlider:SetScript("OnValueChanged", function()
-    healthbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -300)
-healthFontSlider:SetWidth(460)
-healthFontSlider:SetMinMaxValues(8, 20)
-healthFontSlider:SetValueStep(1)
-local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
-healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(healthFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
-healthFontSlider:SetScript("OnValueChanged", function()
-    healthFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", optionsFrame, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -340)
-levelFontSlider:SetWidth(460)
-levelFontSlider:SetMinMaxValues(8, 20)
-levelFontSlider:SetValueStep(1)
-local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
-levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
-levelFontSlider:SetScript("OnValueChanged", function()
-    levelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", optionsFrame, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -380)
-nameFontSlider:SetWidth(460)
-nameFontSlider:SetMinMaxValues(8, 20)
-nameFontSlider:SetValueStep(1)
-local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
-nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
-nameFontSlider:SetScript("OnValueChanged", function()
-    nameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
+-- Create sliders
+CreateSlider("Height", -220, 10, 30, "Healthbar Height",
+    function() return healthbarHeight end,
+    function(v) healthbarHeight = v end)
+CreateSlider("Width", -260, 72, 150, "Healthbar Width",
+    function() return healthbarWidth end,
+    function(v) healthbarWidth = v end)
+CreateSlider("HealthFont", -300, 8, 20, "Health Font Size",
+    function() return healthFontSize end,
+    function(v) healthFontSize = v end)
+CreateSlider("LevelFont", -340, 8, 20, "Level Font Size",
+    function() return levelFontSize end,
+    function(v) levelFontSize = v end)
+CreateSlider("NameFont", -380, 8, 20, "Name Font Size",
+    function() return nameFontSize end,
+    function(v) nameFontSize = v end)
 
 -- Raid Mark Position Checkbox
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", optionsFrame, "UICheckButtonTemplate")
@@ -2319,19 +2084,19 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Helper to update all sliders
+local function UpdateSliders()
+    for name, data in pairs(sliders) do
+        local val = data.getValue()
+        data.slider:SetValue(val)
+        getglobal(data.slider:GetName() .. "Text"):SetText(data.label .. ": " .. val)
+    end
+end
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    UpdateSliders()
     raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
     swapCheckbox:SetChecked(swapNameDebuff)
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
@@ -2361,25 +2126,12 @@ resetButton:SetScript("OnClick", function()
     showDebuffTimers = true
     SaveSettings()
     Print("Settings reset to defaults.")
-    -- Update all swatches and sliders
-    for _, updateFunc in ipairs(swatches) do
-        updateFunc()
-    end
+    for _, updateFunc in ipairs(swatches) do updateFunc() end
     tankCheckbox:SetChecked(false)
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    UpdateSliders()
     raidMarkCheckbox:SetChecked(false)
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
-    -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
             UpdateNamePlateDimensions(plate)
