@@ -5,9 +5,18 @@ if DEFAULT_CHAT_FRAME then
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Loading...")
 end
 
+-- Debug flag for duration tracking
+local DEBUG_DURATION = true
+
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[GudaPlates]|r " .. tostring(msg))
+    end
+end
+
+local function DebugDuration(msg)
+    if DEBUG_DURATION and DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[GudaPlates-DBG]|r " .. tostring(msg))
     end
 end
 
@@ -1659,15 +1668,27 @@ GudaPlates:SetScript("OnEvent", function()
             -- Pattern: "Unit is afflicted by Spell."
             local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL or "%s is afflicted by %s.")
             if unit and effect then
-                -- First try to persist pending spell (this is the accurate one with rank info)
+                DebugDuration("PERIODIC event: unit=" .. tostring(unit) .. " effect=" .. tostring(effect))
+                local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
+                local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
+                
+                -- First try to persist pending spell (this has accurate rank/duration from cast hook)
                 if SpellDB.pending[3] == effect then
+                    DebugDuration("  -> Using pending, duration=" .. tostring(SpellDB.pending[4]))
                     SpellDB:PersistPending(effect)
+                elseif isRecentCast then
+                    -- Recent cast - refresh the timer (player reapplied the debuff)
+                    DebugDuration("  -> Using recentCasts (refresh), duration=" .. tostring(recent.duration))
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration)
                 else
-                    -- Fallback: add from combat log (no rank info, uses default duration)
-                    local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                    -- Not our spell, only add if not already tracked
                     if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
                         local dbDuration = SpellDB:GetDuration(effect, 0)
+                        DebugDuration("  -> Using default (rank 0), duration=" .. tostring(dbDuration))
                         SpellDB:AddEffect(unit, unitlevel, effect, dbDuration)
+                    else
+                        DebugDuration("  -> Already tracked, skipping")
                     end
                 end
             end
@@ -1675,18 +1696,28 @@ GudaPlates:SetScript("OnEvent", function()
 
     elseif arg1 then
         -- Debuff tracking using SpellDB (ShaguPlates-style)
-        -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (Rank X)."
-        for unit, rawSpell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
-            local spell, logRank = StripSpellRank(rawSpell)
+        -- Pattern: "Unit is afflicted by Spell."
+        for unit, spell in string.gfind(arg1, "(.+) is afflicted by (.+)%.") do
+            -- Use recentCasts duration if available and recent (within 3 sec)
+            local duration
+            local recent = SpellDB and SpellDB.recentCasts and SpellDB.recentCasts[spell]
+            local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
+            if isRecentCast then
+                duration = recent.duration
+            else
+                duration = SpellDB and SpellDB:GetDuration(spell, 0) or 1
+            end
             if SpellDB then
                 local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
-                -- Only add if not already tracked
-                if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][spell] then
-                    SpellDB:AddEffect(unit, unitlevel, spell)
+                if isRecentCast then
+                    -- Recent cast - refresh the timer (player reapplied the debuff)
+                    SpellDB:RefreshEffect(unit, unitlevel, spell, duration)
+                elseif not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][spell] then
+                    -- Not our spell, only add if not already tracked
+                    SpellDB:AddEffect(unit, unitlevel, spell, duration)
                 end
             end
             -- Also update legacy debuffTracker for backward compatibility
-            local duration = SpellDB and SpellDB:GetDuration(spell, logRank) or 1
             debuffTracker[unit .. spell] = {
                 endTime = GetTime() + duration,
                 spell = spell,

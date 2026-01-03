@@ -266,11 +266,34 @@ end
 -- PENDING SPELL TRACKING (ShaguPlates-style)
 -- ============================================
 
+-- Store recent casts by spell name for combat log fallback
+GudaPlates_SpellDB.recentCasts = {}
+
+-- Debug helper
+local function DebugDuration(msg)
+	if DEFAULT_CHAT_FRAME then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[SpellDB-DBG]|r " .. tostring(msg))
+	end
+end
+
 function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	if not unit or not effect then return end
 	if not self.DEBUFFS[effect] then return end
 	if duration <= 0 then return end
-	if self.pending[3] then return end
+	
+	DebugDuration("AddPending: effect=" .. tostring(effect) .. " duration=" .. tostring(duration) .. " unit=" .. tostring(unit))
+	
+	-- Always store recent cast keyed by spell name (for combat log fallback)
+	self.recentCasts[effect] = {
+		duration = duration,
+		time = GetTime()
+	}
+	
+	-- Only one pending spell at a time
+	if self.pending[3] then 
+		DebugDuration("  -> pending blocked by: " .. tostring(self.pending[3]))
+		return 
+	end
 
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
@@ -299,10 +322,10 @@ function GudaPlates_SpellDB:PersistPending(effect)
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
 		-- Store by GUID (pending[1]) for accurate per-mob tracking
-		self:AddEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
+		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
-			self:AddEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4])
+			self:RefreshEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4])
 		end
 	end
 
@@ -327,6 +350,12 @@ function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration)
 	-- Initialize tables
 	if not self.objects[unit] then self.objects[unit] = {} end
 	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
+	
+	-- If effect already exists and has a valid start time, don't reset it
+	if self.objects[unit][unitlevel][effect] and self.objects[unit][unitlevel][effect].start then
+		return
+	end
+	
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
 	-- Save current effect as lastspell for potential revert
@@ -334,6 +363,21 @@ function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration)
 
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start_old = self.objects[unit][unitlevel][effect].start
+	self.objects[unit][unitlevel][effect].start = GetTime()
+	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+end
+
+function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration)
+	if not unit or not effect then return end
+	unitlevel = unitlevel or 0
+
+	-- Initialize tables if needed
+	if not self.objects[unit] then self.objects[unit] = {} end
+	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
+	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
+
+	-- Always refresh start time and duration
+	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
 end
