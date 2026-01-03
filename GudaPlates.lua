@@ -294,7 +294,7 @@ local function UpdateNamePlateDimensions(frame)
 
     nameplate.health:SetHeight(healthbarHeight)
     nameplate.health:SetWidth(healthbarWidth)
-    nameplate.castbar:SetWidth(healthbarWidth)
+    nameplate.castbar:SetWidth(healthbarWidth + 3)
 
     local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
     nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
@@ -520,14 +520,14 @@ local function HandleNamePlate(frame)
     -- Target highlight borders (left and right)
     nameplate.health.targetLeft = nameplate.health:CreateTexture(nil, "OVERLAY")
     nameplate.health.targetLeft:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetLeft:SetWidth(2)
+    nameplate.health.targetLeft:SetWidth(1)
     nameplate.health.targetLeft:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -1, 0)
     nameplate.health.targetLeft:SetPoint("BOTTOMRIGHT", nameplate.health, "BOTTOMLEFT", -1, 0)
     nameplate.health.targetLeft:Hide()
 
     nameplate.health.targetRight = nameplate.health:CreateTexture(nil, "OVERLAY")
     nameplate.health.targetRight:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetRight:SetWidth(2)
+    nameplate.health.targetRight:SetWidth(1)
     nameplate.health.targetRight:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 1, 0)
     nameplate.health.targetRight:SetPoint("BOTTOMLEFT", nameplate.health, "BOTTOMRIGHT", 1, 0)
     nameplate.health.targetRight:Hide()
@@ -581,9 +581,10 @@ local function HandleNamePlate(frame)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
-    nameplate.castbar.icon:SetWidth(12)
-    nameplate.castbar.icon:SetHeight(12)
-    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.castbar, "LEFT", -2, 0) -- Outside to the left
+    -- Icon size will be set dynamically based on healthbar + castbar height
+    nameplate.castbar.icon:SetWidth(healthbarHeight + 12) -- healthbar + castbar height
+    nameplate.castbar.icon:SetHeight(healthbarHeight + 12)
+    -- Position will be set dynamically based on raidIconPosition
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     nameplate.castbar.icon.border = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
@@ -1083,6 +1084,22 @@ local function UpdateNamePlate(frame)
 
             if casting.icon then
                 nameplate.castbar.icon:SetTexture(casting.icon)
+                -- Position icon based on raidIconPosition (opposite side)
+                nameplate.castbar.icon:ClearAllPoints()
+                local iconSize = healthbarHeight + 12 -- healthbar + castbar height
+                nameplate.castbar.icon:SetWidth(iconSize)
+                nameplate.castbar.icon:SetHeight(iconSize)
+                local positionTop = -6
+                if swapNameDebuff then
+                    positionTop = 6
+                end
+                if raidIconPosition == "RIGHT" then
+                    -- Raid icon on right, castbar icon on left
+                    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.health, "LEFT", -4, positionTop)
+                else
+                    -- Raid icon on left (default), castbar icon on right
+                    nameplate.castbar.icon:SetPoint("LEFT", nameplate.health, "RIGHT", 4, positionTop)
+                end
                 nameplate.castbar.icon:Show()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
             else
