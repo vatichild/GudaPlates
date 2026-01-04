@@ -422,33 +422,74 @@ local function UpdateNamePlateDimensions(frame)
 
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
+    
+    -- Update mana bar position based on swap setting
+    if nameplate.mana then
+        nameplate.mana:ClearAllPoints()
+    end
+    
     if Settings.swapNameDebuff then
-        -- Name above castbar, Castbar above healthbar, Debuffs below
+        -- Swapped: Name above, Debuffs below healthbar, Mana bar below healthbar
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
-        -- Debuffs below (no gap)
+        
+        -- Mana bar below healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        end
+        
+        -- Debuffs below mana bar (or healthbar if no mana)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
+                else
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                end
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
+        
         -- Castbar above healthbar (no gap)
         nameplate.castbar:ClearAllPoints()
         nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        
+        -- Level above healthbar (swapped mode - mana is below)
+        nameplate.level:ClearAllPoints()
+        nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
     else
-        -- Default: Name below, Debuffs above
+        -- Default: Name below, Mana bar above healthbar, Debuffs above mana bar
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
+        
+        -- Mana bar above healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        end
+        
+        -- Level above mana bar (or healthbar if no mana)
+        nameplate.level:ClearAllPoints()
+        if nameplate.mana and nameplate.mana:IsShown() then
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.mana, "TOPRIGHT", 0, 2)
+        else
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+        end
+        
+        -- Debuffs above mana bar (or healthbar if no mana)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.mana, "TOPLEFT", 0, 1)
+                else
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                end
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below healthbar (default mode)
+        
+        -- Castbar below healthbar (default mode)
         nameplate.castbar:ClearAllPoints()
         nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
     end
@@ -1551,16 +1592,24 @@ local function UpdateNamePlate(frame)
             local debuff = nameplate.debuffs[i]
             debuff:ClearAllPoints()
             local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
-            if swapNameDebuff then
-                -- Debuffs below healthbar (no gap)
-                debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
+            if Settings.swapNameDebuff then
+                -- Debuffs below mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("TOP", nameplate.mana, "BOTTOM", x, 0)
+                else
+                    debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
+                end
 
                 -- Adjust name (above castbar which is above healthbar)
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
             else
-                -- Debuffs above healthbar
-                debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
+                -- Debuffs above mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("BOTTOM", nameplate.mana, "TOP", x, 1)
+                else
+                    debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 1)
+                end
 
                 -- Adjust name
                 nameplate.name:ClearAllPoints()
@@ -1575,7 +1624,7 @@ local function UpdateNamePlate(frame)
     -- Dynamic castbar positioning based on debuffs (only when castbar is visible)
     if nameplate.castbar:IsShown() then
         nameplate.castbar:ClearAllPoints()
-        if swapNameDebuff then
+        if Settings.swapNameDebuff then
             -- Swapped mode: castbar above healthbar (no gap)
             nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
         else
