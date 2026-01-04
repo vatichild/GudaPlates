@@ -90,6 +90,7 @@ local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
 local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
 local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
 local grayUntaggedMobs = true -- true: show gray healthbar for mobs not in combat with player/group
+local showManaBar = false -- false: hide mana bar (default), true: show mana bar below health bar
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -349,6 +350,11 @@ local function UpdateNamePlateDimensions(frame)
     nameplate.health:SetHeight(healthbarHeight)
     nameplate.health:SetWidth(healthbarWidth)
     nameplate.castbar:SetWidth(healthbarWidth + 3)
+    
+    -- Update mana bar width
+    if nameplate.mana then
+        nameplate.mana:SetWidth(healthbarWidth)
+    end
 
     local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
     nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
@@ -604,6 +610,26 @@ local function HandleNamePlate(frame)
     nameplate.healthtext:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
     nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
     nameplate.healthtext:SetTextColor(1, 1, 1, 1)
+
+    -- Mana Bar below healthbar (optional, hidden by default)
+    nameplate.mana = CreateFrame("StatusBar", nil, nameplate)
+    nameplate.mana:SetFrameLevel(frame:GetFrameLevel() + 11)
+    nameplate.mana:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    nameplate.mana:SetStatusBarColor(0.0, 0.4, 0.85, 1) -- Blue for mana
+    nameplate.mana:SetHeight(4)
+    nameplate.mana:SetWidth(healthbarWidth)
+    nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.mana:Hide()
+
+    nameplate.mana.bg = nameplate.mana:CreateTexture(nil, "BACKGROUND")
+    nameplate.mana.bg:SetTexture(0, 0, 0, 0.8)
+    nameplate.mana.bg:SetAllPoints()
+
+    nameplate.mana.border = nameplate.mana:CreateTexture(nil, "OVERLAY")
+    nameplate.mana.border:SetTexture(0, 0, 0, 1)
+    nameplate.mana.border:SetPoint("TOPLEFT", nameplate.mana, "TOPLEFT", -1, 1)
+    nameplate.mana.border:SetPoint("BOTTOMRIGHT", nameplate.mana, "BOTTOMRIGHT", 1, -1)
+    nameplate.mana.border:SetDrawLayer("BACKGROUND", -1)
 
     -- Cast Bar below the name
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
@@ -1039,6 +1065,26 @@ local function UpdateNamePlate(frame)
     if original.name and original.name.GetText then
         local name = original.name:GetText()
         if name then nameplate.name:SetText(name) end
+    end
+
+    -- Update Mana Bar (only with SuperWoW GUID support)
+    if showManaBar and superwow_active and hasValidGUID then
+        local mana = UnitMana(unitstr) or 0
+        local manaMax = UnitManaMax(unitstr) or 0
+        local powerType = UnitPowerType and UnitPowerType(unitstr) or 0
+        
+        -- Only show for units with mana (powerType 0 = mana)
+        if manaMax > 0 and powerType == 0 then
+            nameplate.mana:SetMinMaxValues(0, manaMax)
+            nameplate.mana:SetValue(mana)
+            nameplate.mana:Show()
+        else
+            nameplate.mana:Hide()
+        end
+    else
+        if nameplate.mana then
+            nameplate.mana:Hide()
+        end
     end
 
     -- Target highlight - show borders on current target
@@ -2060,6 +2106,7 @@ local function SaveSettings()
     GudaPlatesDB.showDebuffTimers = showDebuffTimers
     GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
     GudaPlatesDB.grayUntaggedMobs = grayUntaggedMobs
+    GudaPlatesDB.showManaBar = showManaBar
 end
 
 local function LoadSettings()
@@ -2101,6 +2148,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.grayUntaggedMobs ~= nil then
         grayUntaggedMobs = GudaPlatesDB.grayUntaggedMobs
+    end
+    if GudaPlatesDB.showManaBar ~= nil then
+        showManaBar = GudaPlatesDB.showManaBar
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -2382,12 +2432,12 @@ CreateColorSwatch(optionsFrame, 250, -200, "No Aggro (Bad)", THREAT_COLORS.TANK,
 local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
 heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -240)
 heightSlider:SetWidth(460)
-heightSlider:SetMinMaxValues(10, 30)
+heightSlider:SetMinMaxValues(6, 25)
 heightSlider:SetValueStep(1)
 local heightText = getglobal(heightSlider:GetName() .. "Text")
 heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(heightSlider:GetName() .. "Low"):SetText("10")
-getglobal(heightSlider:GetName() .. "High"):SetText("30")
+getglobal(heightSlider:GetName() .. "Low"):SetText("6")
+getglobal(heightSlider:GetName() .. "High"):SetText("25")
 heightSlider:SetScript("OnValueChanged", function()
     healthbarHeight = this:GetValue()
     getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
@@ -2418,11 +2468,11 @@ end)
 local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
 healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -320)
 healthFontSlider:SetWidth(460)
-healthFontSlider:SetMinMaxValues(8, 20)
+healthFontSlider:SetMinMaxValues(6, 20)
 healthFontSlider:SetValueStep(1)
 local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
 healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(healthFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
 healthFontSlider:SetScript("OnValueChanged", function()
     healthFontSize = this:GetValue()
@@ -2553,6 +2603,30 @@ grayUntaggedCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+-- Show Mana Bar Checkbox
+local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", optionsFrame, "UICheckButtonTemplate")
+manaBarCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -520)
+local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
+manaBarLabel:SetText("Show Mana Bar")
+manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+manaBarCheckbox:SetScript("OnClick", function()
+    showManaBar = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+manaBarCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Mana Bar")
+    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
+    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+manaBarCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
@@ -2571,6 +2645,7 @@ optionsFrame:SetScript("OnShow", function()
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
     onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
     grayUntaggedCheckbox:SetChecked(grayUntaggedMobs)
+    manaBarCheckbox:SetChecked(showManaBar)
 end)
 
 -- Reset to defaults button
@@ -2598,6 +2673,7 @@ resetButton:SetScript("OnClick", function()
     showDebuffTimers = true
     showOnlyMyDebuffs = true
     grayUntaggedMobs = true
+    showManaBar = false
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and sliders
@@ -2620,6 +2696,7 @@ resetButton:SetScript("OnClick", function()
     debuffTimerCheckbox:SetChecked(true)
     onlyMyDebuffsCheckbox:SetChecked(true)
     grayUntaggedCheckbox:SetChecked(true)
+    manaBarCheckbox:SetChecked(false)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
