@@ -5,6 +5,34 @@ if DEFAULT_CHAT_FRAME then
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Loading...")
 end
 
+-- Disable pfUI nameplates module
+local function DisablePfUINameplates()
+    if pfUI then
+        -- Disable the module registration
+        if pfUI.modules then
+            pfUI.modules["nameplates"] = nil
+        end
+        -- Hide existing pfUI nameplate frame if it exists
+        if pfNameplates then
+            pfNameplates:Hide()
+            pfNameplates:UnregisterAllEvents()
+        end
+        -- Block pfUI nameplate creation function
+        if pfUI.nameplates then
+            pfUI.nameplates = nil
+        end
+        return true
+    end
+    return false
+end
+
+-- Try to disable pfUI nameplates immediately
+if DisablePfUINameplates() then
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Disabled pfUI nameplates module")
+    end
+end
+
 -- Debug flag for duration tracking
 local DEBUG_DURATION = false
 
@@ -60,6 +88,7 @@ local nameFontSize = 10
 -- New settings
 local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
 local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
+local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -253,6 +282,7 @@ end
 
 local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
 GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
+GudaPlates:RegisterEvent("ADDON_LOADED")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
@@ -1195,7 +1225,7 @@ local function UpdateNamePlate(frame)
                         if data.start + data.duration > now then
                             duration = data.duration
                             timeleft = data.duration + data.start - now
-                            isMyDebuff = true
+                            isMyDebuff = data.isOwn == true
                         end
                     end
                 end
@@ -1206,8 +1236,8 @@ local function UpdateNamePlate(frame)
                 end
             end
             
-            -- Filter: always show only own debuffs
-            if not isMyDebuff then
+            -- Filter: show only own debuffs if enabled
+            if showOnlyMyDebuffs and not isMyDebuff then
                 -- Skip this debuff - not tracked as player's
             else
             local debuff = nameplate.debuffs[debuffIndex]
@@ -1285,20 +1315,19 @@ local function UpdateNamePlate(frame)
                 if debuffIndex > MAX_DEBUFFS then break end
 
                 -- Use ShaguPlates-style UnitDebuff wrapper
-                local effect, rank, texture, stacks, dtype, duration, timeleft
+                local effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
                 if SpellDB then
-                    effect, rank, texture, stacks, dtype, duration, timeleft = SpellDB:UnitDebuff("target", i)
+                    effect, rank, texture, stacks, dtype, duration, timeleft, isOwn = SpellDB:UnitDebuff("target", i)
                 else
                     texture, stacks = UnitDebuff("target", i)
                 end
 
                 if not texture then break end
-                
-                -- Filter: always show only own debuffs
-                -- timeleft > 0 means it was found in SpellDB.objects (player's debuff)
-                -- timeleft == -1 means it's from database lookup only (not player's debuff)
-                local isMyDebuff = (timeleft and timeleft > 0)
-                if not isMyDebuff then
+
+                -- Filter: show only own debuffs if enabled
+                -- isOwn flag from SpellDB indicates if this is the player's debuff
+                local isMyDebuff = isOwn == true
+                if showOnlyMyDebuffs and not isMyDebuff then
                     -- Skip this debuff - not tracked as player's
                 else
 
@@ -1633,8 +1662,17 @@ GudaPlates:SetScript("OnEvent", function()
         ParseCastStart(arg1)
     end
 
-    if event == "PLAYER_ENTERING_WORLD" then
-    -- Clear trackers on zone/load
+    if event == "ADDON_LOADED" and arg1 == "pfUI" then
+        -- pfUI just loaded, disable its nameplates
+        if DisablePfUINameplates() then
+            Print("Disabled pfUI nameplates module")
+        end
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
+        DisablePfUINameplates()
+
+        -- Clear trackers on zone/load
         debuffTracker = {}
         castTracker = {}
         castDB = {}
@@ -1756,12 +1794,12 @@ GudaPlates:SetScript("OnEvent", function()
                     SpellDB:PersistPending(effect)
                 elseif isRecentCast then
                     -- Recent cast - refresh the timer (player reapplied the debuff)
-                    SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration)
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration, true)
                 else
                     -- Not our spell, only add if not already tracked
                     if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
                         local dbDuration = SpellDB:GetDuration(effect, 0)
-                        SpellDB:AddEffect(unit, unitlevel, effect, dbDuration)
+                        SpellDB:AddEffect(unit, unitlevel, effect, dbDuration, false)
                     end
                 end
             end
@@ -1986,6 +2024,7 @@ local function SaveSettings()
     GudaPlatesDB.raidIconPosition = raidIconPosition
     GudaPlatesDB.swapNameDebuff = swapNameDebuff
     GudaPlatesDB.showDebuffTimers = showDebuffTimers
+    GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
 end
 
 local function LoadSettings()
@@ -2021,6 +2060,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.showDebuffTimers ~= nil then
         showDebuffTimers = GudaPlatesDB.showDebuffTimers
+    end
+    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
+        showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -2435,6 +2477,20 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Show Only My Debuffs Checkbox
+local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", optionsFrame, "UICheckButtonTemplate")
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -480)
+local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
+onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
+onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+onlyMyDebuffsCheckbox:SetScript("OnClick", function()
+    showOnlyMyDebuffs = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
@@ -2451,6 +2507,7 @@ optionsFrame:SetScript("OnShow", function()
     raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
     swapCheckbox:SetChecked(swapNameDebuff)
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
+    onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
 end)
 
 -- Reset to defaults button
@@ -2476,6 +2533,7 @@ resetButton:SetScript("OnClick", function()
     raidIconPosition = "LEFT"
     swapNameDebuff = false
     showDebuffTimers = true
+    showOnlyMyDebuffs = true
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and sliders
@@ -2496,6 +2554,7 @@ resetButton:SetScript("OnClick", function()
     raidMarkCheckbox:SetChecked(false)
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
+    onlyMyDebuffsCheckbox:SetChecked(true)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then

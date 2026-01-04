@@ -308,10 +308,11 @@ function GudaPlates_SpellDB:PersistPending(effect)
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
 		-- Store by GUID (pending[1]) for accurate per-mob tracking
-		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4])
+		-- Mark as isOwn = true since this is the player's own debuff
+		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4], true)
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
-			self:RefreshEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4])
+			self:RefreshEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4], true)
 		end
 	end
 
@@ -329,19 +330,19 @@ function GudaPlates_SpellDB:RevertLastAction()
 	end
 end
 
-function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration)
+function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration, isOwn)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
 
 	-- Initialize tables
 	if not self.objects[unit] then self.objects[unit] = {} end
 	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
-	
+
 	-- If effect already exists and has a valid start time, don't reset it
 	if self.objects[unit][unitlevel][effect] and self.objects[unit][unitlevel][effect].start then
 		return
 	end
-	
+
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
 	-- Save current effect as lastspell for potential revert
@@ -351,9 +352,10 @@ function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration)
 	self.objects[unit][unitlevel][effect].start_old = self.objects[unit][unitlevel][effect].start
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+	self.objects[unit][unitlevel][effect].isOwn = isOwn or false -- default to false (other players' spells)
 end
 
-function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration)
+function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isOwn)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
 
@@ -366,7 +368,8 @@ function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration)
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
-	
+	self.objects[unit][unitlevel][effect].isOwn = isOwn ~= false -- default to true for backwards compatibility
+
 	-- Clear recentCasts entry so we don't refresh again until next cast
 	if self.recentCasts[effect] then
 		self.recentCasts[effect] = nil
@@ -384,7 +387,7 @@ end
 
 -- ============================================
 -- UNITDEBUFF WRAPPER (ShaguPlates-style)
--- Returns: effect, rank, texture, stacks, dtype, duration, timeleft
+-- Returns: effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
 -- ============================================
 function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	local unitname = UnitName(unit)
@@ -393,6 +396,7 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	local duration, timeleft = nil, -1
 	local rank = nil
 	local effect = nil
+	local isOwn = false
 
 	if texture then
 		-- Get spell name via tooltip scanning
@@ -435,6 +439,7 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 			else
 				duration = data.duration
 				timeleft = duration + data.start - GetTime()
+				isOwn = data.isOwn == true
 			end
 		end
 	end
@@ -449,7 +454,7 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 		end
 	end
 
-	return effect, rank, texture, stacks, dtype, duration, timeleft
+	return effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
 end
 
 -- ============================================
