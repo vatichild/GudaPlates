@@ -89,7 +89,6 @@ local nameFontSize = 10
 local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
 local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
 local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
-local grayUntaggedMobs = true -- true: show gray healthbar for mobs not in combat with player/group
 local showManaBar = false -- false: hide mana bar (default), true: show mana bar below health bar
 
 -- Plater-style threat colors
@@ -107,6 +106,9 @@ local THREAT_COLORS = {
         NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
         OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
     },
+    -- Misc colors
+    TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
+    MANA_BAR = {0.0, 0.4, 0.85, 1},  -- Blue: mana bar color
 }
 
 -- Tank class detection for OTHER_TANK coloring
@@ -615,7 +617,7 @@ local function HandleNamePlate(frame)
     nameplate.mana = CreateFrame("StatusBar", nil, nameplate)
     nameplate.mana:SetFrameLevel(frame:GetFrameLevel() + 11)
     nameplate.mana:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.mana:SetStatusBarColor(0.0, 0.4, 0.85, 1) -- Blue for mana
+    nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
     nameplate.mana:SetHeight(4)
     nameplate.mana:SetWidth(healthbarWidth)
     nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
@@ -971,7 +973,7 @@ local function UpdateNamePlate(frame)
 
         -- Check if mob is tapped by others (in combat but NOT targeting our group)
         local isTappedByOthers = false
-        if grayUntaggedMobs and mobInCombat then
+        if mobInCombat then
             local isMobTargetingGroup = false
 
             if mobTargetUnit and UnitExists(mobTargetUnit) then
@@ -989,8 +991,8 @@ local function UpdateNamePlate(frame)
         -- Not in combat - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif isTappedByOthers then
-        -- GRAY: Mob is tapped by others - no other colors applied
-            nameplate.health:SetStatusBarColor(0.5, 0.5, 0.5, 1)
+        -- TAPPED: Mob is tapped by others - no other colors applied
+            nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
         elseif hasValidGUID and twthreat_active then
         -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
@@ -1077,6 +1079,7 @@ local function UpdateNamePlate(frame)
         if manaMax > 0 and powerType == 0 then
             nameplate.mana:SetMinMaxValues(0, manaMax)
             nameplate.mana:SetValue(mana)
+            nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
             nameplate.mana:Show()
         else
             nameplate.mana:Hide()
@@ -2105,7 +2108,6 @@ local function SaveSettings()
     GudaPlatesDB.swapNameDebuff = swapNameDebuff
     GudaPlatesDB.showDebuffTimers = showDebuffTimers
     GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
-    GudaPlatesDB.grayUntaggedMobs = grayUntaggedMobs
     GudaPlatesDB.showManaBar = showManaBar
 end
 
@@ -2146,9 +2148,6 @@ local function LoadSettings()
     if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
         showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
     end
-    if GudaPlatesDB.grayUntaggedMobs ~= nil then
-        grayUntaggedMobs = GudaPlatesDB.grayUntaggedMobs
-    end
     if GudaPlatesDB.showManaBar ~= nil then
         showManaBar = GudaPlatesDB.showManaBar
     end
@@ -2161,6 +2160,13 @@ local function LoadSettings()
                     end
                 end
             end
+        end
+        -- Load misc colors (TAPPED, MANA_BAR)
+        if GudaPlatesDB.THREAT_COLORS.TAPPED then
+            THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
+        end
+        if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
+            THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
         end
     end
 end
@@ -2256,7 +2262,7 @@ local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
 optionsFrame:SetFrameStrata("DIALOG")
 optionsFrame:SetFrameLevel(100)
 optionsFrame:SetWidth(500)
-optionsFrame:SetHeight(580)
+optionsFrame:SetHeight(520)
 optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 optionsFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -2280,55 +2286,59 @@ title:SetText("GudaPlates Settings")
 local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
 closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
 
--- Nameplate Mode Selection
-local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", optionsFrame, "UICheckButtonTemplate")
-overlapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
-local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
-overlapLabel:SetText("Overlapping Nameplates")
-overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-overlapCheckbox:SetScript("OnClick", function()
-    nameplateOverlap = this:GetChecked() == 1
-    SaveSettings()
-    if nameplateOverlap then
-        Print("Nameplates set to OVERLAPPING")
-    else
-        Print("Nameplates set to STACKING")
-    end
-end)
-overlapCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Overlapping Nameplates")
-    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode (default).", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-overlapCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+-- Tab Content Frames
+local generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
+generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
 
--- Role Selection
-local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", optionsFrame, "UICheckButtonTemplate")
-tankCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -50)
-local tankLabel = getglobal(tankCheckbox:GetName().."Text")
-tankLabel:SetText("Tank Mode")
-tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-tankCheckbox:SetScript("OnClick", function()
-    if this:GetChecked() == 1 then
-        playerRole = "TANK"
+local colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
+colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+colorsTab:Hide()
+
+-- Tab Buttons
+local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
+generalTabButton:SetWidth(120)
+generalTabButton:SetHeight(28)
+generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
+
+local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
+generalTabText:SetText("General")
+
+local generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
+generalTabBg:SetTexture(1, 1, 1, 0.3)
+generalTabBg:SetAllPoints()
+
+local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
+colorsTabButton:SetWidth(120)
+colorsTabButton:SetHeight(28)
+colorsTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 5, 0)
+
+local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
+colorsTabText:SetText("Colors/Threat")
+
+local colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
+colorsTabBg:SetTexture(1, 1, 1, 0.1)
+colorsTabBg:SetAllPoints()
+
+local function SelectTab(tabName)
+    if tabName == "general" then
+        generalTab:Show()
+        colorsTab:Hide()
+        generalTabBg:SetTexture(1, 1, 1, 0.3)
+        colorsTabBg:SetTexture(1, 1, 1, 0.1)
     else
-        playerRole = "DPS"
+        generalTab:Hide()
+        colorsTab:Show()
+        generalTabBg:SetTexture(1, 1, 1, 0.1)
+        colorsTabBg:SetTexture(1, 1, 1, 0.3)
     end
-    SaveSettings()
-    Print("Role set to " .. playerRole)
-end)
-tankCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Tank Mode")
-    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-tankCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+end
+
+generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
+colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
 
 -- Color picker helper
 local function ShowColorPicker(r, g, b, callback)
@@ -2347,7 +2357,7 @@ local function ShowColorPicker(r, g, b, callback)
     ColorPickerFrame:Show()
 end
 
--- Create color swatch
+-- Create color swatch helper
 local swatches = {}
 local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2359,12 +2369,10 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     swatch:SetHeight(20)
     swatch:SetPoint("LEFT", swatchLabel, "RIGHT", 10, 0)
 
-    -- Black border
     local border = swatch:CreateTexture(nil, "BACKGROUND")
     border:SetTexture(0, 0, 0, 1)
     border:SetAllPoints()
 
-    -- Color fill (slightly inset for border effect)
     local swatchBg = swatch:CreateTexture(nil, "ARTWORK")
     swatchBg:SetTexture(1, 1, 1, 1)
     swatchBg:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
@@ -2376,7 +2384,6 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     end
     UpdateSwatchColor()
 
-    -- Store for global updates
     table.insert(swatches, UpdateSwatchColor)
 
     swatch:SetScript("OnClick", function()
@@ -2386,7 +2393,6 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
                 colorTable[colorKey] = {r, g, b, 1}
                 UpdateSwatchColor()
                 SaveSettings()
-                -- Force refresh of all visible nameplates
                 for plate, _ in pairs(registry) do
                     if plate:IsShown() then
                         UpdateNamePlate(plate)
@@ -2409,29 +2415,39 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     return swatch
 end
 
--- DPS Colors Section
-local dpsHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-dpsHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -100)
-dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+-- ==========================================
+-- GENERAL TAB CONTENT
+-- ==========================================
 
-CreateColorSwatch(optionsFrame, 20, -125, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
-CreateColorSwatch(optionsFrame, 20, -150, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
-CreateColorSwatch(optionsFrame, 20, -175, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
-
--- Tank Colors Section
-local tankHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-tankHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -100)
-tankHeader:SetText("|cff00ff00Tank Colors:|r")
-
-CreateColorSwatch(optionsFrame, 250, -125, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(optionsFrame, 250, -150, "Other Tank Aggro (Ok)", THREAT_COLORS.TANK, "OTHER_TANK")
-CreateColorSwatch(optionsFrame, 250, -175, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(optionsFrame, 250, -200, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+-- Nameplate Mode Selection
+local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
+overlapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -10)
+local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
+overlapLabel:SetText("Overlapping Nameplates")
+overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+overlapCheckbox:SetScript("OnClick", function()
+    nameplateOverlap = this:GetChecked() == 1
+    SaveSettings()
+    if nameplateOverlap then
+        Print("Nameplates set to OVERLAPPING")
+    else
+        Print("Nameplates set to STACKING")
+    end
+end)
+overlapCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Overlapping Nameplates")
+    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+overlapCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
 
 -- Dimensions Sliders
-local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -240)
-heightSlider:SetWidth(460)
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", generalTab, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -60)
+heightSlider:SetWidth(450)
 heightSlider:SetMinMaxValues(6, 25)
 heightSlider:SetValueStep(1)
 local heightText = getglobal(heightSlider:GetName() .. "Text")
@@ -2447,9 +2463,9 @@ heightSlider:SetScript("OnValueChanged", function()
     end
 end)
 
-local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", optionsFrame, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -280)
-widthSlider:SetWidth(460)
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", generalTab, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -100)
+widthSlider:SetWidth(450)
 widthSlider:SetMinMaxValues(72, 150)
 widthSlider:SetValueStep(1)
 local widthText = getglobal(widthSlider:GetName() .. "Text")
@@ -2465,9 +2481,9 @@ widthSlider:SetScript("OnValueChanged", function()
     end
 end)
 
-local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -320)
-healthFontSlider:SetWidth(460)
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", generalTab, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
+healthFontSlider:SetWidth(450)
 healthFontSlider:SetMinMaxValues(6, 20)
 healthFontSlider:SetValueStep(1)
 local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
@@ -2483,9 +2499,9 @@ healthFontSlider:SetScript("OnValueChanged", function()
     end
 end)
 
-local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", optionsFrame, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -360)
-levelFontSlider:SetWidth(460)
+local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", generalTab, "OptionsSliderTemplate")
+levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -180)
+levelFontSlider:SetWidth(450)
 levelFontSlider:SetMinMaxValues(8, 20)
 levelFontSlider:SetValueStep(1)
 local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
@@ -2501,9 +2517,9 @@ levelFontSlider:SetScript("OnValueChanged", function()
     end
 end)
 
-local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", optionsFrame, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -400)
-nameFontSlider:SetWidth(460)
+local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", generalTab, "OptionsSliderTemplate")
+nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -220)
+nameFontSlider:SetWidth(450)
 nameFontSlider:SetMinMaxValues(8, 20)
 nameFontSlider:SetValueStep(1)
 local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
@@ -2520,8 +2536,8 @@ nameFontSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Raid Mark Position Checkbox
-local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", optionsFrame, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -440)
+local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
+raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -260)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark on Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2538,8 +2554,8 @@ raidMarkCheckbox:SetScript("OnClick", function()
 end)
 
 -- Swap Name and Debuffs Checkbox
-local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", optionsFrame, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -440)
+local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
+swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -260)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name and Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2552,8 +2568,8 @@ swapCheckbox:SetScript("OnClick", function()
 end)
 
 -- Show Debuff Timers Checkbox
-local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", optionsFrame, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -480)
+local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
+debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -295)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
 debuffTimerLabel:SetText("Show Debuff Timers")
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2566,8 +2582,8 @@ debuffTimerCheckbox:SetScript("OnClick", function()
 end)
 
 -- Show Only My Debuffs Checkbox
-local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", optionsFrame, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -480)
+local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -295)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
 onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2579,33 +2595,9 @@ onlyMyDebuffsCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Gray Untagged Mobs Checkbox
-local grayUntaggedCheckbox = CreateFrame("CheckButton", "GudaPlatesGrayUntaggedCheckbox", optionsFrame, "UICheckButtonTemplate")
-grayUntaggedCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -520)
-local grayUntaggedLabel = getglobal(grayUntaggedCheckbox:GetName().."Text")
-grayUntaggedLabel:SetText("Gray Healthbar for Untagged Mobs")
-grayUntaggedLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-grayUntaggedCheckbox:SetScript("OnClick", function()
-    grayUntaggedMobs = this:GetChecked() == 1
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
-    end
-end)
-grayUntaggedCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Gray Healthbar for Untagged Mobs")
-    GameTooltip:AddLine("Shows gray healthbar for mobs in combat", 1, 1, 1, 1)
-    GameTooltip:AddLine("with players outside your group (tapped by others).", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-grayUntaggedCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
-
 -- Show Mana Bar Checkbox
-local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", optionsFrame, "UICheckButtonTemplate")
-manaBarCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -520)
+local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", generalTab, "UICheckButtonTemplate")
+manaBarCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -330)
 local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
 manaBarLabel:SetText("Show Mana Bar")
 manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -2627,9 +2619,66 @@ manaBarCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+-- ==========================================
+-- COLORS/THREAT TAB CONTENT
+-- ==========================================
+
+-- Tank Mode Checkbox
+local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colorsTab, "UICheckButtonTemplate")
+tankCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -10)
+local tankLabel = getglobal(tankCheckbox:GetName().."Text")
+tankLabel:SetText("Tank Mode")
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        playerRole = "TANK"
+    else
+        playerRole = "DPS"
+    end
+    SaveSettings()
+    Print("Role set to " .. playerRole)
+end)
+tankCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Tank Mode")
+    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+tankCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- DPS Colors Section
+local dpsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+dpsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -50)
+dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -75, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
+CreateColorSwatch(colorsTab, 5, -100, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
+CreateColorSwatch(colorsTab, 5, -125, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
+
+-- Tank Colors Section
+local tankHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -50)
+tankHeader:SetText("|cff00ff00Tank Colors:|r")
+
+CreateColorSwatch(colorsTab, 235, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(colorsTab, 235, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 235, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 235, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+
+-- Misc Colors Section
+local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -170)
+miscHeader:SetText("|cff00ff00Other Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -195, "Unit Tapped", THREAT_COLORS, "TAPPED")
+CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+
+-- OnShow handler
 optionsFrame:SetScript("OnShow", function()
+    -- General tab
     overlapCheckbox:SetChecked(nameplateOverlap)
-    tankCheckbox:SetChecked(playerRole == "TANK")
     heightSlider:SetValue(healthbarHeight)
     getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
     widthSlider:SetValue(healthbarWidth)
@@ -2644,15 +2693,20 @@ optionsFrame:SetScript("OnShow", function()
     swapCheckbox:SetChecked(swapNameDebuff)
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
     onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
-    grayUntaggedCheckbox:SetChecked(grayUntaggedMobs)
     manaBarCheckbox:SetChecked(showManaBar)
+    -- Colors tab
+    tankCheckbox:SetChecked(playerRole == "TANK")
+    -- Update color swatches
+    for _, updateFunc in ipairs(swatches) do
+        updateFunc()
+    end
 end)
 
 -- Reset to defaults button
 local resetButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
 resetButton:SetWidth(120)
 resetButton:SetHeight(25)
-resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 20)
+resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 15)
 resetButton:SetText("Reset Defaults")
 resetButton:SetScript("OnClick", function()
     playerRole = "DPS"
@@ -2663,6 +2717,8 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.OTHER_TANK = {0.6, 0.8, 1.0, 1}
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
+    THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
+    THREAT_COLORS.MANA_BAR = {0.0, 0.4, 0.85, 1}
     healthbarHeight = 14
     healthbarWidth = 115
     healthFontSize = 10
@@ -2672,15 +2728,15 @@ resetButton:SetScript("OnClick", function()
     swapNameDebuff = false
     showDebuffTimers = true
     showOnlyMyDebuffs = true
-    grayUntaggedMobs = true
     showManaBar = false
     SaveSettings()
     Print("Settings reset to defaults.")
-    -- Update all swatches and sliders
+    -- Update all swatches and checkboxes
     for _, updateFunc in ipairs(swatches) do
         updateFunc()
     end
     tankCheckbox:SetChecked(false)
+    overlapCheckbox:SetChecked(true)
     heightSlider:SetValue(healthbarHeight)
     getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
     widthSlider:SetValue(healthbarWidth)
@@ -2695,7 +2751,6 @@ resetButton:SetScript("OnClick", function()
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
     onlyMyDebuffsCheckbox:SetChecked(true)
-    grayUntaggedCheckbox:SetChecked(true)
     manaBarCheckbox:SetChecked(false)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
