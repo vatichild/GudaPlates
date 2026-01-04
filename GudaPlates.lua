@@ -54,7 +54,6 @@ local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 -- Debuff settings
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
-local showDebuffTimers = true -- Toggle for debuff countdowns
 
 -- Debuff tracking for non-SuperWoW
 local debuffTracker = {}
@@ -76,20 +75,31 @@ local minimapAngle = 220
 -- Nameplate overlap setting: true = overlapping, false = stacking (default)
 local nameplateOverlap = true
 
--- Healthbar dimensions
-local healthbarHeight = 14
-local healthbarWidth = 115
-
--- Font sizes
-local healthFontSize = 10
-local levelFontSize = 10
-local nameFontSize = 10
-
--- New settings
-local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
-local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
-local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
-local showManaBar = false -- false: hide mana bar (default), true: show mana bar below health bar
+-- Settings table to reduce upvalues
+local Settings = {
+    -- Healthbar
+    healthbarHeight = 14,
+    healthbarWidth = 115,
+    healthFontSize = 10,
+    showHealthText = true,
+    healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
+    healthTextFormat = 1,  -- 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
+    -- Castbar
+    castbarHeight = 12,
+    castbarWidth = 118,
+    castbarIndependent = false,
+    showCastbarIcon = true,
+    -- Fonts
+    levelFontSize = 10,
+    nameFontSize = 10,
+    -- Layout
+    raidIconPosition = "LEFT",
+    swapNameDebuff = true,
+    -- Features
+    showOnlyMyDebuffs = true,
+    showManaBar = false,
+    showDebuffTimers = true,
+}
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -349,28 +359,53 @@ local function UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate
     if not nameplate then return end
 
-    nameplate.health:SetHeight(healthbarHeight)
-    nameplate.health:SetWidth(healthbarWidth)
-    nameplate.castbar:SetWidth(healthbarWidth + 3)
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
+    
+    -- Update castbar dimensions
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
+    if Settings.castbarIndependent then
+        nameplate.castbar:SetWidth(Settings.castbarWidth)
+    else
+        nameplate.castbar:SetWidth(Settings.healthbarWidth + 3)
+    end
+    
+    -- Update castbar icon size and visibility
+    local iconSize = Settings.healthbarHeight + Settings.castbarHeight
+    nameplate.castbar.icon:SetWidth(iconSize)
+    nameplate.castbar.icon:SetHeight(iconSize)
     
     -- Update mana bar width
     if nameplate.mana then
-        nameplate.mana:SetWidth(healthbarWidth)
+        nameplate.mana:SetWidth(Settings.healthbarWidth)
     end
 
     local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
-    nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
+    nameplate.healthtext:SetFont(healthFont, Settings.healthFontSize, healthFlags)
+    
+    -- Update health text position
+    nameplate.healthtext:ClearAllPoints()
+    if Settings.healthTextPosition == "LEFT" then
+        nameplate.healthtext:SetPoint("LEFT", nameplate.health, "LEFT", 2, 0)
+        nameplate.healthtext:SetJustifyH("LEFT")
+    elseif Settings.healthTextPosition == "RIGHT" then
+        nameplate.healthtext:SetPoint("RIGHT", nameplate.health, "RIGHT", -2, 0)
+        nameplate.healthtext:SetJustifyH("RIGHT")
+    else
+        nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+        nameplate.healthtext:SetJustifyH("CENTER")
+    end
 
     local levelFont, _, levelFlags = nameplate.level:GetFont()
-    nameplate.level:SetFont(levelFont, levelFontSize, levelFlags)
+    nameplate.level:SetFont(levelFont, Settings.levelFontSize, levelFlags)
 
     local nameFont, _, nameFlags = nameplate.name:GetFont()
-    nameplate.name:SetFont(nameFont, nameFontSize, nameFlags)
+    nameplate.name:SetFont(nameFont, Settings.nameFontSize, nameFlags)
 
     -- Update Raid Icon position
     if nameplate.original.raidicon then
         nameplate.original.raidicon:ClearAllPoints()
-        if raidIconPosition == "LEFT" then
+        if Settings.raidIconPosition == "LEFT" then
             nameplate.original.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
         else
             nameplate.original.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
@@ -378,7 +413,7 @@ local function UpdateNamePlateDimensions(frame)
     end
     if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
         frame.raidicon:ClearAllPoints()
-        if raidIconPosition == "LEFT" then
+        if Settings.raidIconPosition == "LEFT" then
             frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
         else
             frame.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
@@ -387,7 +422,7 @@ local function UpdateNamePlateDimensions(frame)
 
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
-    if swapNameDebuff then
+    if Settings.swapNameDebuff then
         -- Name above castbar, Castbar above healthbar, Debuffs below
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
         -- Debuffs below (no gap)
@@ -421,8 +456,8 @@ local function UpdateNamePlateDimensions(frame)
     -- When stacking, we also need to update the parent frame size
     -- so the game's stacking logic uses the new dimensions
     if not nameplateOverlap then
-        local npWidth = healthbarWidth * UIParent:GetScale()
-        local npHeight = (healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
+        local npWidth = Settings.healthbarWidth * UIParent:GetScale()
+        local npHeight = (Settings.healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
         frame:SetWidth(npWidth)
         frame:SetHeight(npHeight)
         nameplate:SetAllPoints(frame)
@@ -430,8 +465,8 @@ local function UpdateNamePlateDimensions(frame)
     -- In overlap mode, frame is 1x1 but nameplate should be clickable
         nameplate:ClearAllPoints()
         nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        nameplate:SetWidth(healthbarWidth)
-        nameplate:SetHeight(healthbarHeight + 20)
+        nameplate:SetWidth(Settings.healthbarWidth)
+        nameplate:SetHeight(Settings.healthbarHeight + 20)
     end
 end
 
@@ -543,8 +578,8 @@ local function HandleNamePlate(frame)
     nameplate.health = CreateFrame("StatusBar", nil, nameplate)
     nameplate.health:SetFrameLevel(frame:GetFrameLevel() + 11)
     nameplate.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.health:SetHeight(healthbarHeight)
-    nameplate.health:SetWidth(healthbarWidth)
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
     nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
 
     -- Dark background
@@ -619,7 +654,7 @@ local function HandleNamePlate(frame)
     nameplate.mana:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
     nameplate.mana:SetHeight(4)
-    nameplate.mana:SetWidth(healthbarWidth)
+    nameplate.mana:SetWidth(Settings.healthbarWidth)
     nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
     nameplate.mana:Hide()
 
@@ -636,7 +671,7 @@ local function HandleNamePlate(frame)
     -- Cast Bar below the name
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.castbar:SetHeight(12)
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
     nameplate.castbar:SetStatusBarColor(1, 0.8, 0, 1) -- Gold/Yellow color
     nameplate.castbar:Hide()
 
@@ -664,8 +699,8 @@ local function HandleNamePlate(frame)
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
     -- Icon size will be set dynamically based on healthbar + castbar height
-    nameplate.castbar.icon:SetWidth(healthbarHeight + 12) -- healthbar + castbar height
-    nameplate.castbar.icon:SetHeight(healthbarHeight + 12)
+    nameplate.castbar.icon:SetWidth(Settings.healthbarHeight + Settings.castbarHeight)
+    nameplate.castbar.icon:SetHeight(Settings.healthbarHeight + Settings.castbarHeight)
     -- Position will be set dynamically based on raidIconPosition
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -819,13 +854,43 @@ local function UpdateNamePlate(frame)
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
 
-    -- Calculate percentage and format health text like Plater "1.3K (30.6%)"
-    local perc = math.floor((hp / hpmax) * 100)
+    -- Format health text based on settings
     local hpText = ""
-    if hpmax > 1000 then
-        hpText = string.format("%.1fK (%.1f%%)", hp / 1000, (hp / hpmax) * 100)
-    else
-        hpText = string.format("%d (%.1f%%)", hp, (hp / hpmax) * 100)
+    if Settings.showHealthText then
+        local perc = (hp / hpmax) * 100
+        local format = Settings.healthTextFormat
+        if format == 1 then
+            -- Percent only
+            hpText = string.format("%.0f%%", perc)
+        elseif format == 2 then
+            -- Current HP only
+            if hp > 1000 then
+                hpText = string.format("%.1fK", hp / 1000)
+            else
+                hpText = string.format("%d", hp)
+            end
+        elseif format == 3 then
+            -- Health (percentage%)
+            if hp > 1000 then
+                hpText = string.format("%.1fK (%.0f%%)", hp / 1000, perc)
+            else
+                hpText = string.format("%d (%.0f%%)", hp, perc)
+            end
+        elseif format == 4 then
+            -- Current HP - Max HP
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK", hp / 1000, hpmax / 1000)
+            else
+                hpText = string.format("%d - %d", hp, hpmax)
+            end
+        elseif format == 5 then
+            -- Current HP - Max HP (Percentage %)
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK (%.0f%%)", hp / 1000, hpmax / 1000, perc)
+            else
+                hpText = string.format("%d - %d (%.0f%%)", hp, hpmax, perc)
+            end
+        end
     end
     nameplate.healthtext:SetText(hpText)
 
@@ -1070,7 +1135,7 @@ local function UpdateNamePlate(frame)
     end
 
     -- Update Mana Bar (only with SuperWoW GUID support)
-    if showManaBar and superwow_active and hasValidGUID then
+    if Settings.showManaBar and superwow_active and hasValidGUID then
         local mana = UnitMana(unitstr) or 0
         local manaMax = UnitManaMax(unitstr) or 0
         local powerType = UnitPowerType and UnitPowerType(unitstr) or 0
@@ -1195,18 +1260,18 @@ local function UpdateNamePlate(frame)
             local timeLeft = (start + (duration / 1000)) - now
             nameplate.castbar.timer:SetText(string.format("%.1fs", timeLeft))
 
-            if casting.icon then
+            if casting.icon and Settings.showCastbarIcon then
                 nameplate.castbar.icon:SetTexture(casting.icon)
                 -- Position icon based on raidIconPosition (opposite side)
                 nameplate.castbar.icon:ClearAllPoints()
-                local iconSize = healthbarHeight + 12 -- healthbar + castbar height
+                local iconSize = Settings.healthbarHeight + Settings.castbarHeight
                 nameplate.castbar.icon:SetWidth(iconSize)
                 nameplate.castbar.icon:SetHeight(iconSize)
                 local positionTop = -6
-                if swapNameDebuff then
+                if Settings.swapNameDebuff then
                     positionTop = 6
                 end
-                if raidIconPosition == "RIGHT" then
+                if Settings.raidIconPosition == "RIGHT" then
                     -- Raid icon on right, castbar icon on left
                     nameplate.castbar.icon:SetPoint("RIGHT", nameplate.health, "LEFT", -4, positionTop)
                 else
@@ -1320,7 +1385,7 @@ local function UpdateNamePlate(frame)
             end
             
             -- Filter: show only own debuffs if enabled
-            if showOnlyMyDebuffs and not isMyDebuff then
+            if Settings.showOnlyMyDebuffs and not isMyDebuff then
                 -- Skip this debuff - not tracked as player's
             else
             local debuff = nameplate.debuffs[debuffIndex]
@@ -1365,7 +1430,7 @@ local function UpdateNamePlate(frame)
             end
 
             -- Display timer
-            if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+            if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
                 debuff.expirationTime = now + displayTimeLeft
 
                 local text, r, g, b, a = FormatTime(displayTimeLeft)
@@ -1389,7 +1454,7 @@ local function UpdateNamePlate(frame)
             debuff:Show()
             debuff.icon:SetAlpha(1)
             debuffIndex = debuffIndex + 1
-            end -- end of showOnlyMyDebuffs filter else block
+            end -- end of Settings.showOnlyMyDebuffs filter else block
         end
     elseif plateName then
     -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
@@ -1410,7 +1475,7 @@ local function UpdateNamePlate(frame)
                 -- Filter: show only own debuffs if enabled
                 -- isOwn flag from SpellDB indicates if this is the player's debuff
                 local isMyDebuff = isOwn == true
-                if showOnlyMyDebuffs and not isMyDebuff then
+                if Settings.showOnlyMyDebuffs and not isMyDebuff then
                     -- Skip this debuff - not tracked as player's
                 else
 
@@ -1447,7 +1512,7 @@ local function UpdateNamePlate(frame)
                 end
 
                 -- Display timer
-                if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
                     debuff.expirationTime = now + displayTimeLeft
 
                     local text, r, g, b, a = FormatTime(displayTimeLeft)
@@ -1471,7 +1536,7 @@ local function UpdateNamePlate(frame)
                 debuff:Show()
                 debuff.icon:SetAlpha(1)
                 debuffIndex = debuffIndex + 1
-                end -- end of showOnlyMyDebuffs filter else block
+                end -- end of Settings.showOnlyMyDebuffs filter else block
             end
         end
     end
@@ -1766,7 +1831,7 @@ GudaPlates:SetScript("OnEvent", function()
         end
         if superwow_active then
             Print("SuperWoW detected - GUID targeting enabled")
-            if showDebuffTimers then
+            if Settings.showDebuffTimers then
                 Print("Debuff countdowns enabled")
             end
         end
@@ -2099,16 +2164,7 @@ local function SaveSettings()
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
     GudaPlatesDB.minimapAngle = minimapAngle
-    GudaPlatesDB.healthbarHeight = healthbarHeight
-    GudaPlatesDB.healthbarWidth = healthbarWidth
-    GudaPlatesDB.healthFontSize = healthFontSize
-    GudaPlatesDB.levelFontSize = levelFontSize
-    GudaPlatesDB.nameFontSize = nameFontSize
-    GudaPlatesDB.raidIconPosition = raidIconPosition
-    GudaPlatesDB.swapNameDebuff = swapNameDebuff
-    GudaPlatesDB.showDebuffTimers = showDebuffTimers
-    GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
-    GudaPlatesDB.showManaBar = showManaBar
+    GudaPlatesDB.Settings = Settings  -- Save entire Settings table
 end
 
 local function LoadSettings()
@@ -2121,36 +2177,28 @@ local function LoadSettings()
     if GudaPlatesDB.minimapAngle then
         minimapAngle = GudaPlatesDB.minimapAngle
     end
-    if GudaPlatesDB.healthbarHeight then
-        healthbarHeight = GudaPlatesDB.healthbarHeight
+    -- Load Settings table
+    if GudaPlatesDB.Settings then
+        for key, value in pairs(GudaPlatesDB.Settings) do
+            Settings[key] = value
+        end
     end
-    if GudaPlatesDB.healthbarWidth then
-        healthbarWidth = GudaPlatesDB.healthbarWidth
-    end
-    if GudaPlatesDB.healthFontSize then
-        healthFontSize = GudaPlatesDB.healthFontSize
-    end
-    if GudaPlatesDB.levelFontSize then
-        levelFontSize = GudaPlatesDB.levelFontSize
-    end
-    if GudaPlatesDB.nameFontSize then
-        nameFontSize = GudaPlatesDB.nameFontSize
-    end
-    if GudaPlatesDB.raidIconPosition then
-        raidIconPosition = GudaPlatesDB.raidIconPosition
-    end
-    if GudaPlatesDB.swapNameDebuff ~= nil then
-        swapNameDebuff = GudaPlatesDB.swapNameDebuff
-    end
-    if GudaPlatesDB.showDebuffTimers ~= nil then
-        showDebuffTimers = GudaPlatesDB.showDebuffTimers
-    end
-    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
-        showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
-    end
-    if GudaPlatesDB.showManaBar ~= nil then
-        showManaBar = GudaPlatesDB.showManaBar
-    end
+    -- Legacy support: load old individual settings into Settings table
+    if GudaPlatesDB.healthbarHeight then Settings.healthbarHeight = GudaPlatesDB.healthbarHeight end
+    if GudaPlatesDB.healthbarWidth then Settings.healthbarWidth = GudaPlatesDB.healthbarWidth end
+    if GudaPlatesDB.healthFontSize then Settings.healthFontSize = GudaPlatesDB.healthFontSize end
+    if GudaPlatesDB.levelFontSize then Settings.levelFontSize = GudaPlatesDB.levelFontSize end
+    if GudaPlatesDB.nameFontSize then Settings.nameFontSize = GudaPlatesDB.nameFontSize end
+    if GudaPlatesDB.raidIconPosition then Settings.raidIconPosition = GudaPlatesDB.raidIconPosition end
+    if GudaPlatesDB.swapNameDebuff ~= nil then Settings.swapNameDebuff = GudaPlatesDB.swapNameDebuff end
+    if GudaPlatesDB.showDebuffTimers ~= nil then Settings.showDebuffTimers = GudaPlatesDB.showDebuffTimers end
+    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then Settings.showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs end
+    if GudaPlatesDB.showManaBar ~= nil then Settings.showManaBar = GudaPlatesDB.showManaBar end
+    if GudaPlatesDB.castbarHeight then Settings.castbarHeight = GudaPlatesDB.castbarHeight end
+    if GudaPlatesDB.castbarWidth then Settings.castbarWidth = GudaPlatesDB.castbarWidth end
+    if GudaPlatesDB.castbarIndependent ~= nil then Settings.castbarIndependent = GudaPlatesDB.castbarIndependent end
+    if GudaPlatesDB.showCastbarIcon ~= nil then Settings.showCastbarIcon = GudaPlatesDB.showCastbarIcon end
+    -- Load THREAT_COLORS
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
             if THREAT_COLORS[role] then
@@ -2161,7 +2209,6 @@ local function LoadSettings()
                 end
             end
         end
-        -- Load misc colors (TAPPED, MANA_BAR)
         if GudaPlatesDB.THREAT_COLORS.TAPPED then
             THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
         end
@@ -2291,6 +2338,16 @@ local generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
 generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
 generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
 
+local healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
+healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+healthbarTab:Hide()
+
+local castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
+castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+castbarTab:Hide()
+
 local colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
 colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
 colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
@@ -2298,7 +2355,7 @@ colorsTab:Hide()
 
 -- Tab Buttons
 local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
-generalTabButton:SetWidth(120)
+generalTabButton:SetWidth(110)
 generalTabButton:SetHeight(28)
 generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
 
@@ -2310,34 +2367,73 @@ local generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
 generalTabBg:SetTexture(1, 1, 1, 0.3)
 generalTabBg:SetAllPoints()
 
+local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
+healthbarTabButton:SetWidth(110)
+healthbarTabButton:SetHeight(28)
+healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
+
+local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
+healthbarTabText:SetText("Healthbar")
+
+local healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
+healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+healthbarTabBg:SetAllPoints()
+
+local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
+castbarTabButton:SetWidth(110)
+castbarTabButton:SetHeight(28)
+castbarTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
+
+local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
+castbarTabText:SetText("Castbar")
+
+local castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
+castbarTabBg:SetTexture(1, 1, 1, 0.1)
+castbarTabBg:SetAllPoints()
+
 local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
-colorsTabButton:SetWidth(120)
+colorsTabButton:SetWidth(110)
 colorsTabButton:SetHeight(28)
-colorsTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 5, 0)
+colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
 
 local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
-colorsTabText:SetText("Colors/Threat")
+colorsTabText:SetText("Colors")
 
 local colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
 colorsTabBg:SetTexture(1, 1, 1, 0.1)
 colorsTabBg:SetAllPoints()
 
 local function SelectTab(tabName)
+    generalTab:Hide()
+    healthbarTab:Hide()
+    castbarTab:Hide()
+    colorsTab:Hide()
+    generalTabBg:SetTexture(1, 1, 1, 0.1)
+    healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+    castbarTabBg:SetTexture(1, 1, 1, 0.1)
+    colorsTabBg:SetTexture(1, 1, 1, 0.1)
+    
     if tabName == "general" then
         generalTab:Show()
-        colorsTab:Hide()
         generalTabBg:SetTexture(1, 1, 1, 0.3)
-        colorsTabBg:SetTexture(1, 1, 1, 0.1)
-    else
-        generalTab:Hide()
+    elseif tabName == "healthbar" then
+        healthbarTab:Show()
+        healthbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "castbar" then
+        castbarTab:Show()
+        castbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "colors" then
         colorsTab:Show()
-        generalTabBg:SetTexture(1, 1, 1, 0.1)
         colorsTabBg:SetTexture(1, 1, 1, 0.3)
     end
 end
 
 generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
+healthbarTabButton:SetScript("OnClick", function() SelectTab("healthbar") end)
+castbarTabButton:SetScript("OnClick", function() SelectTab("castbar") end)
 colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
 
 -- Color picker helper
@@ -2444,63 +2540,9 @@ overlapCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- Dimensions Sliders
-local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", generalTab, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -60)
-heightSlider:SetWidth(450)
-heightSlider:SetMinMaxValues(6, 25)
-heightSlider:SetValueStep(1)
-local heightText = getglobal(heightSlider:GetName() .. "Text")
-heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(heightSlider:GetName() .. "Low"):SetText("6")
-getglobal(heightSlider:GetName() .. "High"):SetText("25")
-heightSlider:SetScript("OnValueChanged", function()
-    healthbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", generalTab, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -100)
-widthSlider:SetWidth(450)
-widthSlider:SetMinMaxValues(72, 150)
-widthSlider:SetValueStep(1)
-local widthText = getglobal(widthSlider:GetName() .. "Text")
-widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(widthSlider:GetName() .. "Low"):SetText("72")
-getglobal(widthSlider:GetName() .. "High"):SetText("150")
-widthSlider:SetScript("OnValueChanged", function()
-    healthbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", generalTab, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
-healthFontSlider:SetWidth(450)
-healthFontSlider:SetMinMaxValues(6, 20)
-healthFontSlider:SetValueStep(1)
-local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
-healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
-getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
-healthFontSlider:SetScript("OnValueChanged", function()
-    healthFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
+-- Level Font Slider (in General tab)
 local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", generalTab, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -180)
+levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -60)
 levelFontSlider:SetWidth(450)
 levelFontSlider:SetMinMaxValues(8, 20)
 levelFontSlider:SetValueStep(1)
@@ -2509,16 +2551,17 @@ levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
 getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
 getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
 levelFontSlider:SetScript("OnValueChanged", function()
-    levelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
+    Settings.levelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
     end
 end)
 
+-- Name Font Slider (in General tab)
 local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", generalTab, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -220)
+nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -100)
 nameFontSlider:SetWidth(450)
 nameFontSlider:SetMinMaxValues(8, 20)
 nameFontSlider:SetValueStep(1)
@@ -2527,8 +2570,8 @@ nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
 getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
 getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
 nameFontSlider:SetScript("OnValueChanged", function()
-    nameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    Settings.nameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -2537,15 +2580,15 @@ end)
 
 -- Raid Mark Position Checkbox
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -260)
+raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark on Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 raidMarkCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
-        raidIconPosition = "RIGHT"
+        Settings.raidIconPosition = "RIGHT"
     else
-        raidIconPosition = "LEFT"
+        Settings.raidIconPosition = "LEFT"
     end
     SaveSettings()
     for plate, _ in pairs(registry) do
@@ -2555,12 +2598,12 @@ end)
 
 -- Swap Name and Debuffs Checkbox
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -260)
+swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -140)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name and Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 swapCheckbox:SetScript("OnClick", function()
-    swapNameDebuff = this:GetChecked() == 1
+    Settings.swapNameDebuff = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -2569,12 +2612,12 @@ end)
 
 -- Show Debuff Timers Checkbox
 local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -295)
+debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -175)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
 debuffTimerLabel:SetText("Show Debuff Timers")
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 debuffTimerCheckbox:SetScript("OnClick", function()
-    showDebuffTimers = this:GetChecked() == 1
+    Settings.showDebuffTimers = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -2583,12 +2626,12 @@ end)
 
 -- Show Only My Debuffs Checkbox
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -295)
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -175)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
 onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 onlyMyDebuffsCheckbox:SetScript("OnClick", function()
-    showOnlyMyDebuffs = this:GetChecked() == 1
+    Settings.showOnlyMyDebuffs = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -2597,12 +2640,12 @@ end)
 
 -- Show Mana Bar Checkbox
 local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", generalTab, "UICheckButtonTemplate")
-manaBarCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -330)
+manaBarCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -210)
 local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
 manaBarLabel:SetText("Show Mana Bar")
 manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 manaBarCheckbox:SetScript("OnClick", function()
-    showManaBar = this:GetChecked() == 1
+    Settings.showManaBar = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -2616,6 +2659,247 @@ manaBarCheckbox:SetScript("OnEnter", function()
     GameTooltip:Show()
 end)
 manaBarCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- ==========================================
+-- HEALTHBAR TAB CONTENT
+-- ==========================================
+
+-- Healthbar Height Slider
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", healthbarTab, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -20)
+heightSlider:SetWidth(450)
+heightSlider:SetMinMaxValues(6, 25)
+heightSlider:SetValueStep(1)
+local heightText = getglobal(heightSlider:GetName() .. "Text")
+heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(heightSlider:GetName() .. "Low"):SetText("6")
+getglobal(heightSlider:GetName() .. "High"):SetText("25")
+heightSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Healthbar Width Slider
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", healthbarTab, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -60)
+widthSlider:SetWidth(450)
+widthSlider:SetMinMaxValues(72, 150)
+widthSlider:SetValueStep(1)
+local widthText = getglobal(widthSlider:GetName() .. "Text")
+widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(widthSlider:GetName() .. "Low"):SetText("72")
+getglobal(widthSlider:GetName() .. "High"):SetText("150")
+widthSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Health Font Size Slider
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", healthbarTab, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -100)
+healthFontSlider:SetWidth(450)
+healthFontSlider:SetMinMaxValues(6, 20)
+healthFontSlider:SetValueStep(1)
+local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
+healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
+healthFontSlider:SetScript("OnValueChanged", function()
+    Settings.healthFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Show Health Points Checkbox
+local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", healthbarTab, "UICheckButtonTemplate")
+showHealthTextCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -140)
+local showHealthTextLabel = getglobal(showHealthTextCheckbox:GetName().."Text")
+showHealthTextLabel:SetText("Show Health Points")
+showHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+showHealthTextCheckbox:SetScript("OnClick", function()
+    Settings.showHealthText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Health Text Position Dropdown
+local healthPosLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthPosLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -175)
+healthPosLabel:SetText("Health Text Position:")
+
+local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthPosDropdown:SetPoint("TOPLEFT", healthPosLabel, "TOPRIGHT", -10, 8)
+
+local healthPosOptions = {"LEFT", "CENTER", "RIGHT"}
+local healthPosLabels = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"}
+
+local function HealthPosDropdown_OnClick()
+    Settings.healthTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function HealthPosDropdown_Initialize()
+    for _, pos in ipairs(healthPosOptions) do
+        local info = {}
+        info.text = healthPosLabels[pos]
+        info.value = pos
+        info.func = HealthPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(healthPosDropdown, HealthPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(100, healthPosDropdown)
+UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
+
+-- Health Text Format Dropdown
+local healthFormatLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthFormatLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -210)
+healthFormatLabel:SetText("Health Text Format:")
+
+local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
+
+local healthFormatOptions = {
+    {value = 1, text = "Percent"},
+    {value = 2, text = "Current HP"},
+    {value = 3, text = "HP (Percent%)"},
+    {value = 4, text = "Current - Max"},
+    {value = 5, text = "Current - Max (%)"},
+}
+
+local function HealthFormatDropdown_OnClick()
+    Settings.healthTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function HealthFormatDropdown_Initialize()
+    for _, opt in ipairs(healthFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = HealthFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(healthFormatDropdown, HealthFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, healthFormatDropdown)
+UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
+
+-- ==========================================
+-- CASTBAR TAB CONTENT
+-- ==========================================
+
+-- Show Spell Icon Checkbox
+local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIconCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -10)
+local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
+castbarIconLabel:SetText("Show Spell Icon")
+castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+castbarIconCheckbox:SetScript("OnClick", function()
+    Settings.showCastbarIcon = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Castbar Height Slider
+local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", castbarTab, "OptionsSliderTemplate")
+castbarHeightSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -60)
+castbarHeightSlider:SetWidth(450)
+castbarHeightSlider:SetMinMaxValues(6, 20)
+castbarHeightSlider:SetValueStep(1)
+local castbarHeightText = getglobal(castbarHeightSlider:GetName() .. "Text")
+castbarHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarHeightSlider:GetName() .. "Low"):SetText("6")
+getglobal(castbarHeightSlider:GetName() .. "High"):SetText("20")
+castbarHeightSlider:SetScript("OnValueChanged", function()
+    Settings.castbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Independent Castbar Width Checkbox
+local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -100)
+local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
+castbarIndependentLabel:SetText("Independent Width from Healthbar")
+castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Castbar Width Slider (only enabled when independent is checked)
+local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
+castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
+castbarWidthSlider:SetWidth(450)
+castbarWidthSlider:SetMinMaxValues(72, 200)
+castbarWidthSlider:SetValueStep(1)
+local castbarWidthText = getglobal(castbarWidthSlider:GetName() .. "Text")
+castbarWidthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarWidthSlider:GetName() .. "Low"):SetText("72")
+getglobal(castbarWidthSlider:GetName() .. "High"):SetText("200")
+castbarWidthSlider:SetScript("OnValueChanged", function()
+    Settings.castbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Function to update castbar width slider enabled state
+local function UpdateCastbarWidthSliderState()
+    if Settings.castbarIndependent then
+        castbarWidthSlider:EnableMouse(true)
+        castbarWidthSlider:SetAlpha(1.0)
+    else
+        castbarWidthSlider:EnableMouse(false)
+        castbarWidthSlider:SetAlpha(0.5)
+    end
+end
+
+castbarIndependentCheckbox:SetScript("OnClick", function()
+    Settings.castbarIndependent = this:GetChecked() == 1
+    UpdateCastbarWidthSliderState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+castbarIndependentCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Independent Width from Healthbar")
+    GameTooltip:AddLine("When checked, castbar uses its own width setting.", 1, 1, 1, 1)
+    GameTooltip:AddLine("When unchecked, castbar width follows healthbar width.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+castbarIndependentCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
@@ -2679,21 +2963,33 @@ CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
 optionsFrame:SetScript("OnShow", function()
     -- General tab
     overlapCheckbox:SetChecked(nameplateOverlap)
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
-    raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
-    swapCheckbox:SetChecked(swapNameDebuff)
-    debuffTimerCheckbox:SetChecked(showDebuffTimers)
-    onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
-    manaBarCheckbox:SetChecked(showManaBar)
+    levelFontSlider:SetValue(Settings.levelFontSize)
+    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    nameFontSlider:SetValue(Settings.nameFontSize)
+    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    raidMarkCheckbox:SetChecked(Settings.raidIconPosition == "RIGHT")
+    swapCheckbox:SetChecked(Settings.swapNameDebuff)
+    debuffTimerCheckbox:SetChecked(Settings.showDebuffTimers)
+    onlyMyDebuffsCheckbox:SetChecked(Settings.showOnlyMyDebuffs)
+    manaBarCheckbox:SetChecked(Settings.showManaBar)
+    -- Healthbar tab
+    heightSlider:SetValue(Settings.healthbarHeight)
+    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    widthSlider:SetValue(Settings.healthbarWidth)
+    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    healthFontSlider:SetValue(Settings.healthFontSize)
+    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    showHealthTextCheckbox:SetChecked(Settings.showHealthText)
+    UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
+    UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
+    -- Castbar tab
+    castbarIconCheckbox:SetChecked(Settings.showCastbarIcon)
+    castbarHeightSlider:SetValue(Settings.castbarHeight)
+    getglobal(castbarHeightSlider:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    castbarIndependentCheckbox:SetChecked(Settings.castbarIndependent)
+    castbarWidthSlider:SetValue(Settings.castbarWidth)
+    getglobal(castbarWidthSlider:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    UpdateCastbarWidthSliderState()
     -- Colors tab
     tankCheckbox:SetChecked(playerRole == "TANK")
     -- Update color swatches
@@ -2719,39 +3015,60 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
     THREAT_COLORS.MANA_BAR = {0.0, 0.4, 0.85, 1}
-    healthbarHeight = 14
-    healthbarWidth = 115
-    healthFontSize = 10
-    levelFontSize = 10
-    nameFontSize = 10
-    raidIconPosition = "LEFT"
-    swapNameDebuff = false
-    showDebuffTimers = true
-    showOnlyMyDebuffs = true
-    showManaBar = false
+    Settings.healthbarHeight = 14
+    Settings.healthbarWidth = 115
+    Settings.healthFontSize = 10
+    Settings.showHealthText = true
+    Settings.healthTextPosition = "CENTER"
+    Settings.healthTextFormat = 1
+    Settings.levelFontSize = 10
+    Settings.nameFontSize = 10
+    Settings.castbarHeight = 12
+    Settings.castbarWidth = 118
+    Settings.castbarIndependent = false
+    Settings.showCastbarIcon = true
+    Settings.raidIconPosition = "LEFT"
+    Settings.swapNameDebuff = false
+    Settings.showDebuffTimers = true
+    Settings.showOnlyMyDebuffs = true
+    Settings.showManaBar = false
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and checkboxes
     for _, updateFunc in ipairs(swatches) do
         updateFunc()
     end
-    tankCheckbox:SetChecked(false)
+    -- General tab
     overlapCheckbox:SetChecked(true)
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    levelFontSlider:SetValue(Settings.levelFontSize)
+    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    nameFontSlider:SetValue(Settings.nameFontSize)
+    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
     raidMarkCheckbox:SetChecked(false)
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
     onlyMyDebuffsCheckbox:SetChecked(true)
     manaBarCheckbox:SetChecked(false)
+    -- Healthbar tab
+    heightSlider:SetValue(Settings.healthbarHeight)
+    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    widthSlider:SetValue(Settings.healthbarWidth)
+    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    healthFontSlider:SetValue(Settings.healthFontSize)
+    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    showHealthTextCheckbox:SetChecked(true)
+    UIDropDownMenu_SetSelectedValue(healthPosDropdown, "CENTER")
+    UIDropDownMenu_SetSelectedValue(healthFormatDropdown, 1)
+    -- Castbar tab
+    castbarIconCheckbox:SetChecked(true)
+    castbarHeightSlider:SetValue(Settings.castbarHeight)
+    getglobal(castbarHeightSlider:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    castbarIndependentCheckbox:SetChecked(false)
+    castbarWidthSlider:SetValue(Settings.castbarWidth)
+    getglobal(castbarWidthSlider:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    UpdateCastbarWidthSliderState()
+    -- Colors tab
+    tankCheckbox:SetChecked(false)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
