@@ -370,8 +370,23 @@ local function UpdateNamePlateDimensions(frame)
         nameplate.castbar:SetWidth(Settings.healthbarWidth + 3)
     end
     
-    -- Update castbar icon size and visibility
-    local iconSize = Settings.healthbarHeight + Settings.castbarHeight
+    -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
+    local iconSize
+    if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+        -- Castbar wider: icon aligns with healthbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + 4  -- 4 is mana bar height
+        else
+            iconSize = Settings.healthbarHeight
+        end
+    else
+        -- Normal: icon spans healthbar + castbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight + 4
+        else
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight
+        end
+    end
     nameplate.castbar.icon:SetWidth(iconSize)
     nameplate.castbar.icon:SetHeight(iconSize)
     
@@ -451,9 +466,17 @@ local function UpdateNamePlateDimensions(frame)
             end
         end
         
-        -- Castbar above healthbar (no gap)
+        -- Castbar above healthbar (no gap), align based on raid icon position when wider
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 0)
+            else
+                nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 0)
+            end
+        else
+            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        end
         
         -- Level above healthbar (swapped mode - mana is below)
         nameplate.level:ClearAllPoints()
@@ -489,9 +512,17 @@ local function UpdateNamePlateDimensions(frame)
             end
         end
         
-        -- Castbar below healthbar (default mode)
+        -- Castbar below healthbar (default mode), align based on raid icon position when wider
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, 0)
+            else
+                nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, 0)
+            end
+        else
+            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        end
     end
 
     -- When stacking, we also need to update the parent frame size
@@ -1303,21 +1334,54 @@ local function UpdateNamePlate(frame)
 
             if casting.icon and Settings.showCastbarIcon then
                 nameplate.castbar.icon:SetTexture(casting.icon)
-                -- Position icon based on raidIconPosition (opposite side)
                 nameplate.castbar.icon:ClearAllPoints()
-                local iconSize = Settings.healthbarHeight + Settings.castbarHeight
+                
+                -- Calculate icon size based on castbar width vs healthbar width
+                local iconSize
+                local iconAnchor = nameplate.health
+                local iconOffsetY = 0
+                
+                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                    -- Castbar wider than healthbar: icon aligns with healthbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        -- Icon spans healthbar + manabar
+                        iconSize = Settings.healthbarHeight + 4  -- 4 is mana bar height
+                        if Settings.swapNameDebuff then
+                            -- Mana below healthbar: anchor to healthbar top, extend down
+                            iconOffsetY = -2  -- Center between healthbar and manabar
+                        else
+                            -- Mana above healthbar: anchor to mana bar
+                            iconAnchor = nameplate.mana
+                            iconOffsetY = -(Settings.healthbarHeight / 2)  -- Center between manabar and healthbar
+                        end
+                    else
+                        -- No mana bar: icon matches healthbar height
+                        iconSize = Settings.healthbarHeight
+                        iconOffsetY = 0
+                    end
+                else
+                    -- Normal mode: icon spans healthbar + castbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight + 4  -- Include mana bar
+                    else
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight
+                    end
+                    local positionTop = -6
+                    if Settings.swapNameDebuff then
+                        positionTop = 6
+                    end
+                    iconOffsetY = positionTop
+                end
+                
                 nameplate.castbar.icon:SetWidth(iconSize)
                 nameplate.castbar.icon:SetHeight(iconSize)
-                local positionTop = -6
-                if Settings.swapNameDebuff then
-                    positionTop = 6
-                end
+                
                 if Settings.raidIconPosition == "RIGHT" then
                     -- Raid icon on right, castbar icon on left
-                    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.health, "LEFT", -4, positionTop)
+                    nameplate.castbar.icon:SetPoint("RIGHT", iconAnchor, "LEFT", -4, iconOffsetY)
                 else
                     -- Raid icon on left (default), castbar icon on right
-                    nameplate.castbar.icon:SetPoint("LEFT", nameplate.health, "RIGHT", 4, positionTop)
+                    nameplate.castbar.icon:SetPoint("LEFT", iconAnchor, "RIGHT", 4, iconOffsetY)
                 end
                 nameplate.castbar.icon:Show()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
@@ -1625,11 +1689,27 @@ local function UpdateNamePlate(frame)
     if nameplate.castbar:IsShown() then
         nameplate.castbar:ClearAllPoints()
         if Settings.swapNameDebuff then
-            -- Swapped mode: castbar above healthbar (no gap)
-            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+            -- Swapped mode: castbar above healthbar (no gap), align based on raid icon when wider
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 0)
+                else
+                    nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 0)
+                end
+            else
+                nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+            end
         else
-            -- Default mode: castbar below healthbar, move name down to avoid overlap
-            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+            -- Default mode: castbar below healthbar, align based on raid icon when wider, move name down
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, 0)
+                else
+                    nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, 0)
+                end
+            else
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+            end
             nameplate.name:ClearAllPoints()
             nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
         end
