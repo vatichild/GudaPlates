@@ -89,6 +89,7 @@ local nameFontSize = 10
 local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
 local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
 local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
+local grayUntaggedMobs = true -- true: show gray healthbar for mobs not in combat with player/group
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -119,6 +120,29 @@ local function IsTankClass(unit)
     if not unit or not UnitExists(unit) then return false end
     local _, class = UnitClass(unit)
     return class and TANK_CLASSES[class]
+end
+
+-- Helper function to check if a unit is in the player's group (player, party, or raid)
+local function IsInPlayerGroup(unit)
+    if not unit or not UnitExists(unit) then return false end
+    -- Check if it's the player
+    if UnitIsUnit(unit, "player") then return true end
+    -- Check party members (party1-4)
+    for i = 1, 4 do
+        if UnitIsUnit(unit, "party" .. i) then return true end
+    end
+    -- Check raid members (raid1-40)
+    if UnitInRaid("player") then
+        for i = 1, 40 do
+            if UnitIsUnit(unit, "raid" .. i) then return true end
+        end
+    end
+    -- Check pets
+    if UnitIsUnit(unit, "pet") then return true end
+    for i = 1, 4 do
+        if UnitIsUnit(unit, "partypet" .. i) then return true end
+    end
+    return false
 end
 
 -- Load spell database if available
@@ -905,47 +929,62 @@ local function UpdateNamePlate(frame)
     -- Hostile OR neutral that is attacking player
     -- Check if mob is in combat (has a target)
         local mobInCombat = false
+        local mobTargetUnit = nil
 
         if hasValidGUID then
-            local mobTarget = unitstr .. "target"
-            mobInCombat = UnitExists(mobTarget)
+            mobTargetUnit = unitstr .. "target"
+            mobInCombat = UnitExists(mobTargetUnit)
         else
         -- Fallback: assume in combat if attacking player or we have threat data or has glow
             mobInCombat = isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow
+            -- For fallback, use targettarget if we're targeting this mob
+            if plateName and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+                mobTargetUnit = "targettarget"
+            end
         end
 
+        -- Check if mob is tapped by others (in combat but NOT targeting our group)
+        local isTappedByOthers = false
+        if grayUntaggedMobs and mobInCombat then
+            local isMobTargetingGroup = false
+
+            if mobTargetUnit and UnitExists(mobTargetUnit) then
+                isMobTargetingGroup = IsInPlayerGroup(mobTargetUnit)
+            else
+                -- Can't determine mob's target - assume it's ours if attacking us or has aggro glow
+                isMobTargetingGroup = isAttackingPlayer or hasAggroGlow
+            end
+
+            isTappedByOthers = not isMobTargetingGroup
+        end
+
+        -- Apply color based on state (priority order: not in combat -> tapped -> threat colors)
         if not mobInCombat then
         -- Not in combat - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
+        elseif isTappedByOthers then
+        -- GRAY: Mob is tapped by others - no other colors applied
+            nameplate.health:SetStatusBarColor(0.5, 0.5, 0.5, 1)
         elseif hasValidGUID and twthreat_active then
-        -- Full threat-based coloring (mob is in combat, has GUID and threat data)
+        -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
                 if isTanking or isAttackingPlayer then
-                -- Tank has aggro (GOOD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 elseif threatPct > 80 then
-                -- Losing aggro (WARNING)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 else
-                -- No aggro - check if another tank has it
-                    local mobTarget = unitstr .. "target"
-                    if IsTankClass(mobTarget) then
-                    -- Another tank has aggro (OK - no action needed)
+                    if IsTankClass(mobTargetUnit) then
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                     else
-                    -- Non-tank has aggro, need to taunt (BAD)
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                     end
                 end
-            else -- DPS/Healer
+            else
                 if isAttackingPlayer or isTanking then
-                -- Mob attacking you (BAD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 elseif threatPct > 80 then
-                -- High threat, about to pull (WARNING)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
-                -- Tank has aggro (GOOD)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
             end
@@ -954,14 +993,10 @@ local function UpdateNamePlate(frame)
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif IsTankClass(mobTargetUnit) then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                 else
-                -- Check if another tank has aggro
-                    local mobTarget = unitstr .. "target"
-                    if IsTankClass(mobTarget) then
-                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
-                    else
-                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
-                    end
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                 end
             else
                 if isAttackingPlayer then
@@ -971,12 +1006,11 @@ local function UpdateNamePlate(frame)
                 end
             end
         else
-        -- No GUID (no SuperWoW) - fallback with name-based detection (has same-name limitation)
+        -- No GUID (no SuperWoW) - fallback with name-based detection
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 else
-                -- Without GUID, check targettarget if this mob is our target
                     local otherTankHasAggro = false
                     if plateName and UnitExists("target") and UnitName("target") == plateName then
                         if frame:GetAlpha() > 0.9 and UnitExists("targettarget") then
@@ -2025,6 +2059,7 @@ local function SaveSettings()
     GudaPlatesDB.swapNameDebuff = swapNameDebuff
     GudaPlatesDB.showDebuffTimers = showDebuffTimers
     GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
+    GudaPlatesDB.grayUntaggedMobs = grayUntaggedMobs
 end
 
 local function LoadSettings()
@@ -2063,6 +2098,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
         showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
+    end
+    if GudaPlatesDB.grayUntaggedMobs ~= nil then
+        grayUntaggedMobs = GudaPlatesDB.grayUntaggedMobs
     end
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
@@ -2491,6 +2529,30 @@ onlyMyDebuffsCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Gray Untagged Mobs Checkbox
+local grayUntaggedCheckbox = CreateFrame("CheckButton", "GudaPlatesGrayUntaggedCheckbox", optionsFrame, "UICheckButtonTemplate")
+grayUntaggedCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -520)
+local grayUntaggedLabel = getglobal(grayUntaggedCheckbox:GetName().."Text")
+grayUntaggedLabel:SetText("Gray Healthbar for Untagged Mobs")
+grayUntaggedLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+grayUntaggedCheckbox:SetScript("OnClick", function()
+    grayUntaggedMobs = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+grayUntaggedCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Gray Healthbar for Untagged Mobs")
+    GameTooltip:AddLine("Shows gray healthbar for mobs in combat", 1, 1, 1, 1)
+    GameTooltip:AddLine("with players outside your group (tapped by others).", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+grayUntaggedCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 optionsFrame:SetScript("OnShow", function()
     overlapCheckbox:SetChecked(nameplateOverlap)
     tankCheckbox:SetChecked(playerRole == "TANK")
@@ -2508,6 +2570,7 @@ optionsFrame:SetScript("OnShow", function()
     swapCheckbox:SetChecked(swapNameDebuff)
     debuffTimerCheckbox:SetChecked(showDebuffTimers)
     onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
+    grayUntaggedCheckbox:SetChecked(grayUntaggedMobs)
 end)
 
 -- Reset to defaults button
@@ -2534,6 +2597,7 @@ resetButton:SetScript("OnClick", function()
     swapNameDebuff = false
     showDebuffTimers = true
     showOnlyMyDebuffs = true
+    grayUntaggedMobs = true
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and sliders
@@ -2555,6 +2619,7 @@ resetButton:SetScript("OnClick", function()
     swapCheckbox:SetChecked(false)
     debuffTimerCheckbox:SetChecked(true)
     onlyMyDebuffsCheckbox:SetChecked(true)
+    grayUntaggedCheckbox:SetChecked(true)
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
