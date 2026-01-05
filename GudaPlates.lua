@@ -136,7 +136,7 @@ local THREAT_COLORS = {
     },
     -- Misc colors
     TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
-    MANA_BAR = {0.0, 0.4, 0.85, 1},  -- Blue: mana bar color
+    MANA_BAR = {0.07, 0.58, 1.0, 1},  -- Cyan: mana bar color
 }
 
 -- Tank class detection for OTHER_TANK coloring
@@ -3931,7 +3931,7 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
-    THREAT_COLORS.MANA_BAR = {0.0, 0.4, 0.85, 1}
+    THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
     Settings.healthbarHeight = 14
     Settings.healthbarWidth = 115
     Settings.healthFontSize = 10
