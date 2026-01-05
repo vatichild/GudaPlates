@@ -99,6 +99,9 @@ local Settings = {
     showOnlyMyDebuffs = true,
     showManaBar = false,
     showDebuffTimers = true,
+    -- Target Glow
+    showTargetGlow = true,
+    targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
 }
 
 -- Plater-style threat colors
@@ -701,6 +704,24 @@ local function HandleNamePlate(frame)
     nameplate.health.targetRight:SetPoint("BOTTOMLEFT", nameplate.health, "BOTTOMRIGHT", 1, 0)
     nameplate.health.targetRight:Hide()
 
+    -- Target glow effect (Dragonflight3-style with top and bottom glow)
+    nameplate.targetGlowTop = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowTop:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowTop:SetHeight(20)
+    nameplate.targetGlowTop:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+    nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowTop:Hide()
+
+    nameplate.targetGlowBottom = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowBottom:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowBottom:SetTexCoord(0, 1, 1, 0)  -- Flip vertically
+    nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowBottom:SetHeight(20)
+    nameplate.targetGlowBottom:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowBottom:Hide()
+
     -- Name below the health bar (like in Plater)
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
     nameplate.name:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
@@ -1242,11 +1263,31 @@ local function UpdateNamePlate(frame)
     if isTarget then
         nameplate.health.targetLeft:Show()
         nameplate.health.targetRight:Show()
+        -- Show target glow if enabled (Dragonflight3-style top/bottom glow)
+        if Settings.showTargetGlow then
+            if nameplate.targetGlowTop then
+                nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowTop:Show()
+            end
+            if nameplate.targetGlowBottom then
+                nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowBottom:Show()
+            end
+        end
         -- Target always has highest z-index
         nameplate:SetFrameStrata("TOOLTIP")
     else
         nameplate.health.targetLeft:Hide()
         nameplate.health.targetRight:Hide()
+        -- Hide target glow
+        if nameplate.targetGlowTop then
+            nameplate.targetGlowTop:Hide()
+        end
+        if nameplate.targetGlowBottom then
+            nameplate.targetGlowBottom:Hide()
+        end
         -- Non-target z-index based on attacking state (only in overlap mode)
         if nameplateOverlap then
             if nameplate.isAttackingPlayer then
@@ -2797,6 +2838,30 @@ manaBarCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+-- Show Target Glow Checkbox
+local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
+targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -210)
+local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
+targetGlowLabel:SetText("Show Target Glow")
+targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+targetGlowCheckbox:SetScript("OnClick", function()
+    Settings.showTargetGlow = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+targetGlowCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Target Glow")
+    GameTooltip:AddLine("Shows a glowing effect around your", 1, 1, 1, 1)
+    GameTooltip:AddLine("current target's nameplate.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+targetGlowCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 -- ==========================================
 -- HEALTHBAR TAB CONTENT
 -- ==========================================
@@ -3094,6 +3159,58 @@ miscHeader:SetText("|cff00ff00Other Colors:|r")
 CreateColorSwatch(colorsTab, 5, -195, "Unit Tapped", THREAT_COLORS, "TAPPED")
 CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
 
+-- Target Glow Color Swatch (uses Settings table directly)
+local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -245)
+targetGlowSwatchLabel:SetText("Target Glow")
+
+local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
+targetGlowSwatch:SetWidth(20)
+targetGlowSwatch:SetHeight(20)
+targetGlowSwatch:SetPoint("LEFT", targetGlowSwatchLabel, "RIGHT", 10, 0)
+
+local targetGlowSwatchBorder = targetGlowSwatch:CreateTexture(nil, "BACKGROUND")
+targetGlowSwatchBorder:SetTexture(0, 0, 0, 1)
+targetGlowSwatchBorder:SetAllPoints()
+
+local targetGlowSwatchBg = targetGlowSwatch:CreateTexture(nil, "ARTWORK")
+targetGlowSwatchBg:SetTexture(1, 1, 1, 1)
+targetGlowSwatchBg:SetPoint("TOPLEFT", targetGlowSwatch, "TOPLEFT", 2, -2)
+targetGlowSwatchBg:SetPoint("BOTTOMRIGHT", targetGlowSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateTargetGlowSwatchColor()
+    local c = Settings.targetGlowColor
+    targetGlowSwatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateTargetGlowSwatchColor()
+table.insert(swatches, UpdateTargetGlowSwatchColor)
+
+targetGlowSwatch:SetScript("OnClick", function()
+    local c = Settings.targetGlowColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.targetGlowColor = {r, g, b, 0.4}
+            UpdateTargetGlowSwatchColor()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() then
+                    UpdateNamePlate(plate)
+                end
+            end
+        end
+    end)
+end)
+
+targetGlowSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change target glow color")
+    GameTooltip:Show()
+end)
+
+targetGlowSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 -- OnShow handler
 optionsFrame:SetScript("OnShow", function()
     -- General tab
@@ -3107,6 +3224,7 @@ optionsFrame:SetScript("OnShow", function()
     debuffTimerCheckbox:SetChecked(Settings.showDebuffTimers)
     onlyMyDebuffsCheckbox:SetChecked(Settings.showOnlyMyDebuffs)
     manaBarCheckbox:SetChecked(Settings.showManaBar)
+    targetGlowCheckbox:SetChecked(Settings.showTargetGlow)
     -- Healthbar tab
     heightSlider:SetValue(Settings.healthbarHeight)
     getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
@@ -3167,6 +3285,8 @@ resetButton:SetScript("OnClick", function()
     Settings.showDebuffTimers = true
     Settings.showOnlyMyDebuffs = true
     Settings.showManaBar = false
+    Settings.showTargetGlow = true
+    Settings.targetGlowColor = {0.4, 0.8, 0.9, 0.4}
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update all swatches and checkboxes
@@ -3184,6 +3304,7 @@ resetButton:SetScript("OnClick", function()
     debuffTimerCheckbox:SetChecked(true)
     onlyMyDebuffsCheckbox:SetChecked(true)
     manaBarCheckbox:SetChecked(false)
+    targetGlowCheckbox:SetChecked(true)
     -- Healthbar tab
     heightSlider:SetValue(Settings.healthbarHeight)
     getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
