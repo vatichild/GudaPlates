@@ -99,6 +99,7 @@ local Settings = {
     -- Fonts
     levelFontSize = 10,
     nameFontSize = 10,
+    textFont = "Fonts\\ARIALN.TTF",  -- Default WoW font
     -- Layout
     raidIconPosition = "LEFT",
     swapNameDebuff = true,
@@ -441,11 +442,26 @@ local function UpdateNamePlateDimensions(frame)
         nameplate.healthtext:SetJustifyH("CENTER")
     end
 
-    local levelFont, _, levelFlags = nameplate.level:GetFont()
-    nameplate.level:SetFont(levelFont, Settings.levelFontSize, levelFlags)
-
-    local nameFont, _, nameFlags = nameplate.name:GetFont()
-    nameplate.name:SetFont(nameFont, Settings.nameFontSize, nameFlags)
+    -- Apply font from settings
+    nameplate.level:SetFont(Settings.textFont, Settings.levelFontSize, "OUTLINE")
+    nameplate.name:SetFont(Settings.textFont, Settings.nameFontSize, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, Settings.healthFontSize, "OUTLINE")
+    if nameplate.mana and nameplate.mana.text then
+        nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
+    end
+    if nameplate.castbar then
+        nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
+        nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
+    end
+    -- Update debuff fonts
+    if nameplate.debuffs then
+        for i = 1, MAX_DEBUFFS do
+            if nameplate.debuffs[i] then
+                nameplate.debuffs[i].cd:SetFont(Settings.textFont, 10, "OUTLINE")
+                nameplate.debuffs[i].count:SetFont(Settings.textFont, 9, "OUTLINE")
+            end
+        end
+    end
 
     -- Apply text colors from settings
     nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
@@ -788,20 +804,20 @@ local function HandleNamePlate(frame)
 
     -- Name below the health bar (like in Plater)
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
-    nameplate.name:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
+    nameplate.name:SetFont(Settings.textFont, 9, "OUTLINE")
     nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
     nameplate.name:SetJustifyH("CENTER")
 
     -- Level above the health bar on the right
     nameplate.level = nameplate:CreateFontString(nil, "OVERLAY")
-    nameplate.level:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
+    nameplate.level:SetFont(Settings.textFont, 9, "OUTLINE")
     nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
     nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
     nameplate.level:SetJustifyH("RIGHT")
 
     -- Health text centered on bar
     nameplate.healthtext = nameplate.health:CreateFontString(nil, "OVERLAY")
-    nameplate.healthtext:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
     nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
 
@@ -827,7 +843,7 @@ local function HandleNamePlate(frame)
 
     -- Mana text (position based on settings)
     nameplate.mana.text = nameplate.mana:CreateFontString(nil, "OVERLAY")
-    nameplate.mana.text:SetFont("Fonts\\ARIALN.TTF", 7, "OUTLINE")
+    nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
     nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
 
     -- Cast Bar below the name
@@ -848,13 +864,13 @@ local function HandleNamePlate(frame)
     nameplate.castbar.border:SetDrawLayer("BACKGROUND", -1)
 
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.text:SetJustifyH("LEFT")
 
     nameplate.castbar.timer = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.timer:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.castbar.timer:SetPoint("RIGHT", nameplate.castbar, "RIGHT", -2, 0)
     nameplate.castbar.timer:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
@@ -898,14 +914,14 @@ local function HandleNamePlate(frame)
 
         -- Text on top of the icon
         debuff.cd = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.cd:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        debuff.cd:SetFont(Settings.textFont, 10, "OUTLINE")
         debuff.cd:SetPoint("CENTER", debuff.cdframe, "CENTER", 0, 0)
         debuff.cd:SetTextColor(1, 1, 1, 1)
         debuff.cd:SetText("")
         debuff.cd:SetDrawLayer("OVERLAY", 7)
 
         debuff.count = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.count:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        debuff.count:SetFont(Settings.textFont, 9, "OUTLINE")
         debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, 0)
         debuff.count:SetTextColor(1, 1, 1, 1)
         debuff.count:SetText("")
@@ -3003,6 +3019,51 @@ targetGlowCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+-- Text Font Dropdown
+local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
+fontLabel:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -245)
+fontLabel:SetText("Text Font:")
+
+local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
+fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
+
+local fontOptions = {
+    {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
+    {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Continuum.ttf", text = "Continuum"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Expressway.ttf", text = "Expressway"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Homespun.ttf", text = "Homespun"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Hooge.ttf", text = "Hooge"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
+}
+
+local function FontDropdown_OnClick()
+    Settings.textFont = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function FontDropdown_Initialize()
+    for _, opt in ipairs(fontOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FontDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
+UIDropDownMenu_SetWidth(180, fontDropdown)
+UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
+
 -- ==========================================
 -- HEALTHBAR TAB CONTENT
 -- ==========================================
@@ -3798,6 +3859,7 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
     getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
     -- Health/Mana tab
     getglobal("GudaPlatesHeightSlider"):SetValue(Settings.healthbarHeight)
     getglobal("GudaPlatesHeightSliderText"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
@@ -3862,6 +3924,7 @@ resetButton:SetScript("OnClick", function()
     Settings.manabarHeight = 4
     Settings.levelFontSize = 10
     Settings.nameFontSize = 10
+    Settings.textFont = "Fonts\\ARIALN.TTF"
     Settings.castbarHeight = 12
     Settings.castbarWidth = 118
     Settings.castbarIndependent = false
