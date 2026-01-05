@@ -491,7 +491,7 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if texture and self.textureToSpell and self.textureToSpell[texture] then
 		return self.textureToSpell[texture]
 	end
-	print("TEXTURE:"..tostring(texture or ""))
+
 	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
 	-- Convert GUID to "target" if it matches the current target
 	local scanUnit = unit
