@@ -2,6 +2,10 @@
 -- Debuff duration tracking with rank support (ShaguPlates-style)
 
 GudaPlates_SpellDB = {}
+GudaPlates_SpellDB.scanner = nil
+GudaPlates_SpellDB.textureToSpell = {
+	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring"
+}  -- Cache: texture path -> spell name
 
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
@@ -456,12 +460,6 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 
 	return effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
 end
-
--- ============================================
--- TOOLTIP SCANNER
--- ============================================
-GudaPlates_SpellDB.scanner = nil
-GudaPlates_SpellDB.textureToSpell = {}  -- Cache: texture path -> spell name
 
 function GudaPlates_SpellDB:InitScanner()
 	if self.scanner then return end
