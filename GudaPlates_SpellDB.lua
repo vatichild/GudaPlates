@@ -4,7 +4,9 @@
 GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
-	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring"
+	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
+	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest"
 }  -- Cache: texture path -> spell name
 
 -- ============================================
@@ -100,6 +102,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Enslave Demon"] = {[0]=300},
 	["Seduction"] = {[0]=15},
 	["Shadow Vulnerability"] = {[0]=30},
+	["Dark Harvest"] = {[0]=8},
 
 	-- PRIEST
 	["Shadow Word: Pain"] = {[1]=18, [2]=18, [3]=18, [4]=18, [5]=18, [6]=18, [7]=18, [8]=18, [0]=18},
@@ -159,6 +162,9 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Earthbind"] = {[0]=5}, -- per pulse
 	["Stoneclaw Stun"] = {[0]=3},
 	["Stormstrike"] = {[0]=12},
+
+	-- Felhunter
+	["Tainted Blood Effect"] = {[0]=10},
 }
 
 -- Dynamic debuffs that scale with combo points
@@ -485,7 +491,7 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if texture and self.textureToSpell and self.textureToSpell[texture] then
 		return self.textureToSpell[texture]
 	end
-	print("TEXTURE:"..tostring(texture))
+	print("TEXTURE:"..tostring(texture or ""))
 	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
 	-- Convert GUID to "target" if it matches the current target
 	local scanUnit = unit

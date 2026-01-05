@@ -1,6 +1,9 @@
 -- GudaPlates for WoW 1.12.1
 -- Written for Lua 5.0 (Vanilla)
 
+-- Macro Texture Hover Only
+local macroFrame = CreateFrame("Frame")
+
 if DEFAULT_CHAT_FRAME then
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Loading...")
 end
@@ -2502,6 +2505,24 @@ SlashCmdList["GUDAPLATES"] = function(msg)
                 Print("Available presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
             end
         end
+    elseif msg == "finddebuff" then
+        if UnitExists("target") then
+            Print("=== All Debuffs on Target ===")
+            for i = 1, 40 do
+                local texture, stacks = UnitDebuff("target", i)
+                if not texture then break end
+
+                -- Try to get spell name via tooltip
+                local spellName = "Unknown"
+                if SpellDB then
+                    spellName = SpellDB:ScanDebuff("target", i) or "Unknown"
+                end
+
+                Print(i .. ": " .. texture .. " -> " .. spellName)
+            end
+        else
+            Print("No target selected")
+        end
     else
         Print("Commands: /gp tank | /gp dps | /gp toggle | /gp config")
         Print("         /gp othertank <color> - Set Other Tank Aggro color")
@@ -3985,5 +4006,6 @@ loadFrame:SetScript("OnEvent", function()
         Print("✗ ERROR: Spell database not loaded!")
     end
 end)
+
 
 Print("Loaded. Use /gp tank or /gp dps to set role.")
