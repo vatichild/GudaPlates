@@ -3446,8 +3446,7 @@ castbarIndependentLabel:SetText("Independent Width from Healthbar")
 castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
 -- Castbar Width Slider (only enabled when independent is checked)
-local
-Slider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
+local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
 castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
 castbarWidthSlider:SetWidth(450)
 castbarWidthSlider:SetMinMaxValues(72, 200)
