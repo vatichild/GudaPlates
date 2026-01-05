@@ -54,7 +54,6 @@ local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 -- Debuff settings
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
-local showDebuffTimers = true -- Toggle for debuff countdowns
 
 -- Debuff tracking for non-SuperWoW
 local debuffTracker = {}
@@ -76,20 +75,46 @@ local minimapAngle = 220
 -- Nameplate overlap setting: true = overlapping, false = stacking (default)
 local nameplateOverlap = true
 
--- Healthbar dimensions
-local healthbarHeight = 14
-local healthbarWidth = 115
-
--- Font sizes
-local healthFontSize = 10
-local levelFontSize = 10
-local nameFontSize = 10
-
--- New settings
-local raidIconPosition = "LEFT" -- "LEFT" or "RIGHT"
-local swapNameDebuff = true -- false: name below, debuffs above. true: debuffs below, name above.
-local showOnlyMyDebuffs = true -- true: only show player's own debuffs on nameplates
-local grayUntaggedMobs = true -- true: show gray healthbar for mobs not in combat with player/group
+-- Settings table to reduce upvalues
+local Settings = {
+    -- Healthbar
+    healthbarHeight = 14,
+    healthbarWidth = 115,
+    healthFontSize = 10,
+    showHealthText = true,
+    healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
+    healthTextFormat = 1,  -- 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
+    -- Manabar
+    showManaBar = false,
+    showManaText = true,
+    manaTextFormat = 1,  -- 1=Percent, 2=Current Mana, 3=Current Mana (%)
+    manaTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
+    manabarHeight = 4,
+    -- Castbar
+    castbarHeight = 12,
+    castbarWidth = 118,
+    castbarIndependent = false,
+    showCastbarIcon = true,
+    castbarColor = {1, 0.8, 0, 1},  -- Gold/Yellow color
+    -- Fonts
+    levelFontSize = 10,
+    nameFontSize = 10,
+    textFont = "Fonts\\ARIALN.TTF",  -- Default WoW font
+    -- Layout
+    raidIconPosition = "LEFT",
+    swapNameDebuff = true,
+    -- Features
+    showOnlyMyDebuffs = true,
+    showDebuffTimers = true,
+    -- Target Glow
+    showTargetGlow = true,
+    targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
+    -- Text Colors
+    nameColor = {1, 1, 1, 1},
+    healthTextColor = {1, 1, 1, 1},
+    manaTextColor = {1, 1, 1, 1},
+    levelColor = {1, 1, 0.6, 1},
+}
 
 -- Plater-style threat colors
 local THREAT_COLORS = {
@@ -106,6 +131,9 @@ local THREAT_COLORS = {
         NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
         OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
     },
+    -- Misc colors
+    TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
+    MANA_BAR = {0.0, 0.4, 0.85, 1},  -- Blue: mana bar color
 }
 
 -- Tank class detection for OTHER_TANK coloring
@@ -346,23 +374,112 @@ local function UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate
     if not nameplate then return end
 
-    nameplate.health:SetHeight(healthbarHeight)
-    nameplate.health:SetWidth(healthbarWidth)
-    nameplate.castbar:SetWidth(healthbarWidth + 3)
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
+    
+    -- Update castbar dimensions
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
+    if Settings.castbarIndependent then
+        nameplate.castbar:SetWidth(Settings.castbarWidth)
+    else
+        nameplate.castbar:SetWidth(Settings.healthbarWidth + 3)
+    end
+    
+    -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
+    local iconSize
+    if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+        -- Castbar wider: icon aligns with healthbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + Settings.manabarHeight
+        else
+            iconSize = Settings.healthbarHeight
+        end
+    else
+        -- Normal: icon spans healthbar + castbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+        else
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight
+        end
+    end
+    nameplate.castbar.icon:SetWidth(iconSize)
+    nameplate.castbar.icon:SetHeight(iconSize)
+    
+    -- Update mana bar dimensions and text position
+    if nameplate.mana then
+        nameplate.mana:SetWidth(Settings.healthbarWidth)
+        nameplate.mana:SetHeight(Settings.manabarHeight)
+        
+        -- Update mana text position
+        if nameplate.mana.text then
+            nameplate.mana.text:ClearAllPoints()
+            if Settings.manaTextPosition == "LEFT" then
+                nameplate.mana.text:SetPoint("LEFT", nameplate.mana, "LEFT", 2, 0)
+                nameplate.mana.text:SetJustifyH("LEFT")
+            elseif Settings.manaTextPosition == "RIGHT" then
+                nameplate.mana.text:SetPoint("RIGHT", nameplate.mana, "RIGHT", -2, 0)
+                nameplate.mana.text:SetJustifyH("RIGHT")
+            else
+                nameplate.mana.text:SetPoint("CENTER", nameplate.mana, "CENTER", 0, 0)
+                nameplate.mana.text:SetJustifyH("CENTER")
+            end
+        end
+    end
 
     local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
-    nameplate.healthtext:SetFont(healthFont, healthFontSize, healthFlags)
+    nameplate.healthtext:SetFont(healthFont, Settings.healthFontSize, healthFlags)
+    
+    -- Update health text position
+    nameplate.healthtext:ClearAllPoints()
+    if Settings.healthTextPosition == "LEFT" then
+        nameplate.healthtext:SetPoint("LEFT", nameplate.health, "LEFT", 2, 0)
+        nameplate.healthtext:SetJustifyH("LEFT")
+    elseif Settings.healthTextPosition == "RIGHT" then
+        nameplate.healthtext:SetPoint("RIGHT", nameplate.health, "RIGHT", -2, 0)
+        nameplate.healthtext:SetJustifyH("RIGHT")
+    else
+        nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+        nameplate.healthtext:SetJustifyH("CENTER")
+    end
 
-    local levelFont, _, levelFlags = nameplate.level:GetFont()
-    nameplate.level:SetFont(levelFont, levelFontSize, levelFlags)
+    -- Apply font from settings
+    nameplate.level:SetFont(Settings.textFont, Settings.levelFontSize, "OUTLINE")
+    nameplate.name:SetFont(Settings.textFont, Settings.nameFontSize, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, Settings.healthFontSize, "OUTLINE")
+    if nameplate.mana and nameplate.mana.text then
+        nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
+    end
+    if nameplate.castbar then
+        nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
+        nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
+    end
+    -- Update debuff fonts
+    if nameplate.debuffs then
+        for i = 1, MAX_DEBUFFS do
+            if nameplate.debuffs[i] then
+                nameplate.debuffs[i].cd:SetFont(Settings.textFont, 10, "OUTLINE")
+                nameplate.debuffs[i].count:SetFont(Settings.textFont, 9, "OUTLINE")
+            end
+        end
+    end
 
-    local nameFont, _, nameFlags = nameplate.name:GetFont()
-    nameplate.name:SetFont(nameFont, nameFontSize, nameFlags)
+    -- Apply text colors from settings
+    nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+    if nameplate.mana and nameplate.mana.text then
+        nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
+    end
+    
+    -- Apply castbar color
+    if nameplate.castbar then
+        nameplate.castbar:SetStatusBarColor(Settings.castbarColor[1], Settings.castbarColor[2], Settings.castbarColor[3], Settings.castbarColor[4])
+    end
 
     -- Update Raid Icon position
     if nameplate.original.raidicon then
         nameplate.original.raidicon:ClearAllPoints()
-        if raidIconPosition == "LEFT" then
+        if Settings.raidIconPosition == "LEFT" then
             nameplate.original.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
         else
             nameplate.original.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
@@ -370,7 +487,7 @@ local function UpdateNamePlateDimensions(frame)
     end
     if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
         frame.raidicon:ClearAllPoints()
-        if raidIconPosition == "LEFT" then
+        if Settings.raidIconPosition == "LEFT" then
             frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
         else
             frame.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
@@ -379,42 +496,99 @@ local function UpdateNamePlateDimensions(frame)
 
     -- Update Name and Debuff positions
     nameplate.name:ClearAllPoints()
-    if swapNameDebuff then
-        -- Name above castbar, Castbar above healthbar, Debuffs below
+    
+    -- Update mana bar position based on swap setting
+    if nameplate.mana then
+        nameplate.mana:ClearAllPoints()
+    end
+    
+    if Settings.swapNameDebuff then
+        -- Swapped: Name above, Debuffs below healthbar, Mana bar below healthbar
         nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
-        -- Debuffs below (no gap)
+        
+        -- Mana bar below healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        end
+        
+        -- Debuffs below mana bar (or healthbar if no mana)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
+                else
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                end
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Castbar above healthbar (no gap)
+        
+        -- Castbar above healthbar (no gap), align based on raid icon position when wider
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+            else
+                nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
+            end
+        else
+            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+        end
+        
+        -- Level above healthbar (swapped mode - mana is below)
+        nameplate.level:ClearAllPoints()
+        nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
     else
-        -- Default: Name below, Debuffs above
+        -- Default: Name below, Mana bar above healthbar, Debuffs above mana bar
         nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
+        
+        -- Mana bar above healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        end
+        
+        -- Level above mana bar (or healthbar if no mana)
+        nameplate.level:ClearAllPoints()
+        if nameplate.mana and nameplate.mana:IsShown() then
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.mana, "TOPRIGHT", 0, 2)
+        else
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+        end
+        
+        -- Debuffs above mana bar (or healthbar if no mana)
         for i = 1, MAX_DEBUFFS do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
-                nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.mana, "TOPLEFT", 0, 1)
+                else
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                end
             else
                 nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
-        -- Adjust castbar to be below healthbar (default mode)
+        
+        -- Castbar below healthbar (default mode), align based on raid icon position when wider
         nameplate.castbar:ClearAllPoints()
-        nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, -2)
+            else
+                nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
+            end
+        else
+            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+        end
     end
 
     -- When stacking, we also need to update the parent frame size
     -- so the game's stacking logic uses the new dimensions
     if not nameplateOverlap then
-        local npWidth = healthbarWidth * UIParent:GetScale()
-        local npHeight = (healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
+        local npWidth = Settings.healthbarWidth * UIParent:GetScale()
+        local npHeight = (Settings.healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
         frame:SetWidth(npWidth)
         frame:SetHeight(npHeight)
         nameplate:SetAllPoints(frame)
@@ -422,8 +596,8 @@ local function UpdateNamePlateDimensions(frame)
     -- In overlap mode, frame is 1x1 but nameplate should be clickable
         nameplate:ClearAllPoints()
         nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        nameplate:SetWidth(healthbarWidth)
-        nameplate:SetHeight(healthbarHeight + 20)
+        nameplate:SetWidth(Settings.healthbarWidth)
+        nameplate:SetHeight(Settings.healthbarHeight + 20)
     end
 end
 
@@ -535,8 +709,8 @@ local function HandleNamePlate(frame)
     nameplate.health = CreateFrame("StatusBar", nil, nameplate)
     nameplate.health:SetFrameLevel(frame:GetFrameLevel() + 11)
     nameplate.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.health:SetHeight(healthbarHeight)
-    nameplate.health:SetWidth(healthbarWidth)
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
     nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
 
     -- Dark background
@@ -571,45 +745,112 @@ local function HandleNamePlate(frame)
         frame.raidicon:SetDrawLayer("OVERLAY")
     end
 
-    -- Target highlight borders (left and right)
-    nameplate.health.targetLeft = nameplate.health:CreateTexture(nil, "OVERLAY")
-    nameplate.health.targetLeft:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetLeft:SetWidth(1)
-    nameplate.health.targetLeft:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -1, 0)
-    nameplate.health.targetLeft:SetPoint("BOTTOMRIGHT", nameplate.health, "BOTTOMLEFT", -1, 0)
-    nameplate.health.targetLeft:Hide()
+    -- Target highlight brackets (square bracket shape [ ])
+    -- Left bracket [
+    nameplate.targetBracket = {}
+    
+    nameplate.targetBracket.leftVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftVert:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftVert:SetWidth(1)
+    nameplate.targetBracket.leftVert:Hide()
+    
+    nameplate.targetBracket.leftTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftTop:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftTop:SetHeight(1)
+    nameplate.targetBracket.leftTop:SetWidth(6)
+    nameplate.targetBracket.leftTop:Hide()
+    
+    nameplate.targetBracket.leftBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftBottom:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftBottom:SetHeight(1)
+    nameplate.targetBracket.leftBottom:SetWidth(6)
+    nameplate.targetBracket.leftBottom:Hide()
+    
+    -- Right bracket ]
+    nameplate.targetBracket.rightVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightVert:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightVert:SetWidth(1)
+    nameplate.targetBracket.rightVert:Hide()
+    
+    nameplate.targetBracket.rightTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightTop:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightTop:SetHeight(1)
+    nameplate.targetBracket.rightTop:SetWidth(6)
+    nameplate.targetBracket.rightTop:Hide()
+    
+    nameplate.targetBracket.rightBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightBottom:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightBottom:SetHeight(1)
+    nameplate.targetBracket.rightBottom:SetWidth(6)
+    nameplate.targetBracket.rightBottom:Hide()
 
-    nameplate.health.targetRight = nameplate.health:CreateTexture(nil, "OVERLAY")
-    nameplate.health.targetRight:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetRight:SetWidth(1)
-    nameplate.health.targetRight:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 1, 0)
-    nameplate.health.targetRight:SetPoint("BOTTOMLEFT", nameplate.health, "BOTTOMRIGHT", 1, 0)
-    nameplate.health.targetRight:Hide()
+    -- Target glow effect (Dragonflight3-style with top and bottom glow)
+    nameplate.targetGlowTop = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowTop:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowTop:SetHeight(20)
+    nameplate.targetGlowTop:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+    nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowTop:Hide()
+
+    nameplate.targetGlowBottom = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowBottom:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowBottom:SetTexCoord(0, 1, 1, 0)  -- Flip vertically
+    nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowBottom:SetHeight(20)
+    nameplate.targetGlowBottom:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowBottom:Hide()
 
     -- Name below the health bar (like in Plater)
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
-    nameplate.name:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
-    nameplate.name:SetTextColor(1, 1, 1, 1)
+    nameplate.name:SetFont(Settings.textFont, 9, "OUTLINE")
+    nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
     nameplate.name:SetJustifyH("CENTER")
 
     -- Level above the health bar on the right
     nameplate.level = nameplate:CreateFontString(nil, "OVERLAY")
-    nameplate.level:SetFont("Fonts\\ARIALN.TTF", 9, "OUTLINE")
+    nameplate.level:SetFont(Settings.textFont, 9, "OUTLINE")
     nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
-    nameplate.level:SetTextColor(1, 1, 0.6, 1)
+    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
     nameplate.level:SetJustifyH("RIGHT")
 
     -- Health text centered on bar
     nameplate.healthtext = nameplate.health:CreateFontString(nil, "OVERLAY")
-    nameplate.healthtext:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
-    nameplate.healthtext:SetTextColor(1, 1, 1, 1)
+    nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+
+    -- Mana Bar below healthbar (optional, hidden by default)
+    nameplate.mana = CreateFrame("StatusBar", nil, nameplate)
+    nameplate.mana:SetFrameLevel(frame:GetFrameLevel() + 11)
+    nameplate.mana:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
+    nameplate.mana:SetHeight(Settings.manabarHeight)
+    nameplate.mana:SetWidth(Settings.healthbarWidth)
+    nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.mana:Hide()
+
+    nameplate.mana.bg = nameplate.mana:CreateTexture(nil, "BACKGROUND")
+    nameplate.mana.bg:SetTexture(0, 0, 0, 0.8)
+    nameplate.mana.bg:SetAllPoints()
+
+    nameplate.mana.border = nameplate.mana:CreateTexture(nil, "OVERLAY")
+    nameplate.mana.border:SetTexture(0, 0, 0, 1)
+    nameplate.mana.border:SetPoint("TOPLEFT", nameplate.mana, "TOPLEFT", -1, 1)
+    nameplate.mana.border:SetPoint("BOTTOMRIGHT", nameplate.mana, "BOTTOMRIGHT", 1, -1)
+    nameplate.mana.border:SetDrawLayer("BACKGROUND", -1)
+
+    -- Mana text (position based on settings)
+    nameplate.mana.text = nameplate.mana:CreateFontString(nil, "OVERLAY")
+    nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
+    nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
 
     -- Cast Bar below the name
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.castbar:SetHeight(12)
-    nameplate.castbar:SetStatusBarColor(1, 0.8, 0, 1) -- Gold/Yellow color
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
+    nameplate.castbar:SetStatusBarColor(Settings.castbarColor[1], Settings.castbarColor[2], Settings.castbarColor[3], Settings.castbarColor[4])
     nameplate.castbar:Hide()
 
     nameplate.castbar.bg = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
@@ -623,21 +864,21 @@ local function HandleNamePlate(frame)
     nameplate.castbar.border:SetDrawLayer("BACKGROUND", -1)
 
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.text:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.text:SetJustifyH("LEFT")
 
     nameplate.castbar.timer = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.timer:SetFont("Fonts\\ARIALN.TTF", 8, "OUTLINE")
+    nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
     nameplate.castbar.timer:SetPoint("RIGHT", nameplate.castbar, "RIGHT", -2, 0)
     nameplate.castbar.timer:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
     -- Icon size will be set dynamically based on healthbar + castbar height
-    nameplate.castbar.icon:SetWidth(healthbarHeight + 12) -- healthbar + castbar height
-    nameplate.castbar.icon:SetHeight(healthbarHeight + 12)
+    nameplate.castbar.icon:SetWidth(Settings.healthbarHeight + Settings.castbarHeight)
+    nameplate.castbar.icon:SetHeight(Settings.healthbarHeight + Settings.castbarHeight)
     -- Position will be set dynamically based on raidIconPosition
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -673,14 +914,14 @@ local function HandleNamePlate(frame)
 
         -- Text on top of the icon
         debuff.cd = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.cd:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        debuff.cd:SetFont(Settings.textFont, 10, "OUTLINE")
         debuff.cd:SetPoint("CENTER", debuff.cdframe, "CENTER", 0, 0)
         debuff.cd:SetTextColor(1, 1, 1, 1)
         debuff.cd:SetText("")
         debuff.cd:SetDrawLayer("OVERLAY", 7)
 
         debuff.count = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.count:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        debuff.count:SetFont(Settings.textFont, 9, "OUTLINE")
         debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, 0)
         debuff.count:SetTextColor(1, 1, 1, 1)
         debuff.count:SetText("")
@@ -791,13 +1032,43 @@ local function UpdateNamePlate(frame)
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
 
-    -- Calculate percentage and format health text like Plater "1.3K (30.6%)"
-    local perc = math.floor((hp / hpmax) * 100)
+    -- Format health text based on settings
     local hpText = ""
-    if hpmax > 1000 then
-        hpText = string.format("%.1fK (%.1f%%)", hp / 1000, (hp / hpmax) * 100)
-    else
-        hpText = string.format("%d (%.1f%%)", hp, (hp / hpmax) * 100)
+    if Settings.showHealthText then
+        local perc = (hp / hpmax) * 100
+        local format = Settings.healthTextFormat
+        if format == 1 then
+            -- Percent only
+            hpText = string.format("%.0f%%", perc)
+        elseif format == 2 then
+            -- Current HP only
+            if hp > 1000 then
+                hpText = string.format("%.1fK", hp / 1000)
+            else
+                hpText = string.format("%d", hp)
+            end
+        elseif format == 3 then
+            -- Health (percentage%)
+            if hp > 1000 then
+                hpText = string.format("%.1fK (%.0f%%)", hp / 1000, perc)
+            else
+                hpText = string.format("%d (%.0f%%)", hp, perc)
+            end
+        elseif format == 4 then
+            -- Current HP - Max HP
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK", hp / 1000, hpmax / 1000)
+            else
+                hpText = string.format("%d - %d", hp, hpmax)
+            end
+        elseif format == 5 then
+            -- Current HP - Max HP (Percentage %)
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK (%.0f%%)", hp / 1000, hpmax / 1000, perc)
+            else
+                hpText = string.format("%d - %d (%.0f%%)", hp, hpmax, perc)
+            end
+        end
     end
     nameplate.healthtext:SetText(hpText)
 
@@ -945,7 +1216,7 @@ local function UpdateNamePlate(frame)
 
         -- Check if mob is tapped by others (in combat but NOT targeting our group)
         local isTappedByOthers = false
-        if grayUntaggedMobs and mobInCombat then
+        if mobInCombat then
             local isMobTargetingGroup = false
 
             if mobTargetUnit and UnitExists(mobTargetUnit) then
@@ -963,8 +1234,8 @@ local function UpdateNamePlate(frame)
         -- Not in combat - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif isTappedByOthers then
-        -- GRAY: Mob is tapped by others - no other colors applied
-            nameplate.health:SetStatusBarColor(0.5, 0.5, 0.5, 1)
+        -- TAPPED: Mob is tapped by others - no other colors applied
+            nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
         elseif hasValidGUID and twthreat_active then
         -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
@@ -1041,6 +1312,57 @@ local function UpdateNamePlate(frame)
         if name then nameplate.name:SetText(name) end
     end
 
+    -- Update Mana Bar (only with SuperWoW GUID support)
+    if Settings.showManaBar and superwow_active and hasValidGUID then
+        local mana = UnitMana(unitstr) or 0
+        local manaMax = UnitManaMax(unitstr) or 0
+        local powerType = UnitPowerType and UnitPowerType(unitstr) or 0
+        
+        -- Only show for units with mana (powerType 0 = mana)
+        if manaMax > 0 and powerType == 0 then
+            nameplate.mana:SetMinMaxValues(0, manaMax)
+            nameplate.mana:SetValue(mana)
+            nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
+            
+            -- Format mana text based on settings
+            local manaText = ""
+            if Settings.showManaText then
+                local manaPerc = (mana / manaMax) * 100
+                if Settings.manaTextFormat == 1 then
+                    -- Percent only
+                    manaText = string.format("%.0f%%", manaPerc)
+                elseif Settings.manaTextFormat == 2 then
+                    -- Current Mana only
+                    if mana > 1000 then
+                        manaText = string.format("%.1fK", mana / 1000)
+                    else
+                        manaText = string.format("%d", mana)
+                    end
+                elseif Settings.manaTextFormat == 3 then
+                    -- Mana (Percent%)
+                    local manaStr
+                    if mana > 1000 then
+                        manaStr = string.format("%.1fK", mana / 1000)
+                    else
+                        manaStr = string.format("%d", mana)
+                    end
+                    manaText = string.format("%s (%.0f%%)", manaStr, manaPerc)
+                end
+            end
+            if nameplate.mana.text then
+                nameplate.mana.text:SetText(manaText)
+            end
+            
+            nameplate.mana:Show()
+        else
+            nameplate.mana:Hide()
+        end
+    else
+        if nameplate.mana then
+            nameplate.mana:Hide()
+        end
+    end
+
     -- Target highlight - show borders on current target
     local isTarget = false
     if UnitExists("target") and plateName then
@@ -1054,13 +1376,84 @@ local function UpdateNamePlate(frame)
     end
 
     if isTarget then
-        nameplate.health.targetLeft:Show()
-        nameplate.health.targetRight:Show()
+        -- Position brackets based on mana bar visibility
+        local topAnchor = nameplate.health
+        local bottomAnchor = nameplate.health
+        local bracketHeight = Settings.healthbarHeight
+        
+        -- Check if mana bar is visible and adjust anchors
+        if nameplate.mana and nameplate.mana:IsShown() then
+            if Settings.swapNameDebuff then
+                -- Swapped mode: mana below healthbar
+                topAnchor = nameplate.health
+                bottomAnchor = nameplate.mana
+                bracketHeight = Settings.healthbarHeight + 4  -- 4 is mana bar height
+            else
+                -- Default mode: mana above healthbar
+                topAnchor = nameplate.mana
+                bottomAnchor = nameplate.health
+                bracketHeight = Settings.healthbarHeight + 4
+            end
+        end
+        
+        -- Position left bracket [ (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.leftVert:ClearAllPoints()
+        nameplate.targetBracket.leftVert:SetPoint("TOPRIGHT", topAnchor, "TOPLEFT", -1, 2)
+        nameplate.targetBracket.leftVert:SetPoint("BOTTOMRIGHT", bottomAnchor, "BOTTOMLEFT", -1, -2)
+        nameplate.targetBracket.leftVert:Show()
+        
+        nameplate.targetBracket.leftTop:ClearAllPoints()
+        nameplate.targetBracket.leftTop:SetPoint("TOPLEFT", nameplate.targetBracket.leftVert, "TOPRIGHT", 0, 0)
+        nameplate.targetBracket.leftTop:Show()
+        
+        nameplate.targetBracket.leftBottom:ClearAllPoints()
+        nameplate.targetBracket.leftBottom:SetPoint("BOTTOMLEFT", nameplate.targetBracket.leftVert, "BOTTOMRIGHT", 0, 0)
+        nameplate.targetBracket.leftBottom:Show()
+        
+        -- Position right bracket ] (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.rightVert:ClearAllPoints()
+        nameplate.targetBracket.rightVert:SetPoint("TOPLEFT", topAnchor, "TOPRIGHT", 1, 2)
+        nameplate.targetBracket.rightVert:SetPoint("BOTTOMLEFT", bottomAnchor, "BOTTOMRIGHT", 1, -2)
+        nameplate.targetBracket.rightVert:Show()
+        
+        nameplate.targetBracket.rightTop:ClearAllPoints()
+        nameplate.targetBracket.rightTop:SetPoint("TOPRIGHT", nameplate.targetBracket.rightVert, "TOPLEFT", 0, 0)
+        nameplate.targetBracket.rightTop:Show()
+        
+        nameplate.targetBracket.rightBottom:ClearAllPoints()
+        nameplate.targetBracket.rightBottom:SetPoint("BOTTOMRIGHT", nameplate.targetBracket.rightVert, "BOTTOMLEFT", 0, 0)
+        nameplate.targetBracket.rightBottom:Show()
+        
+        -- Show target glow if enabled (Dragonflight3-style top/bottom glow)
+        if Settings.showTargetGlow then
+            if nameplate.targetGlowTop then
+                nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowTop:Show()
+            end
+            if nameplate.targetGlowBottom then
+                nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowBottom:Show()
+            end
+        end
         -- Target always has highest z-index
         nameplate:SetFrameStrata("TOOLTIP")
     else
-        nameplate.health.targetLeft:Hide()
-        nameplate.health.targetRight:Hide()
+        -- Hide all bracket parts
+        nameplate.targetBracket.leftVert:Hide()
+        nameplate.targetBracket.leftTop:Hide()
+        nameplate.targetBracket.leftBottom:Hide()
+        nameplate.targetBracket.rightVert:Hide()
+        nameplate.targetBracket.rightTop:Hide()
+        nameplate.targetBracket.rightBottom:Hide()
+        -- Hide target glow
+        if nameplate.targetGlowTop then
+            nameplate.targetGlowTop:Hide()
+        end
+        if nameplate.targetGlowBottom then
+            nameplate.targetGlowBottom:Hide()
+        end
         -- Non-target z-index based on attacking state (only in overlap mode)
         if nameplateOverlap then
             if nameplate.isAttackingPlayer then
@@ -1146,23 +1539,77 @@ local function UpdateNamePlate(frame)
             local timeLeft = (start + (duration / 1000)) - now
             nameplate.castbar.timer:SetText(string.format("%.1fs", timeLeft))
 
-            if casting.icon then
+            if casting.icon and Settings.showCastbarIcon then
                 nameplate.castbar.icon:SetTexture(casting.icon)
-                -- Position icon based on raidIconPosition (opposite side)
                 nameplate.castbar.icon:ClearAllPoints()
-                local iconSize = healthbarHeight + 12 -- healthbar + castbar height
+                
+                -- Calculate icon size based on castbar width vs healthbar width
+                local iconSize
+                
+                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                    -- Castbar wider than healthbar: icon aligns with healthbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        iconSize = Settings.healthbarHeight + Settings.manabarHeight
+                    else
+                        iconSize = Settings.healthbarHeight
+                    end
+                else
+                    -- Normal mode: icon spans healthbar + castbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+                    else
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight
+                    end
+                end
+                
                 nameplate.castbar.icon:SetWidth(iconSize)
                 nameplate.castbar.icon:SetHeight(iconSize)
-                local positionTop = -6
-                if swapNameDebuff then
-                    positionTop = 6
-                end
-                if raidIconPosition == "RIGHT" then
-                    -- Raid icon on right, castbar icon on left
-                    nameplate.castbar.icon:SetPoint("RIGHT", nameplate.health, "LEFT", -4, positionTop)
+                
+                -- Position icon based on raid icon position and swap setting
+                nameplate.castbar.icon:ClearAllPoints()
+                
+                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                    -- Independent castbar wider than healthbar: anchor to healthbar/manabar
+                    if Settings.raidIconPosition == "RIGHT" then
+                        if Settings.swapNameDebuff then
+                            nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -4, 0)
+                        else
+                            if nameplate.mana and nameplate.mana:IsShown() then
+                                nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.mana, "TOPLEFT", -4, 0)
+                            else
+                                nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -4, 0)
+                            end
+                        end
+                    else
+                        if Settings.swapNameDebuff then
+                            nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 4, 0)
+                        else
+                            if nameplate.mana and nameplate.mana:IsShown() then
+                                nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.mana, "TOPRIGHT", 4, 0)
+                            else
+                                nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 4, 0)
+                            end
+                        end
+                    end
                 else
-                    -- Raid icon on left (default), castbar icon on right
-                    nameplate.castbar.icon:SetPoint("LEFT", nameplate.health, "RIGHT", 4, positionTop)
+                    -- Normal mode: anchor to castbar
+                    if Settings.raidIconPosition == "RIGHT" then
+                        if Settings.swapNameDebuff then
+                            -- Swapped: castbar above healthbar, anchor icon top to castbar top
+                            nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.castbar, "TOPLEFT", -4, 0)
+                        else
+                            -- Normal: castbar below healthbar, anchor icon bottom to castbar bottom
+                            nameplate.castbar.icon:SetPoint("BOTTOMRIGHT", nameplate.castbar, "BOTTOMLEFT", -4, 0)
+                        end
+                    else
+                        if Settings.swapNameDebuff then
+                            -- Swapped: castbar above healthbar, anchor icon top to castbar top
+                            nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.castbar, "TOPRIGHT", 4, 0)
+                        else
+                            -- Normal: castbar below healthbar, anchor icon bottom to castbar bottom
+                            nameplate.castbar.icon:SetPoint("BOTTOMLEFT", nameplate.castbar, "BOTTOMRIGHT", 4, 0)
+                        end
+                    end
                 end
                 nameplate.castbar.icon:Show()
                 if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
@@ -1271,7 +1718,7 @@ local function UpdateNamePlate(frame)
             end
             
             -- Filter: show only own debuffs if enabled
-            if showOnlyMyDebuffs and not isMyDebuff then
+            if Settings.showOnlyMyDebuffs and not isMyDebuff then
                 -- Skip this debuff - not tracked as player's
             else
             local debuff = nameplate.debuffs[debuffIndex]
@@ -1316,7 +1763,7 @@ local function UpdateNamePlate(frame)
             end
 
             -- Display timer
-            if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+            if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
                 debuff.expirationTime = now + displayTimeLeft
 
                 local text, r, g, b, a = FormatTime(displayTimeLeft)
@@ -1340,7 +1787,7 @@ local function UpdateNamePlate(frame)
             debuff:Show()
             debuff.icon:SetAlpha(1)
             debuffIndex = debuffIndex + 1
-            end -- end of showOnlyMyDebuffs filter else block
+            end -- end of Settings.showOnlyMyDebuffs filter else block
         end
     elseif plateName then
     -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
@@ -1361,7 +1808,7 @@ local function UpdateNamePlate(frame)
                 -- Filter: show only own debuffs if enabled
                 -- isOwn flag from SpellDB indicates if this is the player's debuff
                 local isMyDebuff = isOwn == true
-                if showOnlyMyDebuffs and not isMyDebuff then
+                if Settings.showOnlyMyDebuffs and not isMyDebuff then
                     -- Skip this debuff - not tracked as player's
                 else
 
@@ -1398,7 +1845,7 @@ local function UpdateNamePlate(frame)
                 end
 
                 -- Display timer
-                if showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
                     debuff.expirationTime = now + displayTimeLeft
 
                     local text, r, g, b, a = FormatTime(displayTimeLeft)
@@ -1422,7 +1869,7 @@ local function UpdateNamePlate(frame)
                 debuff:Show()
                 debuff.icon:SetAlpha(1)
                 debuffIndex = debuffIndex + 1
-                end -- end of showOnlyMyDebuffs filter else block
+                end -- end of Settings.showOnlyMyDebuffs filter else block
             end
         end
     end
@@ -1437,16 +1884,24 @@ local function UpdateNamePlate(frame)
             local debuff = nameplate.debuffs[i]
             debuff:ClearAllPoints()
             local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
-            if swapNameDebuff then
-                -- Debuffs below healthbar (no gap)
-                debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
+            if Settings.swapNameDebuff then
+                -- Debuffs below mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("TOP", nameplate.mana, "BOTTOM", x, 0)
+                else
+                    debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
+                end
 
                 -- Adjust name (above castbar which is above healthbar)
                 nameplate.name:ClearAllPoints()
                 nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
             else
-                -- Debuffs above healthbar
-                debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 6)
+                -- Debuffs above mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("BOTTOM", nameplate.mana, "TOP", x, 1)
+                else
+                    debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 1)
+                end
 
                 -- Adjust name
                 nameplate.name:ClearAllPoints()
@@ -1461,14 +1916,30 @@ local function UpdateNamePlate(frame)
     -- Dynamic castbar positioning based on debuffs (only when castbar is visible)
     if nameplate.castbar:IsShown() then
         nameplate.castbar:ClearAllPoints()
-        if swapNameDebuff then
-            -- Swapped mode: castbar above healthbar (no gap)
-            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        if Settings.swapNameDebuff then
+            -- Swapped mode: castbar above healthbar (2px gap for border), align based on raid icon when wider
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+                else
+                    nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
+                end
+            else
+                nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+            end
         else
-            -- Default mode: castbar below healthbar, move name down to avoid overlap
-            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+            -- Default mode: castbar below healthbar (2px gap for border), align based on raid icon when wider, move name down
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, -2)
+                else
+                    nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
+                end
+            else
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+            end
             nameplate.name:ClearAllPoints()
-            nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -14)
+            nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -16)
         end
     end
 end
@@ -1717,7 +2188,7 @@ GudaPlates:SetScript("OnEvent", function()
         end
         if superwow_active then
             Print("SuperWoW detected - GUID targeting enabled")
-            if showDebuffTimers then
+            if Settings.showDebuffTimers then
                 Print("Debuff countdowns enabled")
             end
         end
@@ -2050,16 +2521,7 @@ local function SaveSettings()
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
     GudaPlatesDB.minimapAngle = minimapAngle
-    GudaPlatesDB.healthbarHeight = healthbarHeight
-    GudaPlatesDB.healthbarWidth = healthbarWidth
-    GudaPlatesDB.healthFontSize = healthFontSize
-    GudaPlatesDB.levelFontSize = levelFontSize
-    GudaPlatesDB.nameFontSize = nameFontSize
-    GudaPlatesDB.raidIconPosition = raidIconPosition
-    GudaPlatesDB.swapNameDebuff = swapNameDebuff
-    GudaPlatesDB.showDebuffTimers = showDebuffTimers
-    GudaPlatesDB.showOnlyMyDebuffs = showOnlyMyDebuffs
-    GudaPlatesDB.grayUntaggedMobs = grayUntaggedMobs
+    GudaPlatesDB.Settings = Settings  -- Save entire Settings table
 end
 
 local function LoadSettings()
@@ -2072,36 +2534,28 @@ local function LoadSettings()
     if GudaPlatesDB.minimapAngle then
         minimapAngle = GudaPlatesDB.minimapAngle
     end
-    if GudaPlatesDB.healthbarHeight then
-        healthbarHeight = GudaPlatesDB.healthbarHeight
+    -- Load Settings table
+    if GudaPlatesDB.Settings then
+        for key, value in pairs(GudaPlatesDB.Settings) do
+            Settings[key] = value
+        end
     end
-    if GudaPlatesDB.healthbarWidth then
-        healthbarWidth = GudaPlatesDB.healthbarWidth
-    end
-    if GudaPlatesDB.healthFontSize then
-        healthFontSize = GudaPlatesDB.healthFontSize
-    end
-    if GudaPlatesDB.levelFontSize then
-        levelFontSize = GudaPlatesDB.levelFontSize
-    end
-    if GudaPlatesDB.nameFontSize then
-        nameFontSize = GudaPlatesDB.nameFontSize
-    end
-    if GudaPlatesDB.raidIconPosition then
-        raidIconPosition = GudaPlatesDB.raidIconPosition
-    end
-    if GudaPlatesDB.swapNameDebuff ~= nil then
-        swapNameDebuff = GudaPlatesDB.swapNameDebuff
-    end
-    if GudaPlatesDB.showDebuffTimers ~= nil then
-        showDebuffTimers = GudaPlatesDB.showDebuffTimers
-    end
-    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then
-        showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs
-    end
-    if GudaPlatesDB.grayUntaggedMobs ~= nil then
-        grayUntaggedMobs = GudaPlatesDB.grayUntaggedMobs
-    end
+    -- Legacy support: load old individual settings into Settings table
+    if GudaPlatesDB.healthbarHeight then Settings.healthbarHeight = GudaPlatesDB.healthbarHeight end
+    if GudaPlatesDB.healthbarWidth then Settings.healthbarWidth = GudaPlatesDB.healthbarWidth end
+    if GudaPlatesDB.healthFontSize then Settings.healthFontSize = GudaPlatesDB.healthFontSize end
+    if GudaPlatesDB.levelFontSize then Settings.levelFontSize = GudaPlatesDB.levelFontSize end
+    if GudaPlatesDB.nameFontSize then Settings.nameFontSize = GudaPlatesDB.nameFontSize end
+    if GudaPlatesDB.raidIconPosition then Settings.raidIconPosition = GudaPlatesDB.raidIconPosition end
+    if GudaPlatesDB.swapNameDebuff ~= nil then Settings.swapNameDebuff = GudaPlatesDB.swapNameDebuff end
+    if GudaPlatesDB.showDebuffTimers ~= nil then Settings.showDebuffTimers = GudaPlatesDB.showDebuffTimers end
+    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then Settings.showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs end
+    if GudaPlatesDB.showManaBar ~= nil then Settings.showManaBar = GudaPlatesDB.showManaBar end
+    if GudaPlatesDB.castbarHeight then Settings.castbarHeight = GudaPlatesDB.castbarHeight end
+    if GudaPlatesDB.castbarWidth then Settings.castbarWidth = GudaPlatesDB.castbarWidth end
+    if GudaPlatesDB.castbarIndependent ~= nil then Settings.castbarIndependent = GudaPlatesDB.castbarIndependent end
+    if GudaPlatesDB.showCastbarIcon ~= nil then Settings.showCastbarIcon = GudaPlatesDB.showCastbarIcon end
+    -- Load THREAT_COLORS
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
             if THREAT_COLORS[role] then
@@ -2111,6 +2565,12 @@ local function LoadSettings()
                     end
                 end
             end
+        end
+        if GudaPlatesDB.THREAT_COLORS.TAPPED then
+            THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
+        end
+        if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
+            THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
         end
     end
 end
@@ -2206,7 +2666,7 @@ local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
 optionsFrame:SetFrameStrata("DIALOG")
 optionsFrame:SetFrameLevel(100)
 optionsFrame:SetWidth(500)
-optionsFrame:SetHeight(580)
+optionsFrame:SetHeight(540)
 optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 optionsFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -2230,55 +2690,108 @@ title:SetText("GudaPlates Settings")
 local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
 closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
 
--- Nameplate Mode Selection
-local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", optionsFrame, "UICheckButtonTemplate")
-overlapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -50)
-local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
-overlapLabel:SetText("Overlapping Nameplates")
-overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-overlapCheckbox:SetScript("OnClick", function()
-    nameplateOverlap = this:GetChecked() == 1
-    SaveSettings()
-    if nameplateOverlap then
-        Print("Nameplates set to OVERLAPPING")
-    else
-        Print("Nameplates set to STACKING")
-    end
-end)
-overlapCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Overlapping Nameplates")
-    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode (default).", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-overlapCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+-- Tab Content Frames
+local generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
+generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
 
--- Role Selection
-local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", optionsFrame, "UICheckButtonTemplate")
-tankCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -50)
-local tankLabel = getglobal(tankCheckbox:GetName().."Text")
-tankLabel:SetText("Tank Mode")
-tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
-tankCheckbox:SetScript("OnClick", function()
-    if this:GetChecked() == 1 then
-        playerRole = "TANK"
-    else
-        playerRole = "DPS"
+local healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
+healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+healthbarTab:Hide()
+
+local castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
+castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+castbarTab:Hide()
+
+local colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
+colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+colorsTab:Hide()
+
+-- Tab Buttons
+local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
+generalTabButton:SetWidth(110)
+generalTabButton:SetHeight(28)
+generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
+
+local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
+generalTabText:SetText("General")
+
+local generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
+generalTabBg:SetTexture(1, 1, 1, 0.3)
+generalTabBg:SetAllPoints()
+
+local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
+healthbarTabButton:SetWidth(110)
+healthbarTabButton:SetHeight(28)
+healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
+
+local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
+healthbarTabText:SetText("Health/Mana")
+
+local healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
+healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+healthbarTabBg:SetAllPoints()
+
+local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
+castbarTabButton:SetWidth(110)
+castbarTabButton:SetHeight(28)
+castbarTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
+
+local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
+castbarTabText:SetText("Castbar")
+
+local castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
+castbarTabBg:SetTexture(1, 1, 1, 0.1)
+castbarTabBg:SetAllPoints()
+
+local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
+colorsTabButton:SetWidth(110)
+colorsTabButton:SetHeight(28)
+colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
+
+local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
+colorsTabText:SetText("Colors")
+
+local colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
+colorsTabBg:SetTexture(1, 1, 1, 0.1)
+colorsTabBg:SetAllPoints()
+
+local function SelectTab(tabName)
+    generalTab:Hide()
+    healthbarTab:Hide()
+    castbarTab:Hide()
+    colorsTab:Hide()
+    generalTabBg:SetTexture(1, 1, 1, 0.1)
+    healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+    castbarTabBg:SetTexture(1, 1, 1, 0.1)
+    colorsTabBg:SetTexture(1, 1, 1, 0.1)
+    
+    if tabName == "general" then
+        generalTab:Show()
+        generalTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "healthbar" then
+        healthbarTab:Show()
+        healthbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "castbar" then
+        castbarTab:Show()
+        castbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "colors" then
+        colorsTab:Show()
+        colorsTabBg:SetTexture(1, 1, 1, 0.3)
     end
-    SaveSettings()
-    Print("Role set to " .. playerRole)
-end)
-tankCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Tank Mode")
-    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-tankCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+end
+
+generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
+healthbarTabButton:SetScript("OnClick", function() SelectTab("healthbar") end)
+castbarTabButton:SetScript("OnClick", function() SelectTab("castbar") end)
+colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
 
 -- Color picker helper
 local function ShowColorPicker(r, g, b, callback)
@@ -2297,7 +2810,7 @@ local function ShowColorPicker(r, g, b, callback)
     ColorPickerFrame:Show()
 end
 
--- Create color swatch
+-- Create color swatch helper
 local swatches = {}
 local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2309,12 +2822,10 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     swatch:SetHeight(20)
     swatch:SetPoint("LEFT", swatchLabel, "RIGHT", 10, 0)
 
-    -- Black border
     local border = swatch:CreateTexture(nil, "BACKGROUND")
     border:SetTexture(0, 0, 0, 1)
     border:SetAllPoints()
 
-    -- Color fill (slightly inset for border effect)
     local swatchBg = swatch:CreateTexture(nil, "ARTWORK")
     swatchBg:SetTexture(1, 1, 1, 1)
     swatchBg:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
@@ -2326,7 +2837,6 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     end
     UpdateSwatchColor()
 
-    -- Store for global updates
     table.insert(swatches, UpdateSwatchColor)
 
     swatch:SetScript("OnClick", function()
@@ -2336,7 +2846,6 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
                 colorTable[colorKey] = {r, g, b, 1}
                 UpdateSwatchColor()
                 SaveSettings()
-                -- Force refresh of all visible nameplates
                 for plate, _ in pairs(registry) do
                     if plate:IsShown() then
                         UpdateNamePlate(plate)
@@ -2359,83 +2868,39 @@ local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
     return swatch
 end
 
--- DPS Colors Section
-local dpsHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-dpsHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -100)
-dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+-- ==========================================
+-- GENERAL TAB CONTENT
+-- ==========================================
 
-CreateColorSwatch(optionsFrame, 20, -125, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
-CreateColorSwatch(optionsFrame, 20, -150, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
-CreateColorSwatch(optionsFrame, 20, -175, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
-
--- Tank Colors Section
-local tankHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-tankHeader:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -100)
-tankHeader:SetText("|cff00ff00Tank Colors:|r")
-
-CreateColorSwatch(optionsFrame, 250, -125, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(optionsFrame, 250, -150, "Other Tank Aggro (Ok)", THREAT_COLORS.TANK, "OTHER_TANK")
-CreateColorSwatch(optionsFrame, 250, -175, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(optionsFrame, 250, -200, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
-
--- Dimensions Sliders
-local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", optionsFrame, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -240)
-heightSlider:SetWidth(460)
-heightSlider:SetMinMaxValues(10, 30)
-heightSlider:SetValueStep(1)
-local heightText = getglobal(heightSlider:GetName() .. "Text")
-heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(heightSlider:GetName() .. "Low"):SetText("10")
-getglobal(heightSlider:GetName() .. "High"):SetText("30")
-heightSlider:SetScript("OnValueChanged", function()
-    healthbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
+-- Nameplate Mode Selection
+local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
+overlapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -10)
+local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
+overlapLabel:SetText("Overlapping Nameplates")
+overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+overlapCheckbox:SetScript("OnClick", function()
+    nameplateOverlap = this:GetChecked() == 1
     SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
+    if nameplateOverlap then
+        Print("Nameplates set to OVERLAPPING")
+    else
+        Print("Nameplates set to STACKING")
     end
 end)
-
-local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", optionsFrame, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -280)
-widthSlider:SetWidth(460)
-widthSlider:SetMinMaxValues(72, 150)
-widthSlider:SetValueStep(1)
-local widthText = getglobal(widthSlider:GetName() .. "Text")
-widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(widthSlider:GetName() .. "Low"):SetText("72")
-getglobal(widthSlider:GetName() .. "High"):SetText("150")
-widthSlider:SetScript("OnValueChanged", function()
-    healthbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
+overlapCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Overlapping Nameplates")
+    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+overlapCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
 end)
 
-local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", optionsFrame, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -320)
-healthFontSlider:SetWidth(460)
-healthFontSlider:SetMinMaxValues(8, 20)
-healthFontSlider:SetValueStep(1)
-local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
-healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(healthFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
-healthFontSlider:SetScript("OnValueChanged", function()
-    healthFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
-local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", optionsFrame, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -360)
-levelFontSlider:SetWidth(460)
+-- Level Font Slider (in General tab)
+local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", generalTab, "OptionsSliderTemplate")
+levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -60)
+levelFontSlider:SetWidth(450)
 levelFontSlider:SetMinMaxValues(8, 20)
 levelFontSlider:SetValueStep(1)
 local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
@@ -2443,17 +2908,18 @@ levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
 getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
 getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
 levelFontSlider:SetScript("OnValueChanged", function()
-    levelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
+    Settings.levelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
     end
 end)
 
-local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", optionsFrame, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -400)
-nameFontSlider:SetWidth(460)
+-- Name Font Slider (in General tab)
+local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", generalTab, "OptionsSliderTemplate")
+nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -100)
+nameFontSlider:SetWidth(450)
 nameFontSlider:SetMinMaxValues(8, 20)
 nameFontSlider:SetValueStep(1)
 local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
@@ -2461,8 +2927,8 @@ nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
 getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
 getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
 nameFontSlider:SetScript("OnValueChanged", function()
-    nameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
+    Settings.nameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -2470,16 +2936,16 @@ nameFontSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Raid Mark Position Checkbox
-local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", optionsFrame, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -440)
+local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
+raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark on Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 raidMarkCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
-        raidIconPosition = "RIGHT"
+        Settings.raidIconPosition = "RIGHT"
     else
-        raidIconPosition = "LEFT"
+        Settings.raidIconPosition = "LEFT"
     end
     SaveSettings()
     for plate, _ in pairs(registry) do
@@ -2488,13 +2954,13 @@ raidMarkCheckbox:SetScript("OnClick", function()
 end)
 
 -- Swap Name and Debuffs Checkbox
-local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", optionsFrame, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -440)
+local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
+swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -140)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name and Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 swapCheckbox:SetScript("OnClick", function()
-    swapNameDebuff = this:GetChecked() == 1
+    Settings.swapNameDebuff = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -2502,13 +2968,13 @@ swapCheckbox:SetScript("OnClick", function()
 end)
 
 -- Show Debuff Timers Checkbox
-local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", optionsFrame, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -480)
+local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
+debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -175)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
 debuffTimerLabel:SetText("Show Debuff Timers")
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 debuffTimerCheckbox:SetScript("OnClick", function()
-    showDebuffTimers = this:GetChecked() == 1
+    Settings.showDebuffTimers = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -2516,68 +2982,923 @@ debuffTimerCheckbox:SetScript("OnClick", function()
 end)
 
 -- Show Only My Debuffs Checkbox
-local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", optionsFrame, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 250, -480)
+local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -175)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
 onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 onlyMyDebuffsCheckbox:SetScript("OnClick", function()
-    showOnlyMyDebuffs = this:GetChecked() == 1
+    Settings.showOnlyMyDebuffs = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
     end
 end)
 
--- Gray Untagged Mobs Checkbox
-local grayUntaggedCheckbox = CreateFrame("CheckButton", "GudaPlatesGrayUntaggedCheckbox", optionsFrame, "UICheckButtonTemplate")
-grayUntaggedCheckbox:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -520)
-local grayUntaggedLabel = getglobal(grayUntaggedCheckbox:GetName().."Text")
-grayUntaggedLabel:SetText("Gray Healthbar for Untagged Mobs")
-grayUntaggedLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-grayUntaggedCheckbox:SetScript("OnClick", function()
-    grayUntaggedMobs = this:GetChecked() == 1
+-- Show Target Glow Checkbox
+local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
+targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -210)
+local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
+targetGlowLabel:SetText("Show Target Glow")
+targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+targetGlowCheckbox:SetScript("OnClick", function()
+    Settings.showTargetGlow = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
     end
 end)
-grayUntaggedCheckbox:SetScript("OnEnter", function()
+targetGlowCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Gray Healthbar for Untagged Mobs")
-    GameTooltip:AddLine("Shows gray healthbar for mobs in combat", 1, 1, 1, 1)
-    GameTooltip:AddLine("with players outside your group (tapped by others).", 1, 1, 1, 1)
+    GameTooltip:AddLine("Show Target Glow")
+    GameTooltip:AddLine("Shows a glowing effect around your", 1, 1, 1, 1)
+    GameTooltip:AddLine("current target's nameplate.", 1, 1, 1, 1)
     GameTooltip:Show()
 end)
-grayUntaggedCheckbox:SetScript("OnLeave", function()
+targetGlowCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+-- Text Font Dropdown
+local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
+fontLabel:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -245)
+fontLabel:SetText("Text Font:")
+
+local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
+fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
+
+local fontOptions = {
+    {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
+    {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Continuum.ttf", text = "Continuum"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Expressway.ttf", text = "Expressway"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Homespun.ttf", text = "Homespun"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Hooge.ttf", text = "Hooge"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
+    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
+}
+
+local function FontDropdown_OnClick()
+    Settings.textFont = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function FontDropdown_Initialize()
+    for _, opt in ipairs(fontOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FontDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
+UIDropDownMenu_SetWidth(180, fontDropdown)
+UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
+
+-- ==========================================
+-- HEALTHBAR TAB CONTENT
+-- ==========================================
+
+-- Healthbar Height Slider
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", healthbarTab, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -20)
+heightSlider:SetWidth(450)
+heightSlider:SetMinMaxValues(6, 25)
+heightSlider:SetValueStep(1)
+local heightText = getglobal(heightSlider:GetName() .. "Text")
+heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(heightSlider:GetName() .. "Low"):SetText("6")
+getglobal(heightSlider:GetName() .. "High"):SetText("25")
+heightSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Healthbar Width Slider
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", healthbarTab, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -60)
+widthSlider:SetWidth(450)
+widthSlider:SetMinMaxValues(72, 150)
+widthSlider:SetValueStep(1)
+local widthText = getglobal(widthSlider:GetName() .. "Text")
+widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(widthSlider:GetName() .. "Low"):SetText("72")
+getglobal(widthSlider:GetName() .. "High"):SetText("150")
+widthSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Health Font Size Slider
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", healthbarTab, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -100)
+healthFontSlider:SetWidth(450)
+healthFontSlider:SetMinMaxValues(6, 20)
+healthFontSlider:SetValueStep(1)
+local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
+healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
+healthFontSlider:SetScript("OnValueChanged", function()
+    Settings.healthFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Show Health Points Checkbox
+local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", healthbarTab, "UICheckButtonTemplate")
+showHealthTextCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -140)
+local showHealthTextLabel = getglobal(showHealthTextCheckbox:GetName().."Text")
+showHealthTextLabel:SetText("Show Health Points")
+showHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+showHealthTextCheckbox:SetScript("OnClick", function()
+    Settings.showHealthText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Health Text Position Dropdown
+local healthPosLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthPosLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -175)
+healthPosLabel:SetText("Health Text Position:")
+
+local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthPosDropdown:SetPoint("TOPLEFT", healthPosLabel, "TOPRIGHT", -10, 8)
+
+local healthPosOptions = {"LEFT", "CENTER", "RIGHT"}
+local healthPosLabels = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"}
+
+local function HealthPosDropdown_OnClick()
+    Settings.healthTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function HealthPosDropdown_Initialize()
+    for _, pos in ipairs(healthPosOptions) do
+        local info = {}
+        info.text = healthPosLabels[pos]
+        info.value = pos
+        info.func = HealthPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(healthPosDropdown, HealthPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(100, healthPosDropdown)
+UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
+
+-- Health Text Format Dropdown
+local healthFormatLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthFormatLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -210)
+healthFormatLabel:SetText("Health Text Format:")
+
+local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
+
+local healthFormatOptions = {
+    {value = 1, text = "Percent"},
+    {value = 2, text = "Current HP"},
+    {value = 3, text = "HP (Percent%)"},
+    {value = 4, text = "Current - Max"},
+    {value = 5, text = "Current - Max (%)"},
+}
+
+local function HealthFormatDropdown_OnClick()
+    Settings.healthTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function HealthFormatDropdown_Initialize()
+    for _, opt in ipairs(healthFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = HealthFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(healthFormatDropdown, HealthFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, healthFormatDropdown)
+UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
+
+-- ==========================================
+-- MANA BAR SECTION (in Health/Mana tab)
+-- ==========================================
+
+-- Mana Section Header
+local manaSectionHeader = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaSectionHeader:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -250)
+manaSectionHeader:SetText("|cff00ffffMana Bar Settings:|r")
+
+-- Show Mana Bar Checkbox
+local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", healthbarTab, "UICheckButtonTemplate")
+manaBarCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -275)
+local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
+manaBarLabel:SetText("Show Mana Bar")
+manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Show Mana Text Checkbox
+local showManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowManaTextCheckbox", healthbarTab, "UICheckButtonTemplate")
+showManaTextCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 200, -275)
+local showManaTextLabel = getglobal(showManaTextCheckbox:GetName().."Text")
+showManaTextLabel:SetText("Show Mana Points")
+showManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Manabar Height Slider
+local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", healthbarTab, "OptionsSliderTemplate")
+manaHeightSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -320)
+manaHeightSlider:SetWidth(450)
+manaHeightSlider:SetMinMaxValues(2, 10)
+manaHeightSlider:SetValueStep(1)
+local manaHeightText = getglobal(manaHeightSlider:GetName() .. "Text")
+manaHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(manaHeightSlider:GetName() .. "Low"):SetText("2")
+getglobal(manaHeightSlider:GetName() .. "High"):SetText("10")
+manaHeightSlider:SetScript("OnValueChanged", function()
+    Settings.manabarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Mana Text Position Dropdown (above Mana Text Format)
+local manaPosLabel = healthbarTab:CreateFontString("GudaPlatesManaPosLabel", "OVERLAY", "GameFontNormal")
+manaPosLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -360)
+manaPosLabel:SetText("Mana Text Position:")
+
+local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", healthbarTab, "UIDropDownMenuTemplate")
+manaPosDropdown:SetPoint("TOPLEFT", manaPosLabel, "TOPRIGHT", -10, 8)
+
+local manaPosOptions = {
+    {value = "LEFT", text = "Left"},
+    {value = "CENTER", text = "Center"},
+    {value = "RIGHT", text = "Right"},
+}
+
+local function ManaPosDropdown_OnClick()
+    Settings.manaTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesManaPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function ManaPosDropdown_Initialize()
+    for _, opt in ipairs(manaPosOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = ManaPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(manaPosDropdown, ManaPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(80, manaPosDropdown)
+UIDropDownMenu_SetSelectedValue(manaPosDropdown, Settings.manaTextPosition)
+
+-- Mana Text Format Dropdown (below Mana Text Position)
+local manaFormatLabel = healthbarTab:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
+manaFormatLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -395)
+manaFormatLabel:SetText("Mana Text Format:")
+
+local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", healthbarTab, "UIDropDownMenuTemplate")
+manaFormatDropdown:SetPoint("TOPLEFT", manaFormatLabel, "TOPRIGHT", -10, 8)
+
+local manaFormatOptions = {
+    {value = 1, text = "Percent"},
+    {value = 2, text = "Current Mana"},
+    {value = 3, text = "Mana (Percent%)"},
+}
+
+local function ManaFormatDropdown_OnClick()
+    Settings.manaTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesManaFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function ManaFormatDropdown_Initialize()
+    for _, opt in ipairs(manaFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = ManaFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(manaFormatDropdown, ManaFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, manaFormatDropdown)
+UIDropDownMenu_SetSelectedValue(manaFormatDropdown, Settings.manaTextFormat)
+
+-- Function to update mana options enabled state
+local function UpdateManaOptionsState()
+    local enabled = Settings.showManaBar
+    local manaTextCb = getglobal("GudaPlatesShowManaTextCheckbox")
+    local manaTextLbl = getglobal("GudaPlatesShowManaTextCheckboxText")
+    local manaFmtLbl = getglobal("GudaPlatesManaFormatLabel")
+    local manaPosLbl = getglobal("GudaPlatesManaPosLabel")
+    local manaHtSliderText = getglobal("GudaPlatesManaHeightSliderText")
+    if enabled then
+        if manaTextCb then manaTextCb:Enable() end
+        if manaTextLbl then manaTextLbl:SetTextColor(1, 1, 1) end
+        if manaFmtLbl then manaFmtLbl:SetTextColor(1, 0.82, 0) end
+        if manaPosLbl then manaPosLbl:SetTextColor(1, 0.82, 0) end
+        if manaHtSliderText then manaHtSliderText:SetTextColor(1, 0.82, 0) end
+    else
+        if manaTextCb then manaTextCb:Disable() end
+        if manaTextLbl then manaTextLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaFmtLbl then manaFmtLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaPosLbl then manaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaHtSliderText then manaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
+    end
+end
+
+-- Mana Bar Checkbox OnClick
+manaBarCheckbox:SetScript("OnClick", function()
+    Settings.showManaBar = this:GetChecked() == 1
+    UpdateManaOptionsState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+manaBarCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Mana Bar")
+    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
+    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+manaBarCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Show Mana Text Checkbox OnClick
+showManaTextCheckbox:SetScript("OnClick", function()
+    Settings.showManaText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- ==========================================
+-- CASTBAR TAB CONTENT
+-- ==========================================
+
+-- Show Spell Icon Checkbox
+local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIconCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -10)
+local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
+castbarIconLabel:SetText("Show Spell Icon")
+castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+castbarIconCheckbox:SetScript("OnClick", function()
+    Settings.showCastbarIcon = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Castbar Height Slider
+local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", castbarTab, "OptionsSliderTemplate")
+castbarHeightSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -60)
+castbarHeightSlider:SetWidth(450)
+castbarHeightSlider:SetMinMaxValues(6, 20)
+castbarHeightSlider:SetValueStep(1)
+local castbarHeightText = getglobal(castbarHeightSlider:GetName() .. "Text")
+castbarHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarHeightSlider:GetName() .. "Low"):SetText("6")
+getglobal(castbarHeightSlider:GetName() .. "High"):SetText("20")
+castbarHeightSlider:SetScript("OnValueChanged", function()
+    Settings.castbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Independent Castbar Width Checkbox
+local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -100)
+local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
+castbarIndependentLabel:SetText("Independent Width from Healthbar")
+castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Castbar Width Slider (only enabled when independent is checked)
+local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
+castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
+castbarWidthSlider:SetWidth(450)
+castbarWidthSlider:SetMinMaxValues(72, 200)
+castbarWidthSlider:SetValueStep(1)
+local castbarWidthText = getglobal(castbarWidthSlider:GetName() .. "Text")
+castbarWidthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarWidthSlider:GetName() .. "Low"):SetText("72")
+getglobal(castbarWidthSlider:GetName() .. "High"):SetText("200")
+castbarWidthSlider:SetScript("OnValueChanged", function()
+    Settings.castbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Function to update castbar width slider enabled state
+local function UpdateCastbarWidthSliderState()
+    if Settings.castbarIndependent then
+        castbarWidthSlider:EnableMouse(true)
+        castbarWidthSlider:SetAlpha(1.0)
+    else
+        castbarWidthSlider:EnableMouse(false)
+        castbarWidthSlider:SetAlpha(0.5)
+    end
+end
+
+castbarIndependentCheckbox:SetScript("OnClick", function()
+    Settings.castbarIndependent = this:GetChecked() == 1
+    UpdateCastbarWidthSliderState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+castbarIndependentCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Independent Width from Healthbar")
+    GameTooltip:AddLine("When checked, castbar uses its own width setting.", 1, 1, 1, 1)
+    GameTooltip:AddLine("When unchecked, castbar width follows healthbar width.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+castbarIndependentCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- ==========================================
+-- COLORS/THREAT TAB CONTENT
+-- ==========================================
+
+-- Tank Mode Checkbox
+local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colorsTab, "UICheckButtonTemplate")
+tankCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -10)
+local tankLabel = getglobal(tankCheckbox:GetName().."Text")
+tankLabel:SetText("Tank Mode")
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        playerRole = "TANK"
+    else
+        playerRole = "DPS"
+    end
+    SaveSettings()
+    Print("Role set to " .. playerRole)
+end)
+tankCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Tank Mode")
+    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+tankCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- DPS Colors Section
+local dpsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+dpsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -50)
+dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -75, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
+CreateColorSwatch(colorsTab, 5, -100, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
+CreateColorSwatch(colorsTab, 5, -125, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
+
+-- Tank Colors Section
+local tankHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -50)
+tankHeader:SetText("|cff00ff00Tank Colors:|r")
+
+CreateColorSwatch(colorsTab, 235, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(colorsTab, 235, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 235, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 235, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+
+-- Misc Colors Section
+local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -170)
+miscHeader:SetText("|cff00ff00Other Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -195, "Unit Tapped", THREAT_COLORS, "TAPPED")
+CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+
+-- Target Glow Color Swatch (uses Settings table directly)
+local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -245)
+targetGlowSwatchLabel:SetText("Target Glow")
+
+local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
+targetGlowSwatch:SetWidth(20)
+targetGlowSwatch:SetHeight(20)
+targetGlowSwatch:SetPoint("LEFT", targetGlowSwatchLabel, "RIGHT", 10, 0)
+
+local targetGlowSwatchBorder = targetGlowSwatch:CreateTexture(nil, "BACKGROUND")
+targetGlowSwatchBorder:SetTexture(0, 0, 0, 1)
+targetGlowSwatchBorder:SetAllPoints()
+
+local targetGlowSwatchBg = targetGlowSwatch:CreateTexture(nil, "ARTWORK")
+targetGlowSwatchBg:SetTexture(1, 1, 1, 1)
+targetGlowSwatchBg:SetPoint("TOPLEFT", targetGlowSwatch, "TOPLEFT", 2, -2)
+targetGlowSwatchBg:SetPoint("BOTTOMRIGHT", targetGlowSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateTargetGlowSwatchColor()
+    local c = Settings.targetGlowColor
+    targetGlowSwatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateTargetGlowSwatchColor()
+table.insert(swatches, UpdateTargetGlowSwatchColor)
+
+targetGlowSwatch:SetScript("OnClick", function()
+    local c = Settings.targetGlowColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.targetGlowColor = {r, g, b, 0.4}
+            UpdateTargetGlowSwatchColor()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() then
+                    UpdateNamePlate(plate)
+                end
+            end
+        end
+    end)
+end)
+
+targetGlowSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change target glow color")
+    GameTooltip:Show()
+end)
+
+targetGlowSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Castbar Color Swatch
+local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -270)
+castbarSwatchLabel:SetText("Castbar")
+
+local castbarSwatch = CreateFrame("Button", nil, colorsTab)
+castbarSwatch:SetWidth(20)
+castbarSwatch:SetHeight(20)
+castbarSwatch:SetPoint("LEFT", castbarSwatchLabel, "RIGHT", 10, 0)
+
+local castbarSwatchBorder = castbarSwatch:CreateTexture(nil, "BACKGROUND")
+castbarSwatchBorder:SetTexture(0, 0, 0, 1)
+castbarSwatchBorder:SetAllPoints()
+
+local castbarSwatchBg = castbarSwatch:CreateTexture(nil, "ARTWORK")
+castbarSwatchBg:SetTexture(1, 1, 1, 1)
+castbarSwatchBg:SetPoint("TOPLEFT", castbarSwatch, "TOPLEFT", 2, -2)
+castbarSwatchBg:SetPoint("BOTTOMRIGHT", castbarSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateCastbarSwatchColor()
+    local c = Settings.castbarColor
+    castbarSwatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateCastbarSwatchColor()
+table.insert(swatches, UpdateCastbarSwatchColor)
+
+castbarSwatch:SetScript("OnClick", function()
+    local c = Settings.castbarColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.castbarColor = {r, g, b, 1}
+            UpdateCastbarSwatchColor()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.castbar then
+                    plate.nameplate.castbar:SetStatusBarColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+castbarSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change castbar color")
+    GameTooltip:Show()
+end)
+
+castbarSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Text Colors Section
+local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -170)
+textColorsHeader:SetText("|cff00ff00Text Colors:|r")
+
+-- Name Color Swatch
+local nameColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+nameColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -195)
+nameColorLabel:SetText("Name")
+
+local nameColorSwatch = CreateFrame("Button", nil, colorsTab)
+nameColorSwatch:SetWidth(20)
+nameColorSwatch:SetHeight(20)
+nameColorSwatch:SetPoint("LEFT", nameColorLabel, "RIGHT", 10, 0)
+
+local nameColorBorder = nameColorSwatch:CreateTexture(nil, "BACKGROUND")
+nameColorBorder:SetTexture(0, 0, 0, 1)
+nameColorBorder:SetAllPoints()
+
+local nameColorBg = nameColorSwatch:CreateTexture(nil, "ARTWORK")
+nameColorBg:SetTexture(1, 1, 1, 1)
+nameColorBg:SetPoint("TOPLEFT", nameColorSwatch, "TOPLEFT", 2, -2)
+nameColorBg:SetPoint("BOTTOMRIGHT", nameColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateNameColorSwatch()
+    local c = Settings.nameColor
+    nameColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateNameColorSwatch()
+table.insert(swatches, UpdateNameColorSwatch)
+
+nameColorSwatch:SetScript("OnClick", function()
+    local c = Settings.nameColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.nameColor = {r, g, b, 1}
+            UpdateNameColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.name then
+                    plate.nameplate.name:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+nameColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change name text color")
+    GameTooltip:Show()
+end)
+
+nameColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Health Text Color Swatch
+local healthTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -220)
+healthTextColorLabel:SetText("Health Text")
+
+local healthTextColorSwatch = CreateFrame("Button", nil, colorsTab)
+healthTextColorSwatch:SetWidth(20)
+healthTextColorSwatch:SetHeight(20)
+healthTextColorSwatch:SetPoint("LEFT", healthTextColorLabel, "RIGHT", 10, 0)
+
+local healthTextColorBorder = healthTextColorSwatch:CreateTexture(nil, "BACKGROUND")
+healthTextColorBorder:SetTexture(0, 0, 0, 1)
+healthTextColorBorder:SetAllPoints()
+
+local healthTextColorBg = healthTextColorSwatch:CreateTexture(nil, "ARTWORK")
+healthTextColorBg:SetTexture(1, 1, 1, 1)
+healthTextColorBg:SetPoint("TOPLEFT", healthTextColorSwatch, "TOPLEFT", 2, -2)
+healthTextColorBg:SetPoint("BOTTOMRIGHT", healthTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateHealthTextColorSwatch()
+    local c = Settings.healthTextColor
+    healthTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateHealthTextColorSwatch()
+table.insert(swatches, UpdateHealthTextColorSwatch)
+
+healthTextColorSwatch:SetScript("OnClick", function()
+    local c = Settings.healthTextColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.healthTextColor = {r, g, b, 1}
+            UpdateHealthTextColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.healthtext then
+                    plate.nameplate.healthtext:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+healthTextColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change health text color")
+    GameTooltip:Show()
+end)
+
+healthTextColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Mana Text Color Swatch
+local manaTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -245)
+manaTextColorLabel:SetText("Mana Text")
+
+local manaTextColorSwatch = CreateFrame("Button", nil, colorsTab)
+manaTextColorSwatch:SetWidth(20)
+manaTextColorSwatch:SetHeight(20)
+manaTextColorSwatch:SetPoint("LEFT", manaTextColorLabel, "RIGHT", 10, 0)
+
+local manaTextColorBorder = manaTextColorSwatch:CreateTexture(nil, "BACKGROUND")
+manaTextColorBorder:SetTexture(0, 0, 0, 1)
+manaTextColorBorder:SetAllPoints()
+
+local manaTextColorBg = manaTextColorSwatch:CreateTexture(nil, "ARTWORK")
+manaTextColorBg:SetTexture(1, 1, 1, 1)
+manaTextColorBg:SetPoint("TOPLEFT", manaTextColorSwatch, "TOPLEFT", 2, -2)
+manaTextColorBg:SetPoint("BOTTOMRIGHT", manaTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateManaTextColorSwatch()
+    local c = Settings.manaTextColor
+    manaTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateManaTextColorSwatch()
+table.insert(swatches, UpdateManaTextColorSwatch)
+
+manaTextColorSwatch:SetScript("OnClick", function()
+    local c = Settings.manaTextColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.manaTextColor = {r, g, b, 1}
+            UpdateManaTextColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.mana and plate.nameplate.mana.text then
+                    plate.nameplate.mana.text:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+manaTextColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change mana text color")
+    GameTooltip:Show()
+end)
+
+manaTextColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Level Color Swatch
+local levelColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+levelColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -270)
+levelColorLabel:SetText("Level")
+
+local levelColorSwatch = CreateFrame("Button", nil, colorsTab)
+levelColorSwatch:SetWidth(20)
+levelColorSwatch:SetHeight(20)
+levelColorSwatch:SetPoint("LEFT", levelColorLabel, "RIGHT", 10, 0)
+
+local levelColorBorder = levelColorSwatch:CreateTexture(nil, "BACKGROUND")
+levelColorBorder:SetTexture(0, 0, 0, 1)
+levelColorBorder:SetAllPoints()
+
+local levelColorBg = levelColorSwatch:CreateTexture(nil, "ARTWORK")
+levelColorBg:SetTexture(1, 1, 1, 1)
+levelColorBg:SetPoint("TOPLEFT", levelColorSwatch, "TOPLEFT", 2, -2)
+levelColorBg:SetPoint("BOTTOMRIGHT", levelColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateLevelColorSwatch()
+    local c = Settings.levelColor
+    levelColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateLevelColorSwatch()
+table.insert(swatches, UpdateLevelColorSwatch)
+
+levelColorSwatch:SetScript("OnClick", function()
+    local c = Settings.levelColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.levelColor = {r, g, b, 1}
+            UpdateLevelColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.level then
+                    plate.nameplate.level:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+levelColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change level text color")
+    GameTooltip:Show()
+end)
+
+levelColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- OnShow handler
 optionsFrame:SetScript("OnShow", function()
-    overlapCheckbox:SetChecked(nameplateOverlap)
-    tankCheckbox:SetChecked(playerRole == "TANK")
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
-    raidMarkCheckbox:SetChecked(raidIconPosition == "RIGHT")
-    swapCheckbox:SetChecked(swapNameDebuff)
-    debuffTimerCheckbox:SetChecked(showDebuffTimers)
-    onlyMyDebuffsCheckbox:SetChecked(showOnlyMyDebuffs)
-    grayUntaggedCheckbox:SetChecked(grayUntaggedMobs)
+    -- General tab
+    getglobal("GudaPlatesOverlapCheckbox"):SetChecked(nameplateOverlap)
+    getglobal("GudaPlatesLevelFontSlider"):SetValue(Settings.levelFontSize)
+    getglobal("GudaPlatesLevelFontSliderText"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    getglobal("GudaPlatesNameFontSlider"):SetValue(Settings.nameFontSize)
+    getglobal("GudaPlatesNameFontSliderText"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    getglobal("GudaPlatesRaidMarkCheckbox"):SetChecked(Settings.raidIconPosition == "RIGHT")
+    getglobal("GudaPlatesSwapCheckbox"):SetChecked(Settings.swapNameDebuff)
+    getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
+    getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
+    getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
+    -- Health/Mana tab
+    getglobal("GudaPlatesHeightSlider"):SetValue(Settings.healthbarHeight)
+    getglobal("GudaPlatesHeightSliderText"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    getglobal("GudaPlatesWidthSlider"):SetValue(Settings.healthbarWidth)
+    getglobal("GudaPlatesWidthSliderText"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    getglobal("GudaPlatesHealthFontSlider"):SetValue(Settings.healthFontSize)
+    getglobal("GudaPlatesHealthFontSliderText"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    getglobal("GudaPlatesShowHealthTextCheckbox"):SetChecked(Settings.showHealthText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthPosDropdown"), Settings.healthTextPosition)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthFormatDropdown"), Settings.healthTextFormat)
+    -- Mana settings
+    getglobal("GudaPlatesManaBarCheckbox"):SetChecked(Settings.showManaBar)
+    getglobal("GudaPlatesShowManaTextCheckbox"):SetChecked(Settings.showManaText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaFormatDropdown"), Settings.manaTextFormat)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaPosDropdown"), Settings.manaTextPosition)
+    getglobal("GudaPlatesManaHeightSlider"):SetValue(Settings.manabarHeight)
+    getglobal("GudaPlatesManaHeightSliderText"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    UpdateManaOptionsState()
+    -- Castbar tab
+    getglobal("GudaPlatesCastbarIconCheckbox"):SetChecked(Settings.showCastbarIcon)
+    getglobal("GudaPlatesCastbarHeightSlider"):SetValue(Settings.castbarHeight)
+    getglobal("GudaPlatesCastbarHeightSliderText"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    getglobal("GudaPlatesCastbarIndependentCheckbox"):SetChecked(Settings.castbarIndependent)
+    getglobal("GudaPlatesCastbarWidthSlider"):SetValue(Settings.castbarWidth)
+    getglobal("GudaPlatesCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    UpdateCastbarWidthSliderState()
+    -- Colors tab
+    getglobal("GudaPlatesTankCheckbox"):SetChecked(playerRole == "TANK")
+    -- Update color swatches
+    for _, updateFunc in ipairs(swatches) do
+        updateFunc()
+    end
 end)
 
 -- Reset to defaults button
 local resetButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
 resetButton:SetWidth(120)
 resetButton:SetHeight(25)
-resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 20)
+resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 15)
 resetButton:SetText("Reset Defaults")
 resetButton:SetScript("OnClick", function()
     playerRole = "DPS"
@@ -2588,38 +3909,46 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.OTHER_TANK = {0.6, 0.8, 1.0, 1}
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
-    healthbarHeight = 14
-    healthbarWidth = 115
-    healthFontSize = 10
-    levelFontSize = 10
-    nameFontSize = 10
-    raidIconPosition = "LEFT"
-    swapNameDebuff = false
-    showDebuffTimers = true
-    showOnlyMyDebuffs = true
-    grayUntaggedMobs = true
+    THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
+    THREAT_COLORS.MANA_BAR = {0.0, 0.4, 0.85, 1}
+    Settings.healthbarHeight = 14
+    Settings.healthbarWidth = 115
+    Settings.healthFontSize = 10
+    Settings.showHealthText = true
+    Settings.healthTextPosition = "CENTER"
+    Settings.healthTextFormat = 1
+    Settings.showManaBar = false
+    Settings.showManaText = true
+    Settings.manaTextFormat = 1
+    Settings.manaTextPosition = "CENTER"
+    Settings.manabarHeight = 4
+    Settings.levelFontSize = 10
+    Settings.nameFontSize = 10
+    Settings.textFont = "Fonts\\ARIALN.TTF"
+    Settings.castbarHeight = 12
+    Settings.castbarWidth = 118
+    Settings.castbarIndependent = false
+    Settings.showCastbarIcon = true
+    Settings.castbarColor = {1, 0.8, 0, 1}
+    Settings.raidIconPosition = "LEFT"
+    Settings.swapNameDebuff = false
+    Settings.showDebuffTimers = true
+    Settings.showOnlyMyDebuffs = true
+    Settings.showTargetGlow = true
+    Settings.targetGlowColor = {0.4, 0.8, 0.9, 0.4}
+    Settings.nameColor = {1, 1, 1, 1}
+    Settings.healthTextColor = {1, 1, 1, 1}
+    Settings.manaTextColor = {1, 1, 1, 1}
+    Settings.levelColor = {1, 1, 0.6, 1}
     SaveSettings()
     Print("Settings reset to defaults.")
-    -- Update all swatches and sliders
+    -- Update color swatches
     for _, updateFunc in ipairs(swatches) do
         updateFunc()
     end
-    tankCheckbox:SetChecked(false)
-    heightSlider:SetValue(healthbarHeight)
-    getglobal(heightSlider:GetName() .. "Text"):SetText("Healthbar Height: " .. healthbarHeight)
-    widthSlider:SetValue(healthbarWidth)
-    getglobal(widthSlider:GetName() .. "Text"):SetText("Healthbar Width: " .. healthbarWidth)
-    healthFontSlider:SetValue(healthFontSize)
-    getglobal(healthFontSlider:GetName() .. "Text"):SetText("Health Font Size: " .. healthFontSize)
-    levelFontSlider:SetValue(levelFontSize)
-    getglobal(levelFontSlider:GetName() .. "Text"):SetText("Level Font Size: " .. levelFontSize)
-    nameFontSlider:SetValue(nameFontSize)
-    getglobal(nameFontSlider:GetName() .. "Text"):SetText("Name Font Size: " .. nameFontSize)
-    raidMarkCheckbox:SetChecked(false)
-    swapCheckbox:SetChecked(false)
-    debuffTimerCheckbox:SetChecked(true)
-    onlyMyDebuffsCheckbox:SetChecked(true)
-    grayUntaggedCheckbox:SetChecked(true)
+    -- Re-show options frame to refresh all UI elements
+    GudaPlatesOptionsFrame:Hide()
+    GudaPlatesOptionsFrame:Show()
     -- Force refresh of all visible nameplates
     for plate, _ in pairs(registry) do
         if plate:IsShown() then
