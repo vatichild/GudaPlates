@@ -179,7 +179,7 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 }
 
 -- ============================================
--- DEBUFF TRACKING STATE (ShaguPlates-style)
+-- DEBUFF TRACKING STATE
 -- objects[unit][unitlevel][effect] = {effect, start, duration}
 -- ============================================
 GudaPlates_SpellDB.objects = {}
@@ -202,7 +202,7 @@ function GudaPlates_SpellDB:GetMaxRank(effect)
 	return max
 end
 
--- Get duration by spell name and rank (ShaguPlates-style)
+-- Get duration by spell name and rank
 function GudaPlates_SpellDB:GetDuration(effect, rank)
 	if not effect then return 0 end
 
@@ -267,7 +267,7 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 end
 
 -- ============================================
--- PENDING SPELL TRACKING (ShaguPlates-style)
+-- PENDING SPELL TRACKING
 -- ============================================
 
 -- Store recent casts by spell name for combat log fallback
@@ -324,7 +324,7 @@ function GudaPlates_SpellDB:PersistPending(effect)
 end
 
 -- ============================================
--- EFFECT TRACKING (ShaguPlates-style)
+-- EFFECT TRACKING
 -- ============================================
 
 function GudaPlates_SpellDB:RevertLastAction()
@@ -390,7 +390,7 @@ function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
 end
 
 -- ============================================
--- UNITDEBUFF WRAPPER (ShaguPlates-style)
+-- UNITDEBUFF WRAPPER
 -- Returns: effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
 -- ============================================
 function GudaPlates_SpellDB:UnitDebuff(unit, id)
@@ -485,7 +485,7 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if texture and self.textureToSpell and self.textureToSpell[texture] then
 		return self.textureToSpell[texture]
 	end
-
+	print("TEXTURE:"..tostring(texture))
 	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
 	-- Convert GUID to "target" if it matches the current target
 	local scanUnit = unit

@@ -2883,15 +2883,15 @@ fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
 local fontOptions = {
     {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
     {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Continuum.ttf", text = "Continuum"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Expressway.ttf", text = "Expressway"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Homespun.ttf", text = "Homespun"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Hooge.ttf", text = "Hooge"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
-    {value = "Interface\\AddOns\\ShaguPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Continuum.ttf", text = "Continuum"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Expressway.ttf", text = "Expressway"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Homespun.ttf", text = "Homespun"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Hooge.ttf", text = "Hooge"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
 }
 
 local function FontDropdown_OnClick()
