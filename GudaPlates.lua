@@ -689,20 +689,44 @@ local function HandleNamePlate(frame)
         frame.raidicon:SetDrawLayer("OVERLAY")
     end
 
-    -- Target highlight borders (left and right)
-    nameplate.health.targetLeft = nameplate.health:CreateTexture(nil, "OVERLAY")
-    nameplate.health.targetLeft:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetLeft:SetWidth(1)
-    nameplate.health.targetLeft:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -1, 0)
-    nameplate.health.targetLeft:SetPoint("BOTTOMRIGHT", nameplate.health, "BOTTOMLEFT", -1, 0)
-    nameplate.health.targetLeft:Hide()
-
-    nameplate.health.targetRight = nameplate.health:CreateTexture(nil, "OVERLAY")
-    nameplate.health.targetRight:SetTexture(1, 1, 1, 1)
-    nameplate.health.targetRight:SetWidth(1)
-    nameplate.health.targetRight:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 1, 0)
-    nameplate.health.targetRight:SetPoint("BOTTOMLEFT", nameplate.health, "BOTTOMRIGHT", 1, 0)
-    nameplate.health.targetRight:Hide()
+    -- Target highlight brackets (square bracket shape [ ])
+    -- Left bracket [
+    nameplate.targetBracket = {}
+    
+    nameplate.targetBracket.leftVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftVert:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.leftVert:SetWidth(1)
+    nameplate.targetBracket.leftVert:Hide()
+    
+    nameplate.targetBracket.leftTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftTop:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.leftTop:SetHeight(1)
+    nameplate.targetBracket.leftTop:SetWidth(6)
+    nameplate.targetBracket.leftTop:Hide()
+    
+    nameplate.targetBracket.leftBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftBottom:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.leftBottom:SetHeight(1)
+    nameplate.targetBracket.leftBottom:SetWidth(6)
+    nameplate.targetBracket.leftBottom:Hide()
+    
+    -- Right bracket ]
+    nameplate.targetBracket.rightVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightVert:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.rightVert:SetWidth(1)
+    nameplate.targetBracket.rightVert:Hide()
+    
+    nameplate.targetBracket.rightTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightTop:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.rightTop:SetHeight(1)
+    nameplate.targetBracket.rightTop:SetWidth(6)
+    nameplate.targetBracket.rightTop:Hide()
+    
+    nameplate.targetBracket.rightBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightBottom:SetTexture(1, 1, 1, 1)
+    nameplate.targetBracket.rightBottom:SetHeight(1)
+    nameplate.targetBracket.rightBottom:SetWidth(6)
+    nameplate.targetBracket.rightBottom:Hide()
 
     -- Target glow effect (Dragonflight3-style with top and bottom glow)
     nameplate.targetGlowTop = nameplate:CreateTexture(nil, "BACKGROUND")
@@ -1261,8 +1285,54 @@ local function UpdateNamePlate(frame)
     end
 
     if isTarget then
-        nameplate.health.targetLeft:Show()
-        nameplate.health.targetRight:Show()
+        -- Position brackets based on mana bar visibility
+        local topAnchor = nameplate.health
+        local bottomAnchor = nameplate.health
+        local bracketHeight = Settings.healthbarHeight
+        
+        -- Check if mana bar is visible and adjust anchors
+        if nameplate.mana and nameplate.mana:IsShown() then
+            if Settings.swapNameDebuff then
+                -- Swapped mode: mana below healthbar
+                topAnchor = nameplate.health
+                bottomAnchor = nameplate.mana
+                bracketHeight = Settings.healthbarHeight + 4  -- 4 is mana bar height
+            else
+                -- Default mode: mana above healthbar
+                topAnchor = nameplate.mana
+                bottomAnchor = nameplate.health
+                bracketHeight = Settings.healthbarHeight + 4
+            end
+        end
+        
+        -- Position left bracket [ (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.leftVert:ClearAllPoints()
+        nameplate.targetBracket.leftVert:SetPoint("TOPRIGHT", topAnchor, "TOPLEFT", -1, 2)
+        nameplate.targetBracket.leftVert:SetPoint("BOTTOMRIGHT", bottomAnchor, "BOTTOMLEFT", -1, -2)
+        nameplate.targetBracket.leftVert:Show()
+        
+        nameplate.targetBracket.leftTop:ClearAllPoints()
+        nameplate.targetBracket.leftTop:SetPoint("TOPLEFT", nameplate.targetBracket.leftVert, "TOPRIGHT", 0, 0)
+        nameplate.targetBracket.leftTop:Show()
+        
+        nameplate.targetBracket.leftBottom:ClearAllPoints()
+        nameplate.targetBracket.leftBottom:SetPoint("BOTTOMLEFT", nameplate.targetBracket.leftVert, "BOTTOMRIGHT", 0, 0)
+        nameplate.targetBracket.leftBottom:Show()
+        
+        -- Position right bracket ] (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.rightVert:ClearAllPoints()
+        nameplate.targetBracket.rightVert:SetPoint("TOPLEFT", topAnchor, "TOPRIGHT", 1, 2)
+        nameplate.targetBracket.rightVert:SetPoint("BOTTOMLEFT", bottomAnchor, "BOTTOMRIGHT", 1, -2)
+        nameplate.targetBracket.rightVert:Show()
+        
+        nameplate.targetBracket.rightTop:ClearAllPoints()
+        nameplate.targetBracket.rightTop:SetPoint("TOPRIGHT", nameplate.targetBracket.rightVert, "TOPLEFT", 0, 0)
+        nameplate.targetBracket.rightTop:Show()
+        
+        nameplate.targetBracket.rightBottom:ClearAllPoints()
+        nameplate.targetBracket.rightBottom:SetPoint("BOTTOMRIGHT", nameplate.targetBracket.rightVert, "BOTTOMLEFT", 0, 0)
+        nameplate.targetBracket.rightBottom:Show()
+        
         -- Show target glow if enabled (Dragonflight3-style top/bottom glow)
         if Settings.showTargetGlow then
             if nameplate.targetGlowTop then
@@ -1279,8 +1349,13 @@ local function UpdateNamePlate(frame)
         -- Target always has highest z-index
         nameplate:SetFrameStrata("TOOLTIP")
     else
-        nameplate.health.targetLeft:Hide()
-        nameplate.health.targetRight:Hide()
+        -- Hide all bracket parts
+        nameplate.targetBracket.leftVert:Hide()
+        nameplate.targetBracket.leftTop:Hide()
+        nameplate.targetBracket.leftBottom:Hide()
+        nameplate.targetBracket.rightVert:Hide()
+        nameplate.targetBracket.rightTop:Hide()
+        nameplate.targetBracket.rightBottom:Hide()
         -- Hide target glow
         if nameplate.targetGlowTop then
             nameplate.targetGlowTop:Hide()
