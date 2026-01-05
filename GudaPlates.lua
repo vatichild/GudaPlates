@@ -95,7 +95,7 @@ local Settings = {
     manabarHeight = 4,
     -- Castbar
     castbarHeight = 12,
-    castbarWidth = 118,
+    castbarWidth = 115,
     castbarIndependent = false,
     showCastbarIcon = true,
     castbarColor = {1, 0.8, 0, 1},  -- Gold/Yellow color
@@ -385,7 +385,7 @@ local function UpdateNamePlateDimensions(frame)
     if Settings.castbarIndependent then
         nameplate.castbar:SetWidth(Settings.castbarWidth)
     else
-        nameplate.castbar:SetWidth(Settings.healthbarWidth + 3)
+        nameplate.castbar:SetWidth(Settings.healthbarWidth)
     end
     
     -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
@@ -3446,7 +3446,8 @@ castbarIndependentLabel:SetText("Independent Width from Healthbar")
 castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
 -- Castbar Width Slider (only enabled when independent is checked)
-local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
+local
+Slider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
 castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
 castbarWidthSlider:SetWidth(450)
 castbarWidthSlider:SetMinMaxValues(72, 200)
@@ -3947,7 +3948,7 @@ resetButton:SetScript("OnClick", function()
     Settings.nameFontSize = 10
     Settings.textFont = "Fonts\\ARIALN.TTF"
     Settings.castbarHeight = 12
-    Settings.castbarWidth = 118
+    Settings.castbarWidth = 115
     Settings.castbarIndependent = false
     Settings.showCastbarIcon = true
     Settings.castbarColor = {1, 0.8, 0, 1}
