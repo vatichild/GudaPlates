@@ -1366,11 +1366,17 @@ local function UpdateNamePlate(frame)
                     else
                         iconSize = Settings.healthbarHeight + Settings.castbarHeight
                     end
-                    local positionTop = -6
-                    if Settings.swapNameDebuff then
-                        positionTop = 6
+                    if nameplate.mana:IsShown() then
+                        iconOffsetY = -4
+                        if Settings.swapNameDebuff then
+                            iconOffsetY = 4
+                        end
+                    else
+                        iconOffsetY = -6
+                        if Settings.swapNameDebuff then
+                            iconOffsetY = 6
+                        end
                     end
-                    iconOffsetY = positionTop
                 end
                 
                 nameplate.castbar.icon:SetWidth(iconSize)
