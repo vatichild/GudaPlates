@@ -27,11 +27,17 @@ GudaPlates.Settings = {
     friendManaTextFormat = 1,
     friendManaTextPosition = "CENTER",
     friendManabarHeight = 4,
-    -- Castbar
+    -- Castbar (Enemy)
     castbarHeight = 12,
     castbarWidth = 115,
     castbarIndependent = false,
     showCastbarIcon = true,
+    -- Castbar (Friendly)
+    friendCastbarHeight = 6,
+    friendCastbarWidth = 85,
+    friendCastbarIndependent = false,
+    friendShowCastbarIcon = true,
+    -- Colors
     castbarColor = {1, 0.8, 0, 1},  -- Gold/Yellow color
     -- Fonts
     levelFontSize = 10,

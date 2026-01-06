@@ -344,16 +344,27 @@ local function UpdateNamePlateDimensions(frame)
     nameplate.health:SetWidth(hWidth)
     
     -- Update castbar dimensions
-    nameplate.castbar:SetHeight(Settings.castbarHeight)
-    if Settings.castbarIndependent then
-        nameplate.castbar:SetWidth(Settings.castbarWidth)
+    local cHeight, cIndependent, cWidth
+    if isFriendly then
+        cHeight = Settings.friendCastbarHeight
+        cIndependent = Settings.friendCastbarIndependent
+        cWidth = Settings.friendCastbarWidth
+    else
+        cHeight = Settings.castbarHeight
+        cIndependent = Settings.castbarIndependent
+        cWidth = Settings.castbarWidth
+    end
+
+    nameplate.castbar:SetHeight(cHeight)
+    if cIndependent then
+        nameplate.castbar:SetWidth(cWidth)
     else
         nameplate.castbar:SetWidth(hWidth)
     end
     
     -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
     local iconSize
-    if Settings.castbarIndependent and Settings.castbarWidth > hWidth then
+    if cIndependent and cWidth > hWidth then
         -- Castbar wider: icon aligns with healthbar (+ manabar if visible)
         if nameplate.mana and nameplate.mana:IsShown() then
             iconSize = hHeight + Settings.manabarHeight
@@ -363,9 +374,9 @@ local function UpdateNamePlateDimensions(frame)
     else
         -- Normal: icon spans healthbar + castbar (+ manabar if visible)
         if nameplate.mana and nameplate.mana:IsShown() then
-            iconSize = hHeight + Settings.castbarHeight + Settings.manabarHeight
+            iconSize = hHeight + cHeight + Settings.manabarHeight
         else
-            iconSize = hHeight + Settings.castbarHeight
+            iconSize = hHeight + cHeight
         end
     end
     nameplate.castbar.icon:SetWidth(iconSize)
@@ -1570,6 +1581,26 @@ local function UpdateNamePlate(frame)
         local start = casting.startTime
         local duration = casting.duration
 
+        -- Determine settings to use based on reaction
+        local cHeight, cIndependent, cWidth, cShowIcon, hHeight, hWidth, mHeight
+        if isFriendly then
+            cHeight = Settings.friendCastbarHeight
+            cIndependent = Settings.friendCastbarIndependent
+            cWidth = Settings.friendCastbarWidth
+            cShowIcon = Settings.friendShowCastbarIcon
+            hHeight = Settings.friendHealthbarHeight
+            hWidth = Settings.friendHealthbarWidth
+            mHeight = Settings.friendManabarHeight
+        else
+            cHeight = Settings.castbarHeight
+            cIndependent = Settings.castbarIndependent
+            cWidth = Settings.castbarWidth
+            cShowIcon = Settings.showCastbarIcon
+            hHeight = Settings.healthbarHeight
+            hWidth = Settings.healthbarWidth
+            mHeight = Settings.manabarHeight
+        end
+
         if now < start + (duration / 1000) then
             nameplate.castbar:SetMinMaxValues(0, duration)
             nameplate.castbar:SetValue((now - start) * 1000)
@@ -1578,26 +1609,26 @@ local function UpdateNamePlate(frame)
             local timeLeft = (start + (duration / 1000)) - now
             nameplate.castbar.timer:SetText(string.format("%.1fs", timeLeft))
 
-            if casting.icon and Settings.showCastbarIcon then
+            if casting.icon and cShowIcon then
                 nameplate.castbar.icon:SetTexture(casting.icon)
                 nameplate.castbar.icon:ClearAllPoints()
                 
                 -- Calculate icon size based on castbar width vs healthbar width
                 local iconSize
                 
-                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if cIndependent and cWidth > hWidth then
                     -- Castbar wider than healthbar: icon aligns with healthbar (+ manabar if visible)
                     if nameplate.mana and nameplate.mana:IsShown() then
-                        iconSize = Settings.healthbarHeight + Settings.manabarHeight
+                        iconSize = hHeight + mHeight
                     else
-                        iconSize = Settings.healthbarHeight
+                        iconSize = hHeight
                     end
                 else
                     -- Normal mode: icon spans healthbar + castbar (+ manabar if visible)
                     if nameplate.mana and nameplate.mana:IsShown() then
-                        iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+                        iconSize = hHeight + cHeight + mHeight
                     else
-                        iconSize = Settings.healthbarHeight + Settings.castbarHeight
+                        iconSize = hHeight + cHeight
                     end
                 end
                 
@@ -1607,7 +1638,7 @@ local function UpdateNamePlate(frame)
                 -- Position icon based on raid icon position and swap setting
                 nameplate.castbar.icon:ClearAllPoints()
                 
-                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if cIndependent and cWidth > hWidth then
                     -- Independent castbar wider than healthbar: anchor to healthbar/manabar
                     if Settings.raidIconPosition == "RIGHT" then
                         if Settings.swapNameDebuff then
@@ -3850,10 +3881,23 @@ end)
     end
 
     local function SetupCastbarTab()
+local scrollFrame = CreateFrame("ScrollFrame", "GudaPlatesCastScrollFrame", castbarTab, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 0, -5)
+scrollFrame:SetPoint("BOTTOMRIGHT", castbarTab, "BOTTOMRIGHT", -25, 5)
+
+local scrollContent = CreateFrame("Frame", "GudaPlatesCastScrollContent", scrollFrame)
+scrollContent:SetWidth(580)
+scrollContent:SetHeight(500)
+scrollFrame:SetScrollChild(scrollContent)
+
+-- Enemy Section Header
+local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
+enemyHeader:SetText("Enemy Nameplates")
 
 -- Show Spell Icon Checkbox
-local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", castbarTab, "UICheckButtonTemplate")
-castbarIconCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -10)
+local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", scrollContent, "UICheckButtonTemplate")
+castbarIconCheckbox:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -10)
 local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
 castbarIconLabel:SetText("Show Spell Icon")
 castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3866,9 +3910,9 @@ castbarIconCheckbox:SetScript("OnClick", function()
 end)
 
 -- Castbar Height Slider
-local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", castbarTab, "OptionsSliderTemplate")
-castbarHeightSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -60)
-castbarHeightSlider:SetWidth(580)
+local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", scrollContent, "OptionsSliderTemplate")
+castbarHeightSlider:SetPoint("TOPLEFT", castbarIconCheckbox, "BOTTOMLEFT", 0, -30)
+castbarHeightSlider:SetWidth(560)
 castbarHeightSlider:SetMinMaxValues(6, 20)
 castbarHeightSlider:SetValueStep(1)
 local castbarHeightText = getglobal(castbarHeightSlider:GetName() .. "Text")
@@ -3885,16 +3929,16 @@ castbarHeightSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Independent Castbar Width Checkbox
-local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", castbarTab, "UICheckButtonTemplate")
-castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -100)
+local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", scrollContent, "UICheckButtonTemplate")
+castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarHeightSlider, "BOTTOMLEFT", 0, -15)
 local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
 castbarIndependentLabel:SetText("Independent Width from Healthbar")
 castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
--- Castbar Width Slider (only enabled when independent is checked)
-local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
-castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
-castbarWidthSlider:SetWidth(580)
+-- Castbar Width Slider
+local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", scrollContent, "OptionsSliderTemplate")
+castbarWidthSlider:SetPoint("TOPLEFT", castbarIndependentCheckbox, "BOTTOMLEFT", 0, -30)
+castbarWidthSlider:SetWidth(560)
 castbarWidthSlider:SetMinMaxValues(72, 200)
 castbarWidthSlider:SetValueStep(1)
 local castbarWidthText = getglobal(castbarWidthSlider:GetName() .. "Text")
@@ -3919,6 +3963,14 @@ function UpdateCastbarWidthSliderState()
         castbarWidthSlider:EnableMouse(false)
         castbarWidthSlider:SetAlpha(0.5)
     end
+    
+    if Settings.friendCastbarIndependent then
+        getglobal("GudaPlatesFriendCastbarWidthSlider"):EnableMouse(true)
+        getglobal("GudaPlatesFriendCastbarWidthSlider"):SetAlpha(1.0)
+    else
+        getglobal("GudaPlatesFriendCastbarWidthSlider"):EnableMouse(false)
+        getglobal("GudaPlatesFriendCastbarWidthSlider"):SetAlpha(0.5)
+    end
 end
 
 castbarIndependentCheckbox:SetScript("OnClick", function()
@@ -3929,15 +3981,84 @@ castbarIndependentCheckbox:SetScript("OnClick", function()
         UpdateNamePlateDimensions(plate)
     end
 end)
-castbarIndependentCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Independent Width from Healthbar")
-    GameTooltip:AddLine("When checked, castbar uses its own width setting.", 1, 1, 1, 1)
-    GameTooltip:AddLine("When unchecked, castbar width follows healthbar width.", 1, 1, 1, 1)
-    GameTooltip:Show()
+
+-- Separator Line
+local separator = scrollContent:CreateTexture(nil, "ARTWORK")
+separator:SetTexture(1, 1, 1, 0.2)
+separator:SetHeight(1)
+separator:SetWidth(560)
+separator:SetPoint("TOPLEFT", castbarWidthSlider, "BOTTOMLEFT", 0, -15)
+
+-- Friendly Section Header
+local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
+friendlyHeader:SetText("Friendly Nameplates")
+
+-- Friend Show Spell Icon Checkbox
+local friendCastbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendCastbarIconCheckbox", scrollContent, "UICheckButtonTemplate")
+friendCastbarIconCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
+local friendCastbarIconLabel = getglobal(friendCastbarIconCheckbox:GetName().."Text")
+friendCastbarIconLabel:SetText("Show Spell Icon")
+friendCastbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+friendCastbarIconCheckbox:SetScript("OnClick", function()
+    Settings.friendShowCastbarIcon = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
 end)
-castbarIndependentCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
+
+-- Friend Castbar Height Slider
+local friendCastbarHeightSlider = CreateFrame("Slider", "GudaPlatesFriendCastbarHeightSlider", scrollContent, "OptionsSliderTemplate")
+friendCastbarHeightSlider:SetPoint("TOPLEFT", friendCastbarIconCheckbox, "BOTTOMLEFT", 0, -30)
+friendCastbarHeightSlider:SetWidth(560)
+friendCastbarHeightSlider:SetMinMaxValues(6, 20)
+friendCastbarHeightSlider:SetValueStep(1)
+local friendCastbarHeightText = getglobal(friendCastbarHeightSlider:GetName() .. "Text")
+friendCastbarHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendCastbarHeightSlider:GetName() .. "Low"):SetText("6")
+getglobal(friendCastbarHeightSlider:GetName() .. "High"):SetText("20")
+friendCastbarHeightSlider:SetScript("OnValueChanged", function()
+    Settings.friendCastbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.friendCastbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Independent Castbar Width Checkbox
+local friendCastbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendCastbarIndependentCheckbox", scrollContent, "UICheckButtonTemplate")
+friendCastbarIndependentCheckbox:SetPoint("TOPLEFT", friendCastbarHeightSlider, "BOTTOMLEFT", 0, -15)
+local friendCastbarIndependentLabel = getglobal(friendCastbarIndependentCheckbox:GetName().."Text")
+friendCastbarIndependentLabel:SetText("Independent Width from Healthbar")
+friendCastbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+friendCastbarIndependentCheckbox:SetScript("OnClick", function()
+    Settings.friendCastbarIndependent = this:GetChecked() == 1
+    UpdateCastbarWidthSliderState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Castbar Width Slider
+local friendCastbarWidthSlider = CreateFrame("Slider", "GudaPlatesFriendCastbarWidthSlider", scrollContent, "OptionsSliderTemplate")
+friendCastbarWidthSlider:SetPoint("TOPLEFT", friendCastbarIndependentCheckbox, "BOTTOMLEFT", 0, -30)
+friendCastbarWidthSlider:SetWidth(560)
+friendCastbarWidthSlider:SetMinMaxValues(72, 200)
+friendCastbarWidthSlider:SetValueStep(1)
+local friendCastbarWidthText = getglobal(friendCastbarWidthSlider:GetName() .. "Text")
+friendCastbarWidthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendCastbarWidthSlider:GetName() .. "Low"):SetText("72")
+getglobal(friendCastbarWidthSlider:GetName() .. "High"):SetText("200")
+friendCastbarWidthSlider:SetScript("OnValueChanged", function()
+    Settings.friendCastbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.friendCastbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
 end)
     end
 
@@ -4178,6 +4299,13 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesCastbarIndependentCheckbox"):SetChecked(Settings.castbarIndependent)
     getglobal("GudaPlatesCastbarWidthSlider"):SetValue(Settings.castbarWidth)
     getglobal("GudaPlatesCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    
+    getglobal("GudaPlatesFriendCastbarIconCheckbox"):SetChecked(Settings.friendShowCastbarIcon)
+    getglobal("GudaPlatesFriendCastbarHeightSlider"):SetValue(Settings.friendCastbarHeight)
+    getglobal("GudaPlatesFriendCastbarHeightSliderText"):SetText("Castbar Height: " .. Settings.friendCastbarHeight)
+    getglobal("GudaPlatesFriendCastbarIndependentCheckbox"):SetChecked(Settings.friendCastbarIndependent)
+    getglobal("GudaPlatesFriendCastbarWidthSlider"):SetValue(Settings.friendCastbarWidth)
+    getglobal("GudaPlatesFriendCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.friendCastbarWidth)
     UpdateCastbarWidthSliderState()
     -- Colors tab
     getglobal("GudaPlatesTankCheckbox"):SetChecked(playerRole == "TANK")
@@ -4233,6 +4361,10 @@ resetButton:SetScript("OnClick", function()
     Settings.castbarWidth = 115
     Settings.castbarIndependent = false
     Settings.showCastbarIcon = true
+    Settings.friendCastbarHeight = 6
+    Settings.friendCastbarWidth = 85
+    Settings.friendCastbarIndependent = false
+    Settings.friendShowCastbarIcon = true
     Settings.castbarColor = {1, 0.8, 0, 1}
     Settings.raidIconPosition = "LEFT"
     Settings.swapNameDebuff = false
