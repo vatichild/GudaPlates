@@ -319,7 +319,9 @@ local function UpdateNamePlateDimensions(frame)
 
     -- Determine which health settings to use
     local r, g, b = nameplate.original.healthbar:GetStatusBarColor()
-    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+    local isHostile = r > 0.9 and g < 0.2 and b < 0.2
+    local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
+    local isFriendly = not isHostile and not isNeutral
     
     local hHeight = isFriendly and Settings.friendHealthbarHeight or Settings.healthbarHeight
     local hWidth = isFriendly and Settings.friendHealthbarWidth or Settings.healthbarWidth
@@ -987,7 +989,9 @@ local function UpdateNamePlate(frame)
     -- Format health text based on settings
     local hpText = ""
     local r, g, b = original.healthbar:GetStatusBarColor()
-    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+    local isHostile = r > 0.9 and g < 0.2 and b < 0.2
+    local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
+    local isFriendly = not isHostile and not isNeutral
     
     local showHText = isFriendly and Settings.friendShowHealthText or Settings.showHealthText
     local hTextFormat = isFriendly and Settings.friendHealthTextFormat or Settings.healthTextFormat
@@ -1048,7 +1052,7 @@ local function UpdateNamePlate(frame)
 
     local isHostile = r > 0.9 and g < 0.2 and b < 0.2
     local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
-    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+    local isFriendly = not isHostile and not isNeutral
 
     -- Get unit string for threat check
     local unitstr = nil
@@ -1150,7 +1154,13 @@ local function UpdateNamePlate(frame)
 
     -- Determine color based on role and threat
     if isFriendly then
-        nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
+        -- Only override to our custom green if it was standard green or blue
+        if (r < 0.2 and g > 0.9 and b < 0.2) or (r < 0.2 and g < 0.2 and b > 0.9) then
+            nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
+        else
+            -- Keep original color (e.g. class colors)
+            nameplate.health:SetStatusBarColor(r, g, b, 1)
+        end
     elseif isNeutral and not isAttackingPlayer then
     -- Neutral and not attacking - yellow
         nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
