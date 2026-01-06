@@ -79,7 +79,10 @@ local function CreateMinimapButton()
     end)
     btn:SetScript("OnClick", function()
         if arg1 == "RightButton" or IsControlKeyDown() then
-            if GudaPlatesOptionsFrame:IsShown() then GudaPlatesOptionsFrame:Hide() else GudaPlatesOptionsFrame:Show() end
+            local frame = getglobal("GudaPlatesOptionsFrame")
+            if frame then
+                if frame:IsShown() then frame:Hide() else frame:Show() end
+            end
         end
     end)
     btn:SetScript("OnEnter", function()
@@ -105,7 +108,10 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         GudaPlates.SaveSettings()
         Print("Role set to DPS")
     elseif msg == "config" then
-        if GudaPlatesOptionsFrame:IsShown() then GudaPlatesOptionsFrame:Hide() else GudaPlatesOptionsFrame:Show() end
+        local frame = getglobal("GudaPlatesOptionsFrame")
+        if frame then
+            if frame:IsShown() then frame:Hide() else frame:Show() end
+        end
     else
         Print("Commands: /gp tank | /gp dps | /gp config")
     end
@@ -142,14 +148,19 @@ end)
 eventFrame:SetScript("OnEvent", function()
     local e = event
     if e == "VARIABLES_LOADED" then
+        Print("VARIABLES_LOADED fired.")
         local success, err = pcall(function()
+            Print("Loading settings...")
             GudaPlates.LoadSettings()
+            Print("Disabling pfUI nameplates...")
             GudaPlates.DisablePfUINameplates()
             if GudaPlates.CreateOptionsFrame then
+                Print("Creating options frame...")
                 GudaPlates.CreateOptionsFrame()
             else
                 Print("Error: CreateOptionsFrame not found!")
             end
+            Print("Creating minimap button...")
             CreateMinimapButton()
         end)
         if not success then

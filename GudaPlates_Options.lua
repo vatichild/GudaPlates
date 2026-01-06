@@ -80,12 +80,16 @@ local function UpdateManaOptionsState()
     getglobal("GudaPlatesManaPosDropdown"):SetAlpha(alpha)
     
     if not enabled then
-        OptionsFrame_DisableDropDown(GudaPlatesManaFormatDropdown)
-        OptionsFrame_DisableDropDown(GudaPlatesManaPosDropdown)
+        OptionsFrame_DisableDropDown(getglobal("GudaPlatesManaFormatDropdown"))
+        OptionsFrame_DisableDropDown(getglobal("GudaPlatesManaPosDropdown"))
     else
-        OptionsFrame_EnableDropDown(GudaPlatesManaFormatDropdown)
-        OptionsFrame_EnableDropDown(GudaPlatesManaPosDropdown)
+        OptionsFrame_EnableDropDown(getglobal("GudaPlatesManaFormatDropdown"))
+        OptionsFrame_EnableDropDown(getglobal("GudaPlatesManaPosDropdown"))
     end
+    
+    local color = enabled and {1, 0.82, 0} or {0.5, 0.5, 0.5}
+    if GudaPlatesManaFormatDropdownLabel then GudaPlatesManaFormatDropdownLabel:SetVertexColor(color[1], color[2], color[3]) end
+    if GudaPlatesManaPosDropdownLabel then GudaPlatesManaPosDropdownLabel:SetVertexColor(color[1], color[2], color[3]) end
 end
 
 -- Function to update castbar width slider enabled state
@@ -346,7 +350,7 @@ function GudaPlates.CreateOptionsFrame()
     showManaTextCheckbox:SetScript("OnClick", function() Settings.showManaText = this:GetChecked() == 1 SaveSettings() for plate, _ in pairs(GudaPlates.registry) do GudaPlates.UpdateNamePlate(plate) end end)
     CreateSlider(manaTab, "GudaPlatesManaHeightSlider", "Manabar Height", 2, 10, 1, -75, "manabarHeight", UpdateAllDimensions)
 
-    local manaPosLabel = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local manaPosLabel = manaTab:CreateFontString("GudaPlatesManaPosDropdownLabel", "OVERLAY", "GameFontNormal")
     manaPosLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -115)
     manaPosLabel:SetText("Mana Text Position:")
     local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", manaTab, "UIDropDownMenuTemplate")
@@ -364,7 +368,7 @@ function GudaPlates.CreateOptionsFrame()
     end)
     UIDropDownMenu_SetWidth(80, manaPosDropdown)
 
-    local manaFormatLabel = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local manaFormatLabel = manaTab:CreateFontString("GudaPlatesManaFormatDropdownLabel", "OVERLAY", "GameFontNormal")
     manaFormatLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -150)
     manaFormatLabel:SetText("Mana Text Format:")
     local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", manaTab, "UIDropDownMenuTemplate")
@@ -485,7 +489,7 @@ function GudaPlates.CreateOptionsFrame()
         Settings.showTargetGlow = true Settings.targetGlowColor = {0.4, 0.8, 0.9, 0.4}
         Settings.nameColor = {1, 1, 1, 1} Settings.healthTextColor = {1, 1, 1, 1} Settings.manaTextColor = {1, 1, 1, 1} Settings.levelColor = {1, 1, 1, 1}
         SaveSettings() Print("Settings reset to defaults.")
-        GudaPlatesOptionsFrame:Hide() GudaPlatesOptionsFrame:Show()
+        getglobal("GudaPlatesOptionsFrame"):Hide() getglobal("GudaPlatesOptionsFrame"):Show()
         for plate, _ in pairs(GudaPlates.registry) do GudaPlates.UpdateNamePlateDimensions(plate) GudaPlates.UpdateNamePlate(plate) end
     end)
 end

@@ -9,6 +9,7 @@ local IsFriendly = GudaPlates.IsFriendly
 local FormatTime = GudaPlates.FormatTime
 local IsTankClass = GudaPlates.IsTankClass
 local IsInPlayerGroup = GudaPlates.IsInPlayerGroup
+local SpellDB = GudaPlates_SpellDB
 
 function GudaPlates.UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate

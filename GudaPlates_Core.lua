@@ -9,7 +9,7 @@ GudaPlates.DEBUG_DURATION = false
 GudaPlates.initialized = 0
 GudaPlates.parentcount = 0
 GudaPlates.platecount = 0
-GudaPlates.registry = {}
+GudaPlates.registry = GudaPlates.registry or {}
 GudaPlates.REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
 
 -- Debuff settings
