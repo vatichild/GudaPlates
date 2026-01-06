@@ -1341,7 +1341,9 @@ local function UpdateNamePlate(frame)
 
             -- 3. Also keep the current logic as backup if color detection fails for some reason
             -- or if it's already attacking someone not in group.
-            if not isTappedByOthers and mobInCombat then
+            -- IMPORTANT: Only run this fallback if we haven't already confirmed it's ours (original bar not gray)
+            local originalIsGray = (r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6)
+            if not isTappedByOthers and mobInCombat and (originalIsGray or (r < 0.1 and g < 0.1 and b < 0.1)) then
                 local isMobTargetingGroupMate = false
 
                 if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
@@ -1370,9 +1372,11 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Apply color based on state (priority order: TAPPED -> NEUTRAL -> THREAT COLORS)
-        if isTappedByOthers and hp < hpmax then
-        -- TAPPED: Mob is tapped by others and took damage - no other colors applied
+        -- Apply color based on state (priority order: THREAT COLORS -> TAPPED -> NEUTRAL)
+        local hasInvolvement = isAttackingPlayer or isTanking or (twthreat_active and threatPct > 0) or (hasValidGUID and mobInCombat and not isTappedByOthers)
+        
+        if isTappedByOthers and hp < hpmax and not hasInvolvement then
+        -- TAPPED: Mob is tapped by others, took damage, and we are not involved - gray
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
         elseif isNeutral and not isAttackingPlayer then
         -- Neutral and not attacking - yellow
