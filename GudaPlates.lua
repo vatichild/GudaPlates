@@ -1325,14 +1325,14 @@ local function UpdateNamePlate(frame)
             -- 2. If it's our target, use API for 100% accuracy
             if not isTappedByOthers and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
                 if UnitIsTapped("target") and not UnitIsTappedByPlayer("target") then
-                    -- Double check if the mob is attacking someone in our group
+                    -- Double check if the mob is attacking someone in our group (excluding player)
                     -- (Fixes cases where joining a group mid-combat doesn't update UnitIsTappedByPlayer immediately)
-                    local isMobTargetingGroup = false
-                    if UnitExists("targettarget") then
-                        isMobTargetingGroup = IsInPlayerGroup("targettarget")
+                    local isMobTargetingGroupMate = false
+                    if UnitExists("targettarget") and not UnitIsUnit("targettarget", "player") then
+                        isMobTargetingGroupMate = IsInPlayerGroup("targettarget")
                     end
                     
-                    if not isMobTargetingGroup then
+                    if not isMobTargetingGroupMate then
                         isTappedByOthers = true
                     end
                 end
@@ -1341,15 +1341,30 @@ local function UpdateNamePlate(frame)
             -- 3. Also keep the current logic as backup if color detection fails for some reason
             -- or if it's already attacking someone not in group.
             if not isTappedByOthers and mobInCombat then
-                local isMobTargetingGroup = false
+                local isMobTargetingGroupMate = false
 
-                if mobTargetUnit and UnitExists(mobTargetUnit) then
-                    isMobTargetingGroup = IsInPlayerGroup(mobTargetUnit)
-                else
-                    -- Can't determine mob's target - assume it's ours if attacking us or has aggro glow
-                    isMobTargetingGroup = isAttackingPlayer or hasAggroGlow
+                if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
+                    isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
                 end
-
+                
+                -- If it's targeting us, we don't set isMobTargetingGroupMate to true here.
+                -- This means if it was already tapped (but color detection failed), 
+                -- it will stay tapped even if attacking us, unless UnitIsTappedByPlayer says otherwise (handled by API check above).
+                
+                -- However, if it's NOT targeting a group mate AND it's not our tap, it's tapped by others.
+                -- But wait, if it's targeting US, isMobTargetingGroupMate is false.
+                -- If we are the one who tapped it, it shouldn't be here (ideally).
+                -- But Block 3 is a fallback for non-target plates where we don't have UnitIsTapped.
+                -- For non-target plates, if it's attacking us, we usually assume it's ours.
+                -- This is tricky. But if color detection (Block 1) didn't catch it as gray, 
+                -- it's probably NOT tapped by someone else, or the color hasn't updated.
+                
+                -- Let's stick to the user request: "shouldn't change any color if I aggro it".
+                -- If it was gray, Block 1 should catch it.
+                -- If Block 1 caught it, isTappedByOthers is true, and Block 2 & 3 don't run.
+                
+                -- If it's attacking us, we'll keep the existing logic for now but be careful.
+                local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
                 isTappedByOthers = not isMobTargetingGroup
             end
         end
