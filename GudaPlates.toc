@@ -5,5 +5,6 @@
 ## Version: 1.0.7
 ## SavedVariables: GudaPlatesDB
 
+GudaPlates_Settings.lua
 GudaPlates_SpellDB.lua
 GudaPlates.lua

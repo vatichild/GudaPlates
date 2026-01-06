@@ -71,73 +71,12 @@ local castDB = {}
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
 
--- Role setting: "TANK" or "DPS" (DPS includes healers)
-local playerRole = "DPS"
-local minimapAngle = 220
-
--- Nameplate overlap setting: true = overlapping, false = stacking (default)
-local nameplateOverlap = true
-
--- Settings table to reduce upvalues
-local Settings = {
-    -- Healthbar
-    healthbarHeight = 14,
-    healthbarWidth = 115,
-    healthFontSize = 10,
-    showHealthText = true,
-    healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
-    healthTextFormat = 1,  -- 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
-    -- Manabar
-    showManaBar = false,
-    showManaText = true,
-    manaTextFormat = 1,  -- 1=Percent, 2=Current Mana, 3=Current Mana (%)
-    manaTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
-    manabarHeight = 4,
-    -- Castbar
-    castbarHeight = 12,
-    castbarWidth = 115,
-    castbarIndependent = false,
-    showCastbarIcon = true,
-    castbarColor = {1, 0.8, 0, 1},  -- Gold/Yellow color
-    -- Fonts
-    levelFontSize = 10,
-    nameFontSize = 10,
-    textFont = "Fonts\\ARIALN.TTF",  -- Default WoW font
-    -- Layout
-    raidIconPosition = "LEFT",
-    swapNameDebuff = true,
-    -- Features
-    showOnlyMyDebuffs = true,
-    showDebuffTimers = true,
-    -- Target Glow
-    showTargetGlow = true,
-    targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
-    -- Text Colors
-    nameColor = {1, 1, 1, 1},
-    healthTextColor = {1, 1, 1, 1},
-    manaTextColor = {1, 1, 1, 1},
-    levelColor = {1, 1, 0.6, 1},
-}
-
--- Plater-style threat colors
-local THREAT_COLORS = {
-    -- DPS/Healer colors
-    DPS = {
-        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue: mob attacking you (BAD)
-        HIGH_THREAT = {1.0, 0.6, 0.0, 1},  -- Orange: high threat, about to pull (WARNING)
-        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red: tank has aggro (GOOD)
-    },
-    -- Tank colors
-    TANK = {
-        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue (matching DPS AGGRO)
-        LOSING_AGGRO = {1.0, 0.6, 0.0, 1}, -- Orange (matching DPS HIGH_THREAT)
-        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
-        OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
-    },
-    -- Misc colors
-    TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
-    MANA_BAR = {0.07, 0.58, 1.0, 1},  -- Cyan: mana bar color
-}
+-- Settings and other variables from GudaPlates_Settings.lua
+local Settings = GudaPlates.Settings
+local THREAT_COLORS = GudaPlates.THREAT_COLORS
+local playerRole = GudaPlates.playerRole
+local minimapAngle = GudaPlates.minimapAngle
+local nameplateOverlap = GudaPlates.nameplateOverlap
 
 -- Tank class detection for OTHER_TANK coloring
 local TANK_CLASSES = {
@@ -378,32 +317,41 @@ local function UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate
     if not nameplate then return end
 
-    nameplate.health:SetHeight(Settings.healthbarHeight)
-    nameplate.health:SetWidth(Settings.healthbarWidth)
+    -- Determine which health settings to use
+    local r, g, b = nameplate.original.healthbar:GetStatusBarColor()
+    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+    
+    local hHeight = isFriendly and Settings.friendHealthbarHeight or Settings.healthbarHeight
+    local hWidth = isFriendly and Settings.friendHealthbarWidth or Settings.healthbarWidth
+    local hFontSize = isFriendly and Settings.friendHealthFontSize or Settings.healthFontSize
+    local hTextPos = isFriendly and Settings.friendHealthTextPosition or Settings.healthTextPosition
+
+    nameplate.health:SetHeight(hHeight)
+    nameplate.health:SetWidth(hWidth)
     
     -- Update castbar dimensions
     nameplate.castbar:SetHeight(Settings.castbarHeight)
     if Settings.castbarIndependent then
         nameplate.castbar:SetWidth(Settings.castbarWidth)
     else
-        nameplate.castbar:SetWidth(Settings.healthbarWidth)
+        nameplate.castbar:SetWidth(hWidth)
     end
     
     -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
     local iconSize
-    if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+    if Settings.castbarIndependent and Settings.castbarWidth > hWidth then
         -- Castbar wider: icon aligns with healthbar (+ manabar if visible)
         if nameplate.mana and nameplate.mana:IsShown() then
-            iconSize = Settings.healthbarHeight + Settings.manabarHeight
+            iconSize = hHeight + Settings.manabarHeight
         else
-            iconSize = Settings.healthbarHeight
+            iconSize = hHeight
         end
     else
         -- Normal: icon spans healthbar + castbar (+ manabar if visible)
         if nameplate.mana and nameplate.mana:IsShown() then
-            iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+            iconSize = hHeight + Settings.castbarHeight + Settings.manabarHeight
         else
-            iconSize = Settings.healthbarHeight + Settings.castbarHeight
+            iconSize = hHeight + Settings.castbarHeight
         end
     end
     nameplate.castbar.icon:SetWidth(iconSize)
@@ -411,7 +359,7 @@ local function UpdateNamePlateDimensions(frame)
     
     -- Update mana bar dimensions and text position
     if nameplate.mana then
-        nameplate.mana:SetWidth(Settings.healthbarWidth)
+        nameplate.mana:SetWidth(hWidth)
         nameplate.mana:SetHeight(Settings.manabarHeight)
         
         -- Update mana text position
@@ -431,14 +379,14 @@ local function UpdateNamePlateDimensions(frame)
     end
 
     local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
-    nameplate.healthtext:SetFont(healthFont, Settings.healthFontSize, healthFlags)
+    nameplate.healthtext:SetFont(healthFont, hFontSize, healthFlags)
     
     -- Update health text position
     nameplate.healthtext:ClearAllPoints()
-    if Settings.healthTextPosition == "LEFT" then
+    if hTextPos == "LEFT" then
         nameplate.healthtext:SetPoint("LEFT", nameplate.health, "LEFT", 2, 0)
         nameplate.healthtext:SetJustifyH("LEFT")
-    elseif Settings.healthTextPosition == "RIGHT" then
+    elseif hTextPos == "RIGHT" then
         nameplate.healthtext:SetPoint("RIGHT", nameplate.health, "RIGHT", -2, 0)
         nameplate.healthtext:SetJustifyH("RIGHT")
     else
@@ -449,7 +397,7 @@ local function UpdateNamePlateDimensions(frame)
     -- Apply font from settings
     nameplate.level:SetFont(Settings.textFont, Settings.levelFontSize, "OUTLINE")
     nameplate.name:SetFont(Settings.textFont, Settings.nameFontSize, "OUTLINE")
-    nameplate.healthtext:SetFont(Settings.textFont, Settings.healthFontSize, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, hFontSize, "OUTLINE")
     if nameplate.mana and nameplate.mana.text then
         nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
     end
@@ -1038,9 +986,15 @@ local function UpdateNamePlate(frame)
 
     -- Format health text based on settings
     local hpText = ""
-    if Settings.showHealthText then
+    local r, g, b = original.healthbar:GetStatusBarColor()
+    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+    
+    local showHText = isFriendly and Settings.friendShowHealthText or Settings.showHealthText
+    local hTextFormat = isFriendly and Settings.friendHealthTextFormat or Settings.healthTextFormat
+
+    if showHText then
         local perc = (hp / hpmax) * 100
-        local format = Settings.healthTextFormat
+        local format = hTextFormat
         if format == 1 then
             -- Percent only
             hpText = string.format("%.0f%%", perc)
@@ -2551,6 +2505,13 @@ local function SaveSettings()
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
     GudaPlatesDB.minimapAngle = minimapAngle
     GudaPlatesDB.Settings = Settings  -- Save entire Settings table
+    
+    -- Sync back to GudaPlates global table for consistency
+    GudaPlates.playerRole = playerRole
+    GudaPlates.THREAT_COLORS = THREAT_COLORS
+    GudaPlates.nameplateOverlap = nameplateOverlap
+    GudaPlates.minimapAngle = minimapAngle
+    GudaPlates.Settings = Settings
 end
 
 local function LoadSettings()
@@ -2602,6 +2563,13 @@ local function LoadSettings()
             THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
         end
     end
+
+    -- Update global GudaPlates table to reflect loaded settings
+    GudaPlates.playerRole = playerRole
+    GudaPlates.nameplateOverlap = nameplateOverlap
+    GudaPlates.minimapAngle = minimapAngle
+    GudaPlates.Settings = Settings
+    GudaPlates.THREAT_COLORS = THREAT_COLORS
 end
 
 -- Minimap Button
@@ -2691,239 +2659,242 @@ minimapButton:SetScript("OnLeave", function()
 end)
 
 -- Options Frame
-local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
-optionsFrame:SetFrameStrata("DIALOG")
-optionsFrame:SetFrameLevel(100)
-optionsFrame:SetWidth(610)
-optionsFrame:SetHeight(540)
-optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-optionsFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 11, right = 12, top = 12, bottom = 11 }
-})
-optionsFrame:SetMovable(true)
-optionsFrame:EnableMouse(true)
-optionsFrame:RegisterForDrag("LeftButton")
-optionsFrame:SetScript("OnDragStart", function() this:StartMoving() end)
-optionsFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
-optionsFrame:Hide()
+local optionsFrame, generalTab, healthbarTab, manaTab, castbarTab, colorsTab
+local generalTabBg, healthbarTabBg, manaTabBg, castbarTabBg, colorsTabBg
 
--- Title
-local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-title:SetPoint("TOP", optionsFrame, "TOP", 0, -20)
-title:SetText("GudaPlates Settings")
+local function CreateOptionsFrame()
+    local UpdateManaOptionsState, UpdateCastbarWidthSliderState
+    optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
+    optionsFrame:SetFrameStrata("DIALOG")
+    optionsFrame:SetFrameLevel(100)
+    optionsFrame:SetWidth(610)
+    optionsFrame:SetHeight(540)
+    optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    optionsFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    optionsFrame:SetMovable(true)
+    optionsFrame:EnableMouse(true)
+    optionsFrame:RegisterForDrag("LeftButton")
+    optionsFrame:SetScript("OnDragStart", function() this:StartMoving() end)
+    optionsFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    optionsFrame:Hide()
 
--- Close Button
-local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
-closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
+    -- Title
+    local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", optionsFrame, "TOP", 0, -20)
+    title:SetText("GudaPlates Settings")
 
--- Tab Content Frames
-local generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
-generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
-generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+    -- Close Button
+    local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
 
-local healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
-healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
-healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
-healthbarTab:Hide()
+    -- Tab Content Frames
+    generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
+    generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
 
-local manaTab = CreateFrame("Frame", "GudaPlatesManaTab", optionsFrame)
-manaTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
-manaTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
-manaTab:Hide()
-
-local castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
-castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
-castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
-castbarTab:Hide()
-
-local colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
-colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
-colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
-colorsTab:Hide()
-
--- Tab Buttons
-local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
-generalTabButton:SetWidth(110)
-generalTabButton:SetHeight(28)
-generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
-
-local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
-generalTabText:SetText("General")
-
-local generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
-generalTabBg:SetTexture(1, 1, 1, 0.3)
-generalTabBg:SetAllPoints()
-
-local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
-healthbarTabButton:SetWidth(110)
-healthbarTabButton:SetHeight(28)
-healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
-
-local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
-healthbarTabText:SetText("Health")
-
-local healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
-healthbarTabBg:SetTexture(1, 1, 1, 0.1)
-healthbarTabBg:SetAllPoints()
-
-local manaTabButton = CreateFrame("Button", "GudaPlatesManaTabButton", optionsFrame)
-manaTabButton:SetWidth(110)
-manaTabButton:SetHeight(28)
-manaTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
-
-local manaTabText = manaTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-manaTabText:SetPoint("CENTER", manaTabButton, "CENTER", 0, 0)
-manaTabText:SetText("Mana")
-
-local manaTabBg = manaTabButton:CreateTexture(nil, "BACKGROUND")
-manaTabBg:SetTexture(1, 1, 1, 0.1)
-manaTabBg:SetAllPoints()
-
-local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
-castbarTabButton:SetWidth(110)
-castbarTabButton:SetHeight(28)
-castbarTabButton:SetPoint("LEFT", manaTabButton, "RIGHT", 2, 0)
-
-local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
-castbarTabText:SetText("Castbar")
-
-local castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
-castbarTabBg:SetTexture(1, 1, 1, 0.1)
-castbarTabBg:SetAllPoints()
-
-local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
-colorsTabButton:SetWidth(110)
-colorsTabButton:SetHeight(28)
-colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
-
-local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
-colorsTabText:SetText("Colors")
-
-local colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
-colorsTabBg:SetTexture(1, 1, 1, 0.1)
-colorsTabBg:SetAllPoints()
-
-local function SelectTab(tabName)
-    generalTab:Hide()
+    healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
+    healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     healthbarTab:Hide()
+
+    manaTab = CreateFrame("Frame", "GudaPlatesManaTab", optionsFrame)
+    manaTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    manaTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     manaTab:Hide()
+
+    castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
+    castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     castbarTab:Hide()
+
+    colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
+    colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     colorsTab:Hide()
-    generalTabBg:SetTexture(1, 1, 1, 0.1)
+
+    -- Tab Buttons
+    local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
+    generalTabButton:SetWidth(110)
+    generalTabButton:SetHeight(28)
+    generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
+
+    local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
+    generalTabText:SetText("General")
+
+    generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
+    generalTabBg:SetTexture(1, 1, 1, 0.3)
+    generalTabBg:SetAllPoints()
+
+    local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
+    healthbarTabButton:SetWidth(110)
+    healthbarTabButton:SetHeight(28)
+    healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
+
+    local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
+    healthbarTabText:SetText("Health")
+
+    healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
     healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+    healthbarTabBg:SetAllPoints()
+
+    local manaTabButton = CreateFrame("Button", "GudaPlatesManaTabButton", optionsFrame)
+    manaTabButton:SetWidth(110)
+    manaTabButton:SetHeight(28)
+    manaTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
+
+    local manaTabText = manaTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    manaTabText:SetPoint("CENTER", manaTabButton, "CENTER", 0, 0)
+    manaTabText:SetText("Mana")
+
+    manaTabBg = manaTabButton:CreateTexture(nil, "BACKGROUND")
     manaTabBg:SetTexture(1, 1, 1, 0.1)
+    manaTabBg:SetAllPoints()
+
+    local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
+    castbarTabButton:SetWidth(110)
+    castbarTabButton:SetHeight(28)
+    castbarTabButton:SetPoint("LEFT", manaTabButton, "RIGHT", 2, 0)
+
+    local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
+    castbarTabText:SetText("Castbar")
+
+    castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
     castbarTabBg:SetTexture(1, 1, 1, 0.1)
+    castbarTabBg:SetAllPoints()
+
+    local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
+    colorsTabButton:SetWidth(110)
+    colorsTabButton:SetHeight(28)
+    colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
+
+    local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
+    colorsTabText:SetText("Colors")
+
+    colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
     colorsTabBg:SetTexture(1, 1, 1, 0.1)
-    
-    if tabName == "general" then
-        generalTab:Show()
-        generalTabBg:SetTexture(1, 1, 1, 0.3)
-    elseif tabName == "healthbar" then
-        healthbarTab:Show()
-        healthbarTabBg:SetTexture(1, 1, 1, 0.3)
-    elseif tabName == "mana" then
-        manaTab:Show()
-        manaTabBg:SetTexture(1, 1, 1, 0.3)
-    elseif tabName == "castbar" then
-        castbarTab:Show()
-        castbarTabBg:SetTexture(1, 1, 1, 0.3)
-    elseif tabName == "colors" then
-        colorsTab:Show()
-        colorsTabBg:SetTexture(1, 1, 1, 0.3)
+    colorsTabBg:SetAllPoints()
+
+    local function SelectTab(tabName)
+        generalTab:Hide()
+        healthbarTab:Hide()
+        manaTab:Hide()
+        castbarTab:Hide()
+        colorsTab:Hide()
+        generalTabBg:SetTexture(1, 1, 1, 0.1)
+        healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+        manaTabBg:SetTexture(1, 1, 1, 0.1)
+        castbarTabBg:SetTexture(1, 1, 1, 0.1)
+        colorsTabBg:SetTexture(1, 1, 1, 0.1)
+        
+        if tabName == "general" then
+            generalTab:Show()
+            generalTabBg:SetTexture(1, 1, 1, 0.3)
+        elseif tabName == "healthbar" then
+            healthbarTab:Show()
+            healthbarTabBg:SetTexture(1, 1, 1, 0.3)
+        elseif tabName == "mana" then
+            manaTab:Show()
+            manaTabBg:SetTexture(1, 1, 1, 0.3)
+        elseif tabName == "castbar" then
+            castbarTab:Show()
+            castbarTabBg:SetTexture(1, 1, 1, 0.3)
+        elseif tabName == "colors" then
+            colorsTab:Show()
+            colorsTabBg:SetTexture(1, 1, 1, 0.3)
+        end
     end
-end
 
-generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
-healthbarTabButton:SetScript("OnClick", function() SelectTab("healthbar") end)
-manaTabButton:SetScript("OnClick", function() SelectTab("mana") end)
-castbarTabButton:SetScript("OnClick", function() SelectTab("castbar") end)
-colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
+    generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
+    healthbarTabButton:SetScript("OnClick", function() SelectTab("healthbar") end)
+    manaTabButton:SetScript("OnClick", function() SelectTab("mana") end)
+    castbarTabButton:SetScript("OnClick", function() SelectTab("castbar") end)
+    colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
 
--- Color picker helper
-local function ShowColorPicker(r, g, b, callback)
-    ColorPickerFrame.func = function()
-        local r, g, b = ColorPickerFrame:GetColorRGB()
-        callback(r, g, b)
+    -- Color picker helper
+    local function ShowColorPicker(r, g, b, callback)
+        ColorPickerFrame.func = function()
+            local r, g, b = ColorPickerFrame:GetColorRGB()
+            callback(r, g, b)
+        end
+        ColorPickerFrame.hasOpacity = false
+        ColorPickerFrame.previousValues = {r, g, b}
+        ColorPickerFrame.cancelFunc = function()
+            local prev = ColorPickerFrame.previousValues
+            callback(prev[1], prev[2], prev[3])
+        end
+        ColorPickerFrame:SetColorRGB(r, g, b)
+        ColorPickerFrame:Hide()
+        ColorPickerFrame:Show()
     end
-    ColorPickerFrame.hasOpacity = false
-    ColorPickerFrame.previousValues = {r, g, b}
-    ColorPickerFrame.cancelFunc = function()
-        local prev = ColorPickerFrame.previousValues
-        callback(prev[1], prev[2], prev[3])
-    end
-    ColorPickerFrame:SetColorRGB(r, g, b)
-    ColorPickerFrame:Hide()
-    ColorPickerFrame:Show()
-end
 
--- Create color swatch helper
-local swatches = {}
-local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
-    local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    swatchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    swatchLabel:SetText(label)
+    -- Create color swatch helper
+    local swatches = {}
+    local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
+        local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        swatchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+        swatchLabel:SetText(label)
 
-    local swatch = CreateFrame("Button", nil, parent)
-    swatch:SetWidth(20)
-    swatch:SetHeight(20)
-    swatch:SetPoint("LEFT", swatchLabel, "RIGHT", 10, 0)
+        local swatch = CreateFrame("Button", nil, parent)
+        swatch:SetWidth(20)
+        swatch:SetHeight(20)
+        swatch:SetPoint("LEFT", swatchLabel, "RIGHT", 10, 0)
 
-    local border = swatch:CreateTexture(nil, "BACKGROUND")
-    border:SetTexture(0, 0, 0, 1)
-    border:SetAllPoints()
+        local border = swatch:CreateTexture(nil, "BACKGROUND")
+        border:SetTexture(0, 0, 0, 1)
+        border:SetAllPoints()
 
-    local swatchBg = swatch:CreateTexture(nil, "ARTWORK")
-    swatchBg:SetTexture(1, 1, 1, 1)
-    swatchBg:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
-    swatchBg:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+        local swatchBg = swatch:CreateTexture(nil, "ARTWORK")
+        swatchBg:SetTexture(1, 1, 1, 1)
+        swatchBg:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+        swatchBg:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
 
-    local function UpdateSwatchColor()
-        local c = colorTable[colorKey]
-        swatchBg:SetVertexColor(c[1], c[2], c[3], 1)
-    end
-    UpdateSwatchColor()
+        local function UpdateSwatchColor()
+            local c = colorTable[colorKey]
+            swatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+        end
+        UpdateSwatchColor()
 
-    table.insert(swatches, UpdateSwatchColor)
+        table.insert(swatches, UpdateSwatchColor)
 
-    swatch:SetScript("OnClick", function()
-        local c = colorTable[colorKey]
-        ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-            if r then
-                colorTable[colorKey] = {r, g, b, 1}
-                UpdateSwatchColor()
-                SaveSettings()
-                for plate, _ in pairs(registry) do
-                    if plate:IsShown() then
-                        UpdateNamePlate(plate)
+        swatch:SetScript("OnClick", function()
+            local c = colorTable[colorKey]
+            ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+                if r then
+                    colorTable[colorKey] = {r, g, b, 1}
+                    UpdateSwatchColor()
+                    SaveSettings()
+                    for plate, _ in pairs(registry) do
+                        if plate:IsShown() then
+                            UpdateNamePlate(plate)
+                        end
                     end
                 end
-            end
+            end)
         end)
-    end)
 
-    swatch:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Click to change color")
-        GameTooltip:Show()
-    end)
+        swatch:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Click to change color")
+            GameTooltip:Show()
+        end)
 
-    swatch:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+        swatch:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
 
-    return swatch
-end
+        return swatch
+    end
 
--- ==========================================
--- GENERAL TAB CONTENT
--- ==========================================
+    local function SetupGeneralTab()
 
 -- Font Dropdown (at the top left)
 local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
@@ -3117,19 +3088,33 @@ targetGlowCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- ==========================================
--- HEALTHBAR TAB CONTENT
--- ==========================================
+    end
+
+    local function SetupHealthbarTab()
+
+local scrollFrame = CreateFrame("ScrollFrame", "GudaPlatesHealthScrollFrame", healthbarTab, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 0, -5)
+scrollFrame:SetPoint("BOTTOMRIGHT", healthbarTab, "BOTTOMRIGHT", -25, 5)
+
+local scrollContent = CreateFrame("Frame", "GudaPlatesHealthScrollContent", scrollFrame)
+scrollContent:SetWidth(460)
+scrollContent:SetHeight(750)
+scrollFrame:SetScrollChild(scrollContent)
+
+-- Enemy Section Header
+local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
+enemyHeader:SetText("Enemy Nameplates")
 
 -- Healthbar Height Slider
-local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", healthbarTab, "OptionsSliderTemplate")
-heightSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -20)
-heightSlider:SetWidth(450)
-heightSlider:SetMinMaxValues(6, 25)
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", scrollContent, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -20)
+heightSlider:SetWidth(430)
+heightSlider:SetMinMaxValues(4, 25)
 heightSlider:SetValueStep(1)
 local heightText = getglobal(heightSlider:GetName() .. "Text")
 heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(heightSlider:GetName() .. "Low"):SetText("6")
+getglobal(heightSlider:GetName() .. "Low"):SetText("4")
 getglobal(heightSlider:GetName() .. "High"):SetText("25")
 heightSlider:SetScript("OnValueChanged", function()
     Settings.healthbarHeight = this:GetValue()
@@ -3141,9 +3126,9 @@ heightSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Healthbar Width Slider
-local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", healthbarTab, "OptionsSliderTemplate")
-widthSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -60)
-widthSlider:SetWidth(450)
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", scrollContent, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", heightSlider, "BOTTOMLEFT", 0, -30)
+widthSlider:SetWidth(430)
 widthSlider:SetMinMaxValues(72, 150)
 widthSlider:SetValueStep(1)
 local widthText = getglobal(widthSlider:GetName() .. "Text")
@@ -3160,9 +3145,9 @@ widthSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Health Font Size Slider
-local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", healthbarTab, "OptionsSliderTemplate")
-healthFontSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -100)
-healthFontSlider:SetWidth(450)
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", scrollContent, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", widthSlider, "BOTTOMLEFT", 0, -30)
+healthFontSlider:SetWidth(430)
 healthFontSlider:SetMinMaxValues(6, 20)
 healthFontSlider:SetValueStep(1)
 local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
@@ -3179,8 +3164,8 @@ healthFontSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Show Health Points Checkbox
-local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", healthbarTab, "UICheckButtonTemplate")
-showHealthTextCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -140)
+local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", scrollContent, "UICheckButtonTemplate")
+showHealthTextCheckbox:SetPoint("TOPLEFT", healthFontSlider, "BOTTOMLEFT", 0, -20)
 local showHealthTextLabel = getglobal(showHealthTextCheckbox:GetName().."Text")
 showHealthTextLabel:SetText("Show Health Points")
 showHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3193,11 +3178,11 @@ showHealthTextCheckbox:SetScript("OnClick", function()
 end)
 
 -- Health Text Position Dropdown
-local healthPosLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthPosLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -175)
+local healthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthPosLabel:SetPoint("TOPLEFT", showHealthTextCheckbox, "BOTTOMLEFT", 0, -10)
 healthPosLabel:SetText("Health Text Position:")
 
-local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", healthbarTab, "UIDropDownMenuTemplate")
+local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 healthPosDropdown:SetPoint("TOPLEFT", healthPosLabel, "TOPRIGHT", -10, 8)
 
 local healthPosOptions = {"LEFT", "CENTER", "RIGHT"}
@@ -3227,11 +3212,11 @@ UIDropDownMenu_SetWidth(100, healthPosDropdown)
 UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
 
 -- Health Text Format Dropdown
-local healthFormatLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthFormatLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -210)
+local healthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthFormatLabel:SetPoint("TOPLEFT", healthPosLabel, "BOTTOMLEFT", 0, -15)
 healthFormatLabel:SetText("Health Text Format:")
 
-local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", healthbarTab, "UIDropDownMenuTemplate")
+local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
 
 local healthFormatOptions = {
@@ -3265,9 +3250,146 @@ UIDropDownMenu_Initialize(healthFormatDropdown, HealthFormatDropdown_Initialize)
 UIDropDownMenu_SetWidth(150, healthFormatDropdown)
 UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
 
--- ==========================================
--- MANA TAB CONTENT
--- ==========================================
+-- Friendly Section Header
+local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+friendlyHeader:SetPoint("TOPLEFT", healthFormatLabel, "BOTTOMLEFT", 0, -35)
+friendlyHeader:SetText("Friendly Nameplates")
+
+-- Friend Healthbar Height Slider
+local friendHeightSlider = CreateFrame("Slider", "GudaPlatesFriendHeightSlider", scrollContent, "OptionsSliderTemplate")
+friendHeightSlider:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -20)
+friendHeightSlider:SetWidth(430)
+friendHeightSlider:SetMinMaxValues(4, 25)
+friendHeightSlider:SetValueStep(1)
+local friendHeightText = getglobal(friendHeightSlider:GetName() .. "Text")
+friendHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendHeightSlider:GetName() .. "Low"):SetText("4")
+getglobal(friendHeightSlider:GetName() .. "High"):SetText("25")
+friendHeightSlider:SetScript("OnValueChanged", function()
+    Settings.friendHealthbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.friendHealthbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Healthbar Width Slider
+local friendWidthSlider = CreateFrame("Slider", "GudaPlatesFriendWidthSlider", scrollContent, "OptionsSliderTemplate")
+friendWidthSlider:SetPoint("TOPLEFT", friendHeightSlider, "BOTTOMLEFT", 0, -30)
+friendWidthSlider:SetWidth(430)
+friendWidthSlider:SetMinMaxValues(72, 150)
+friendWidthSlider:SetValueStep(1)
+local friendWidthText = getglobal(friendWidthSlider:GetName() .. "Text")
+friendWidthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendWidthSlider:GetName() .. "Low"):SetText("72")
+getglobal(friendWidthSlider:GetName() .. "High"):SetText("150")
+friendWidthSlider:SetScript("OnValueChanged", function()
+    Settings.friendHealthbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.friendHealthbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Health Font Size Slider
+local friendHealthFontSlider = CreateFrame("Slider", "GudaPlatesFriendHealthFontSlider", scrollContent, "OptionsSliderTemplate")
+friendHealthFontSlider:SetPoint("TOPLEFT", friendWidthSlider, "BOTTOMLEFT", 0, -30)
+friendHealthFontSlider:SetWidth(430)
+friendHealthFontSlider:SetMinMaxValues(6, 20)
+friendHealthFontSlider:SetValueStep(1)
+local friendHealthFontText = getglobal(friendHealthFontSlider:GetName() .. "Text")
+friendHealthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendHealthFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(friendHealthFontSlider:GetName() .. "High"):SetText("20")
+friendHealthFontSlider:SetScript("OnValueChanged", function()
+    Settings.friendHealthFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.friendHealthFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Show Health Points Checkbox
+local friendShowHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendShowHealthTextCheckbox", scrollContent, "UICheckButtonTemplate")
+friendShowHealthTextCheckbox:SetPoint("TOPLEFT", friendHealthFontSlider, "BOTTOMLEFT", 0, -20)
+local friendShowHealthTextLabel = getglobal(friendShowHealthTextCheckbox:GetName().."Text")
+friendShowHealthTextLabel:SetText("Show Health Points")
+friendShowHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+friendShowHealthTextCheckbox:SetScript("OnClick", function()
+    Settings.friendShowHealthText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Friend Health Text Position Dropdown
+local friendHealthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+friendHealthPosLabel:SetPoint("TOPLEFT", friendShowHealthTextCheckbox, "BOTTOMLEFT", 0, -10)
+friendHealthPosLabel:SetText("Health Text Position:")
+
+local friendHealthPosDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
+friendHealthPosDropdown:SetPoint("TOPLEFT", friendHealthPosLabel, "TOPRIGHT", -10, 8)
+
+local function FriendHealthPosDropdown_OnClick()
+    Settings.friendHealthTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFriendHealthPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function FriendHealthPosDropdown_Initialize()
+    for _, pos in ipairs(healthPosOptions) do
+        local info = {}
+        info.text = healthPosLabels[pos]
+        info.value = pos
+        info.func = FriendHealthPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(friendHealthPosDropdown, FriendHealthPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(100, friendHealthPosDropdown)
+UIDropDownMenu_SetSelectedValue(friendHealthPosDropdown, Settings.friendHealthTextPosition)
+
+-- Friend Health Text Format Dropdown
+local friendHealthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+friendHealthFormatLabel:SetPoint("TOPLEFT", friendHealthPosLabel, "BOTTOMLEFT", 0, -15)
+friendHealthFormatLabel:SetText("Health Text Format:")
+
+local friendHealthFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
+friendHealthFormatDropdown:SetPoint("TOPLEFT", friendHealthFormatLabel, "TOPRIGHT", -10, 8)
+
+local function FriendHealthFormatDropdown_OnClick()
+    Settings.friendHealthTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFriendHealthFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function FriendHealthFormatDropdown_Initialize()
+    for _, opt in ipairs(healthFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FriendHealthFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(friendHealthFormatDropdown, FriendHealthFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, friendHealthFormatDropdown)
+    UIDropDownMenu_SetSelectedValue(friendHealthFormatDropdown, Settings.friendHealthTextFormat)
+    end
+
+    local function SetupManaTab()
 
 -- Mana Section Header
 local manaSectionHeader = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3434,7 +3556,7 @@ manaTextColorSwatch:SetScript("OnLeave", function()
 end)
 
 -- Function to update mana options enabled state
-local function UpdateManaOptionsState()
+function UpdateManaOptionsState()
     local enabled = Settings.showManaBar
     local manaTextCb = getglobal("GudaPlatesShowManaTextCheckbox")
     local manaTextLbl = getglobal("GudaPlatesShowManaTextCheckboxText")
@@ -3484,10 +3606,9 @@ showManaTextCheckbox:SetScript("OnClick", function()
         UpdateNamePlate(plate)
     end
 end)
+    end
 
--- ==========================================
--- CASTBAR TAB CONTENT
--- ==========================================
+    local function SetupCastbarTab()
 
 -- Show Spell Icon Checkbox
 local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", castbarTab, "UICheckButtonTemplate")
@@ -3549,7 +3670,7 @@ castbarWidthSlider:SetScript("OnValueChanged", function()
 end)
 
 -- Function to update castbar width slider enabled state
-local function UpdateCastbarWidthSliderState()
+function UpdateCastbarWidthSliderState()
     if Settings.castbarIndependent then
         castbarWidthSlider:EnableMouse(true)
         castbarWidthSlider:SetAlpha(1.0)
@@ -3577,10 +3698,9 @@ end)
 castbarIndependentCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
+    end
 
--- ==========================================
--- COLORS/THREAT TAB CONTENT
--- ==========================================
+    local function SetupColorsTab()
 
 -- Tank Mode Checkbox
 local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colorsTab, "UICheckButtonTemplate")
@@ -3900,6 +4020,8 @@ levelColorSwatch:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
+end
+
 -- OnShow handler
 optionsFrame:SetScript("OnShow", function()
     -- General tab
@@ -3924,6 +4046,17 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesShowHealthTextCheckbox"):SetChecked(Settings.showHealthText)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthPosDropdown"), Settings.healthTextPosition)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthFormatDropdown"), Settings.healthTextFormat)
+
+    -- Friendly nameplates
+    getglobal("GudaPlatesFriendHeightSlider"):SetValue(Settings.friendHealthbarHeight)
+    getglobal("GudaPlatesFriendHeightSliderText"):SetText("Healthbar Height: " .. Settings.friendHealthbarHeight)
+    getglobal("GudaPlatesFriendWidthSlider"):SetValue(Settings.friendHealthbarWidth)
+    getglobal("GudaPlatesFriendWidthSliderText"):SetText("Healthbar Width: " .. Settings.friendHealthbarWidth)
+    getglobal("GudaPlatesFriendHealthFontSlider"):SetValue(Settings.friendHealthFontSize)
+    getglobal("GudaPlatesFriendHealthFontSliderText"):SetText("Health Font Size: " .. Settings.friendHealthFontSize)
+    getglobal("GudaPlatesFriendShowHealthTextCheckbox"):SetChecked(Settings.friendShowHealthText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthPosDropdown"), Settings.friendHealthTextPosition)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthFormatDropdown"), Settings.friendHealthTextFormat)
     -- Mana settings
     getglobal("GudaPlatesManaBarCheckbox"):SetChecked(Settings.showManaBar)
     getglobal("GudaPlatesShowManaTextCheckbox"):SetChecked(Settings.showManaText)
@@ -3971,6 +4104,12 @@ resetButton:SetScript("OnClick", function()
     Settings.showHealthText = true
     Settings.healthTextPosition = "CENTER"
     Settings.healthTextFormat = 1
+    Settings.friendHealthbarHeight = 4
+    Settings.friendHealthbarWidth = 85
+    Settings.friendHealthFontSize = 10
+    Settings.friendShowHealthText = true
+    Settings.friendHealthTextPosition = "CENTER"
+    Settings.friendHealthTextFormat = 1
     Settings.showManaBar = false
     Settings.showManaText = true
     Settings.manaTextFormat = 1
@@ -4011,6 +4150,15 @@ resetButton:SetScript("OnClick", function()
         end
     end
 end)
+
+    SetupGeneralTab()
+    SetupHealthbarTab()
+    SetupManaTab()
+    SetupCastbarTab()
+    SetupColorsTab()
+end
+
+CreateOptionsFrame()
 
 -- Load settings on addon load
 local loadFrame = CreateFrame("Frame")
