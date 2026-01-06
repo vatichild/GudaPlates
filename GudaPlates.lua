@@ -1328,14 +1328,22 @@ local function UpdateNamePlate(frame)
                 isTappedByOthers = true
             end
 
-            -- 2. If it's our target, use API for 100% accuracy
-            if not isTappedByOthers and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
-                if UnitIsTapped("target") and not UnitIsTappedByPlayer("target") then
+            -- 2. Use API for 100% accuracy if unit is available
+            local unitForAPI = nil
+            if hasValidGUID then
+                unitForAPI = unitstr
+            elseif UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+                unitForAPI = "target"
+            end
+
+            if not isTappedByOthers and unitForAPI then
+                if UnitIsTapped(unitForAPI) and not UnitIsTappedByPlayer(unitForAPI) then
                     -- Double check if the mob is attacking someone in our group (excluding player)
                     -- (Fixes cases where joining a group mid-combat doesn't update UnitIsTappedByPlayer immediately)
                     local isMobTargetingGroupMate = false
-                    if UnitExists("targettarget") and not UnitIsUnit("targettarget", "player") then
-                        isMobTargetingGroupMate = IsInPlayerGroup("targettarget")
+                    local apiTarget = unitForAPI .. "target"
+                    if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
+                        isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
                     end
                     
                     if not isMobTargetingGroupMate then
