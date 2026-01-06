@@ -54,6 +54,10 @@ local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
 local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 
+-- Player class for debuff filtering
+local _, playerClass = UnitClass("player")
+playerClass = playerClass or ""
+
 -- Debuff settings
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
@@ -1400,11 +1404,12 @@ local function UpdateNamePlate(frame)
             if playerRole == "TANK" then
                 if isTanking then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                elseif isAttackingPlayer then
-                    -- Stickiness or mob mid-swing but we don't officially have 'isTanking' status yet
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 elseif threatPct > 80 then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
+                elseif isAttackingPlayer then
+                    -- Stickiness or mob mid-swing but we don't officially have 'isTanking' status yet
+                    -- and threat is not high enough to be LOSING_AGGRO
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 else
                     if IsTankClass(mobTargetUnit) then
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
@@ -1416,10 +1421,10 @@ local function UpdateNamePlate(frame)
                 if isTanking then
                     -- DPS having aggro is bad
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                elseif isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 elseif threatPct > 80 then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
+                elseif isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 else
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
@@ -1429,6 +1434,20 @@ local function UpdateNamePlate(frame)
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
+                    -- Mob is targeting someone else, but it's still orange if it was just attacking us (stickiness)
+                    -- Wait, targeting-based mode has no threatPct, so we rely purely on target.
+                    -- If we want "Losing Aggro" (Orange) here, we need a condition.
+                    -- Usually Orange is when we ARE targeted but about to lose it (hard to know without threat API),
+                    -- OR when we WERE targeted but just lost it.
+                    if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
+                        -- We just lost it (stickiness is active) -> Orange
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
+                    elseif IsTankClass(mobTargetUnit) then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
                 elseif IsTankClass(mobTargetUnit) then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                 else
@@ -1437,6 +1456,9 @@ local function UpdateNamePlate(frame)
             else
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
+                    -- Just lost it -> High Threat
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
@@ -1446,6 +1468,9 @@ local function UpdateNamePlate(frame)
             if playerRole == "TANK" then
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
+                    -- Just lost it -> Orange
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 else
                     local otherTankHasAggro = false
                     if plateName and UnitExists("target") and UnitName("target") == plateName then
@@ -1462,6 +1487,9 @@ local function UpdateNamePlate(frame)
             else
                 if isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
+                    -- Just lost it -> High Threat
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
@@ -1918,9 +1946,10 @@ local function UpdateNamePlate(frame)
             end
             
             -- Filter: show only own debuffs if enabled
-            local isUnique = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+            local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+            local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
             if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
-                -- Skip this debuff - not tracked as player's and not a unique global debuff
+                -- Skip this debuff - not tracked as player's and not an allowed unique global debuff
             else
             local debuff = nameplate.debuffs[debuffIndex]
             debuff.icon:SetTexture(texture)
@@ -2013,9 +2042,10 @@ local function UpdateNamePlate(frame)
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
                 end
-                local isUnique = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+                local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+                local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
                 if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
-                    -- Skip this debuff - not tracked as player's and not a unique global debuff
+                    -- Skip this debuff - not tracked as player's and not an allowed unique global debuff
                 else
 
                 local debuff = nameplate.debuffs[debuffIndex]

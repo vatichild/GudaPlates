@@ -186,37 +186,36 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 	["Gouge"] = "Gouge",
 }
 
--- Unique debuffs that can only exist once on a target (shared across all players)
+-- Unique debuffs that can only exist once on a target (shared across all players of the same class)
 GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	-- Warrior
-	["Thunder Clap"] = true,
-	["Demoralizing Shout"] = true,
-	["Sunder Armor"] = true,
+	["Thunder Clap"] = "WARRIOR",
+	["Demoralizing Shout"] = "WARRIOR",
+	["Sunder Armor"] = "WARRIOR",
 	-- Druid
-	["Faerie Fire"] = true,
-	["Faerie Fire (Feral)"] = true,
-	["Demoralizing Roar"] = true,
-	["Insect Swarm"] = true,
+	["Faerie Fire"] = "DRUID",
+	["Faerie Fire (Feral)"] = "DRUID",
+	["Demoralizing Roar"] = "DRUID",
+	["Insect Swarm"] = "DRUID",
 	-- Priest
-	["Shadow Vulnerability"] = true,
+	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
 	-- Warlock
-	["Curse of Agony"] = true,
-	["Curse of Weakness"] = true,
-	["Curse of Recklessness"] = true,
-	["Curse of Tongues"] = true,
-	["Curse of the Elements"] = true,
-	["Curse of Shadow"] = true,
-	["Curse of Exhaustion"] = true,
-	["Curse of Doom"] = true,
-	["Shadow Vulnerability"] = true, -- Also Warlock (Improved Shadow Bolt)
+	["Curse of Agony"] = "WARLOCK",
+	["Curse of Weakness"] = "WARLOCK",
+	["Curse of Recklessness"] = "WARLOCK",
+	["Curse of Tongues"] = "WARLOCK",
+	["Curse of the Elements"] = "WARLOCK",
+	["Curse of Shadow"] = "WARLOCK",
+	["Curse of Exhaustion"] = "WARLOCK",
+	["Curse of Doom"] = "WARLOCK",
 	-- Hunter
-	["Hunter's Mark"] = true,
-	["Scorpid Sting"] = true,
+	["Hunter's Mark"] = "HUNTER",
+	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
-	["Judgement of the Crusader"] = true,
-	["Judgement of Light"] = true,
-	["Judgement of Wisdom"] = true,
-	["Judgement of Justice"] = true,
+	["Judgement of the Crusader"] = "PALADIN",
+	["Judgement of Light"] = "PALADIN",
+	["Judgement of Wisdom"] = "PALADIN",
+	["Judgement of Justice"] = "PALADIN",
 }
 
 -- ============================================
