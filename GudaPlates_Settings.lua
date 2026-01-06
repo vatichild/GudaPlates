@@ -10,7 +10,7 @@ GudaPlates.Settings = {
     healthbarWidth = 115,
     healthFontSize = 10,
     healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
-    healthTextFormat = 1,  -- 0=None, 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
+    healthTextFormat = 1,  -- 0=None, 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%), 6=Name - %, 7=Name - HP(%), 8=Name
     -- Healthbar (Friendly)
     friendHealthbarHeight = 4,
     friendHealthbarWidth = 85,

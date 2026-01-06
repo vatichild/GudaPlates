@@ -1003,6 +1003,11 @@ local function UpdateNamePlate(frame)
     if hTextFormat ~= 0 then
         local perc = (hp / hpmax) * 100
         local format = hTextFormat
+        local name = ""
+        if original.name and original.name.GetText then
+            name = original.name:GetText() or ""
+        end
+
         if format == 1 then
             -- Percent only
             hpText = string.format("%.0f%%", perc)
@@ -1034,9 +1039,38 @@ local function UpdateNamePlate(frame)
             else
                 hpText = string.format("%d - %d (%.0f%%)", hp, hpmax, perc)
             end
+        elseif format == 6 then
+            -- Name - %
+            hpText = string.format("%s - %.0f%%", name, perc)
+        elseif format == 7 then
+            -- Name - HP(%)
+            local hpStr
+            if hp > 1000 then
+                hpStr = string.format("%.1fK", hp / 1000)
+            else
+                hpStr = string.format("%d", hp)
+            end
+            hpText = string.format("%s - %s (%.0f%%)", name, hpStr, perc)
+        elseif format == 8 then
+            -- Name
+            hpText = name
         end
     end
     nameplate.healthtext:SetText(hpText)
+
+    -- Apply name color if Name-integrated format is selected, otherwise use health text color
+    if hTextFormat >= 6 then
+        nameplate.healthtext:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+    else
+        nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+    end
+
+    -- Hide name if Name-integrated format is selected
+    if hTextFormat >= 6 then
+        nameplate.name:Hide()
+    else
+        nameplate.name:Show()
+    end
 
     -- Update level from original or ShaguTweaks
     local levelText = nil
@@ -1281,7 +1315,10 @@ local function UpdateNamePlate(frame)
     -- Update name from original
     if original.name and original.name.GetText then
         local name = original.name:GetText()
-        if name then nameplate.name:SetText(name) end
+        if name then 
+            nameplate.name:SetText(name)
+            nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+        end
     end
 
     -- Update Mana Bar (only with SuperWoW GUID support)
@@ -3229,6 +3266,9 @@ local healthFormatOptions = {
     {value = 3, text = "HP (Percent%)"},
     {value = 4, text = "Current - Max"},
     {value = 5, text = "Current - Max (%)"},
+    {value = 6, text = "Name - %"},
+    {value = 7, text = "Name - HP(%)"},
+    {value = 8, text = "Name"},
 }
 
 local function HealthFormatDropdown_OnClick()
@@ -3417,6 +3457,9 @@ local function FriendHealthFormatDropdown_Initialize()
         {value = 3, text = "HP (Percent%)"},
         {value = 4, text = "Current - Max"},
         {value = 5, text = "Current - Max (%)"},
+        {value = 6, text = "Name - %"},
+        {value = 7, text = "Name - HP(%)"},
+        {value = 8, text = "Name"},
     }
     for _, opt in ipairs(healthFormatOptions) do
         local info = {}
@@ -3871,15 +3914,15 @@ CreateColorSwatch(colorsTab, 320, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "N
 
 -- Misc Colors Section
 local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -170)
+miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -200)
 miscHeader:SetText("|cff00ff00Other Colors:|r")
 
-CreateColorSwatch(colorsTab, 5, -195, "Unit Tapped", THREAT_COLORS, "TAPPED")
-CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+CreateColorSwatch(colorsTab, 5, -225, "Unit Tapped", THREAT_COLORS, "TAPPED")
+CreateColorSwatch(colorsTab, 5, -250, "Mana Bar", THREAT_COLORS, "MANA_BAR")
 
 -- Target Glow Color Swatch (uses Settings table directly)
 local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -245)
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -275)
 targetGlowSwatchLabel:SetText("Target Glow")
 
 local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
@@ -3931,7 +3974,7 @@ end)
 
 -- Castbar Color Swatch
 local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -270)
+castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -300)
 castbarSwatchLabel:SetText("Castbar")
 
 local castbarSwatch = CreateFrame("Button", nil, colorsTab)
@@ -3983,222 +4026,13 @@ end)
 
 -- Text Colors Section
 local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -170)
+textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -200)
 textColorsHeader:SetText("|cff00ff00Text Colors:|r")
 
--- Other Colors Section Header
-local otherColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-otherColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -165)
-otherColorsHeader:SetText("Other Colors")
-
--- Mana Text Color Swatch
-local manaTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-manaTextColorLabel:SetPoint("TOPLEFT", otherColorsHeader, "BOTTOMLEFT", 0, -10)
-manaTextColorLabel:SetText("Mana Text")
-
-local manaTextColorSwatch = CreateFrame("Button", nil, colorsTab)
-manaTextColorSwatch:SetWidth(20)
-manaTextColorSwatch:SetHeight(20)
-manaTextColorSwatch:SetPoint("LEFT", manaTextColorLabel, "RIGHT", 10, 0)
-
-local manaTextColorBorder = manaTextColorSwatch:CreateTexture(nil, "BACKGROUND")
-manaTextColorBorder:SetTexture(0, 0, 0, 1)
-manaTextColorBorder:SetAllPoints()
-
-local manaTextColorBg = manaTextColorSwatch:CreateTexture(nil, "ARTWORK")
-manaTextColorBg:SetTexture(1, 1, 1, 1)
-manaTextColorBg:SetPoint("TOPLEFT", manaTextColorSwatch, "TOPLEFT", 2, -2)
-manaTextColorBg:SetPoint("BOTTOMRIGHT", manaTextColorSwatch, "BOTTOMRIGHT", -2, 2)
-
-local function UpdateManaTextColorSwatch()
-    local c = Settings.manaTextColor
-    manaTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
-end
-UpdateManaTextColorSwatch()
-table.insert(swatches, UpdateManaTextColorSwatch)
-
-manaTextColorSwatch:SetScript("OnClick", function()
-    local c = Settings.manaTextColor
-    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-        if r then
-            Settings.manaTextColor = {r, g, b, 1}
-            UpdateManaTextColorSwatch()
-            SaveSettings()
-            for plate, _ in pairs(registry) do
-                if plate:IsShown() and plate.nameplate and plate.nameplate.mana and plate.nameplate.mana.text then
-                    plate.nameplate.mana.text:SetTextColor(r, g, b, 1)
-                end
-            end
-        end
-    end)
-end)
-
-manaTextColorSwatch:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change mana text color")
-    GameTooltip:Show()
-end)
-
-manaTextColorSwatch:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
-
--- Name Color Swatch
-local nameColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-nameColorLabel:SetPoint("TOPLEFT", manaTextColorLabel, "BOTTOMLEFT", 0, -10)
-nameColorLabel:SetText("Name")
-
-local nameColorSwatch = CreateFrame("Button", nil, colorsTab)
-nameColorSwatch:SetWidth(20)
-nameColorSwatch:SetHeight(20)
-nameColorSwatch:SetPoint("LEFT", nameColorLabel, "RIGHT", 10, 0)
-
-local nameColorBorder = nameColorSwatch:CreateTexture(nil, "BACKGROUND")
-nameColorBorder:SetTexture(0, 0, 0, 1)
-nameColorBorder:SetAllPoints()
-
-local nameColorBg = nameColorSwatch:CreateTexture(nil, "ARTWORK")
-nameColorBg:SetTexture(1, 1, 1, 1)
-nameColorBg:SetPoint("TOPLEFT", nameColorSwatch, "TOPLEFT", 2, -2)
-nameColorBg:SetPoint("BOTTOMRIGHT", nameColorSwatch, "BOTTOMRIGHT", -2, 2)
-
-local function UpdateNameColorSwatch()
-    local c = Settings.nameColor
-    nameColorBg:SetVertexColor(c[1], c[2], c[3], 1)
-end
-UpdateNameColorSwatch()
-table.insert(swatches, UpdateNameColorSwatch)
-
-nameColorSwatch:SetScript("OnClick", function()
-    local c = Settings.nameColor
-    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-        if r then
-            Settings.nameColor = {r, g, b, 1}
-            UpdateNameColorSwatch()
-            SaveSettings()
-            for plate, _ in pairs(registry) do
-                if plate:IsShown() and plate.nameplate and plate.nameplate.name then
-                    plate.nameplate.name:SetTextColor(r, g, b, 1)
-                end
-            end
-        end
-    end)
-end)
-
-nameColorSwatch:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change name text color")
-    GameTooltip:Show()
-end)
-
-nameColorSwatch:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
-
--- Health Text Color Swatch
-local healthTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -220)
-healthTextColorLabel:SetText("Health Text")
-
-local healthTextColorSwatch = CreateFrame("Button", nil, colorsTab)
-healthTextColorSwatch:SetWidth(20)
-healthTextColorSwatch:SetHeight(20)
-healthTextColorSwatch:SetPoint("LEFT", healthTextColorLabel, "RIGHT", 10, 0)
-
-local healthTextColorBorder = healthTextColorSwatch:CreateTexture(nil, "BACKGROUND")
-healthTextColorBorder:SetTexture(0, 0, 0, 1)
-healthTextColorBorder:SetAllPoints()
-
-local healthTextColorBg = healthTextColorSwatch:CreateTexture(nil, "ARTWORK")
-healthTextColorBg:SetTexture(1, 1, 1, 1)
-healthTextColorBg:SetPoint("TOPLEFT", healthTextColorSwatch, "TOPLEFT", 2, -2)
-healthTextColorBg:SetPoint("BOTTOMRIGHT", healthTextColorSwatch, "BOTTOMRIGHT", -2, 2)
-
-local function UpdateHealthTextColorSwatch()
-    local c = Settings.healthTextColor
-    healthTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
-end
-UpdateHealthTextColorSwatch()
-table.insert(swatches, UpdateHealthTextColorSwatch)
-
-healthTextColorSwatch:SetScript("OnClick", function()
-    local c = Settings.healthTextColor
-    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-        if r then
-            Settings.healthTextColor = {r, g, b, 1}
-            UpdateHealthTextColorSwatch()
-            SaveSettings()
-            for plate, _ in pairs(registry) do
-                if plate:IsShown() and plate.nameplate and plate.nameplate.healthtext then
-                    plate.nameplate.healthtext:SetTextColor(r, g, b, 1)
-                end
-            end
-        end
-    end)
-end)
-
-healthTextColorSwatch:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change health text color")
-    GameTooltip:Show()
-end)
-
-healthTextColorSwatch:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
-
-
--- Level Color Swatch
-local levelColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-levelColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -245)
-levelColorLabel:SetText("Level")
-
-local levelColorSwatch = CreateFrame("Button", nil, colorsTab)
-levelColorSwatch:SetWidth(20)
-levelColorSwatch:SetHeight(20)
-levelColorSwatch:SetPoint("LEFT", levelColorLabel, "RIGHT", 10, 0)
-
-local levelColorBorder = levelColorSwatch:CreateTexture(nil, "BACKGROUND")
-levelColorBorder:SetTexture(0, 0, 0, 1)
-levelColorBorder:SetAllPoints()
-
-local levelColorBg = levelColorSwatch:CreateTexture(nil, "ARTWORK")
-levelColorBg:SetTexture(1, 1, 1, 1)
-levelColorBg:SetPoint("TOPLEFT", levelColorSwatch, "TOPLEFT", 2, -2)
-levelColorBg:SetPoint("BOTTOMRIGHT", levelColorSwatch, "BOTTOMRIGHT", -2, 2)
-
-local function UpdateLevelColorSwatch()
-    local c = Settings.levelColor
-    levelColorBg:SetVertexColor(c[1], c[2], c[3], 1)
-end
-UpdateLevelColorSwatch()
-table.insert(swatches, UpdateLevelColorSwatch)
-
-levelColorSwatch:SetScript("OnClick", function()
-    local c = Settings.levelColor
-    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-        if r then
-            Settings.levelColor = {r, g, b, 1}
-            UpdateLevelColorSwatch()
-            SaveSettings()
-            for plate, _ in pairs(registry) do
-                if plate:IsShown() and plate.nameplate and plate.nameplate.level then
-                    plate.nameplate.level:SetTextColor(r, g, b, 1)
-                end
-            end
-        end
-    end)
-end)
-
-levelColorSwatch:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change level text color")
-    GameTooltip:Show()
-end)
-
-levelColorSwatch:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+CreateColorSwatch(colorsTab, 320, -225, "Health Text", Settings, "healthTextColor")
+CreateColorSwatch(colorsTab, 320, -250, "Mana Text", Settings, "manaTextColor")
+CreateColorSwatch(colorsTab, 320, -275, "Name", Settings, "nameColor")
+CreateColorSwatch(colorsTab, 320, -300, "Level", Settings, "levelColor")
 
 end
 
