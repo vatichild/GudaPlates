@@ -1325,7 +1325,16 @@ local function UpdateNamePlate(frame)
             -- 2. If it's our target, use API for 100% accuracy
             if not isTappedByOthers and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
                 if UnitIsTapped("target") and not UnitIsTappedByPlayer("target") then
-                    isTappedByOthers = true
+                    -- Double check if the mob is attacking someone in our group
+                    -- (Fixes cases where joining a group mid-combat doesn't update UnitIsTappedByPlayer immediately)
+                    local isMobTargetingGroup = false
+                    if UnitExists("targettarget") then
+                        isMobTargetingGroup = IsInPlayerGroup("targettarget")
+                    end
+                    
+                    if not isMobTargetingGroup then
+                        isTappedByOthers = true
+                    end
                 end
             end
 
