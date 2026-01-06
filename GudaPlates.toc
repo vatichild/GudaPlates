@@ -6,4 +6,8 @@
 ## SavedVariables: GudaPlatesDB
 
 GudaPlates_SpellDB.lua
+GudaPlates_Core.lua
+GudaPlates_Utils.lua
+GudaPlates_Logic.lua
+GudaPlates_Options.lua
 GudaPlates.lua
