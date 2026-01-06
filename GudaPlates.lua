@@ -361,16 +361,19 @@ local function UpdateNamePlateDimensions(frame)
     
     -- Update mana bar dimensions and text position
     if nameplate.mana then
+        local mManaHeight = isFriendly and Settings.friendManabarHeight or Settings.manabarHeight
+        local mManaTextPos = isFriendly and Settings.friendManaTextPosition or Settings.manaTextPosition
+        
         nameplate.mana:SetWidth(hWidth)
-        nameplate.mana:SetHeight(Settings.manabarHeight)
+        nameplate.mana:SetHeight(mManaHeight)
         
         -- Update mana text position
         if nameplate.mana.text then
             nameplate.mana.text:ClearAllPoints()
-            if Settings.manaTextPosition == "LEFT" then
+            if mManaTextPos == "LEFT" then
                 nameplate.mana.text:SetPoint("LEFT", nameplate.mana, "LEFT", 2, 0)
                 nameplate.mana.text:SetJustifyH("LEFT")
-            elseif Settings.manaTextPosition == "RIGHT" then
+            elseif mManaTextPos == "RIGHT" then
                 nameplate.mana.text:SetPoint("RIGHT", nameplate.mana, "RIGHT", -2, 0)
                 nameplate.mana.text:SetJustifyH("RIGHT")
             else
@@ -1281,7 +1284,11 @@ local function UpdateNamePlate(frame)
     end
 
     -- Update Mana Bar (only with SuperWoW GUID support)
-    if Settings.showManaBar and superwow_active and hasValidGUID then
+    local mShowManaBar = isFriendly and Settings.friendShowManaBar or Settings.showManaBar
+    local mShowManaText = isFriendly and Settings.friendShowManaText or Settings.showManaText
+    local mManaTextFormat = isFriendly and Settings.friendManaTextFormat or Settings.manaTextFormat
+
+    if mShowManaBar and superwow_active and hasValidGUID then
         local mana = UnitMana(unitstr) or 0
         local manaMax = UnitManaMax(unitstr) or 0
         local powerType = UnitPowerType and UnitPowerType(unitstr) or 0
@@ -1294,19 +1301,19 @@ local function UpdateNamePlate(frame)
             
             -- Format mana text based on settings
             local manaText = ""
-            if Settings.showManaText then
+            if mShowManaText then
                 local manaPerc = (mana / manaMax) * 100
-                if Settings.manaTextFormat == 1 then
+                if mManaTextFormat == 1 then
                     -- Percent only
                     manaText = string.format("%.0f%%", manaPerc)
-                elseif Settings.manaTextFormat == 2 then
+                elseif mManaTextFormat == 2 then
                     -- Current Mana only
                     if mana > 1000 then
                         manaText = string.format("%.1fK", mana / 1000)
                     else
                         manaText = string.format("%d", mana)
                     end
-                elseif Settings.manaTextFormat == 3 then
+                elseif mManaTextFormat == 3 then
                     -- Mana (Percent%)
                     local manaStr
                     if mana > 1000 then
@@ -3400,30 +3407,38 @@ UIDropDownMenu_SetWidth(150, friendHealthFormatDropdown)
     end
 
     local function SetupManaTab()
+local scrollFrame = CreateFrame("ScrollFrame", "GudaPlatesManaScrollFrame", manaTab, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 0, -5)
+scrollFrame:SetPoint("BOTTOMRIGHT", manaTab, "BOTTOMRIGHT", -25, 5)
 
--- Mana Section Header
-local manaSectionHeader = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-manaSectionHeader:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -20)
-manaSectionHeader:SetText("|cff00ffffMana Bar Settings:|r")
+local scrollContent = CreateFrame("Frame", "GudaPlatesManaScrollContent", scrollFrame)
+scrollContent:SetWidth(460)
+scrollContent:SetHeight(600)
+scrollFrame:SetScrollChild(scrollContent)
+
+-- Enemy Section Header
+local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
+enemyHeader:SetText("Enemy Nameplates")
 
 -- Show Mana Bar Checkbox
-local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", manaTab, "UICheckButtonTemplate")
-manaBarCheckbox:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -45)
+local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", scrollContent, "UICheckButtonTemplate")
+manaBarCheckbox:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -10)
 local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
 manaBarLabel:SetText("Show Mana Bar")
 manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
 -- Show Mana Text Checkbox
-local showManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowManaTextCheckbox", manaTab, "UICheckButtonTemplate")
-showManaTextCheckbox:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 200, -45)
+local showManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowManaTextCheckbox", scrollContent, "UICheckButtonTemplate")
+showManaTextCheckbox:SetPoint("LEFT", manaBarLabel, "RIGHT", 100, 0)
 local showManaTextLabel = getglobal(showManaTextCheckbox:GetName().."Text")
 showManaTextLabel:SetText("Show Mana Points")
 showManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
 -- Manabar Height Slider
-local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", manaTab, "OptionsSliderTemplate")
-manaHeightSlider:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -90)
-manaHeightSlider:SetWidth(450)
+local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", scrollContent, "OptionsSliderTemplate")
+manaHeightSlider:SetPoint("TOPLEFT", manaBarCheckbox, "BOTTOMLEFT", 0, -30)
+manaHeightSlider:SetWidth(430)
 manaHeightSlider:SetMinMaxValues(2, 10)
 manaHeightSlider:SetValueStep(1)
 local manaHeightText = getglobal(manaHeightSlider:GetName() .. "Text")
@@ -3439,19 +3454,13 @@ manaHeightSlider:SetScript("OnValueChanged", function()
     end
 end)
 
--- Mana Text Position Dropdown (above Mana Text Format)
-local manaPosLabel = manaTab:CreateFontString("GudaPlatesManaPosLabel", "OVERLAY", "GameFontNormal")
-manaPosLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -130)
+-- Mana Text Position Dropdown
+local manaPosLabel = scrollContent:CreateFontString("GudaPlatesManaPosLabel", "OVERLAY", "GameFontNormal")
+manaPosLabel:SetPoint("TOPLEFT", manaHeightSlider, "BOTTOMLEFT", 0, -15)
 manaPosLabel:SetText("Mana Text Position:")
 
-local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", manaTab, "UIDropDownMenuTemplate")
+local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 manaPosDropdown:SetPoint("TOPLEFT", manaPosLabel, "TOPRIGHT", -10, 8)
-
-local manaPosOptions = {
-    {value = "LEFT", text = "Left"},
-    {value = "CENTER", text = "Center"},
-    {value = "RIGHT", text = "Right"},
-}
 
 local function ManaPosDropdown_OnClick()
     Settings.manaTextPosition = this.value
@@ -3463,7 +3472,12 @@ local function ManaPosDropdown_OnClick()
 end
 
 local function ManaPosDropdown_Initialize()
-    for _, opt in ipairs(manaPosOptions) do
+    local opts = {
+        {value = "LEFT", text = "Left"},
+        {value = "CENTER", text = "Center"},
+        {value = "RIGHT", text = "Right"},
+    }
+    for _, opt in ipairs(opts) do
         local info = {}
         info.text = opt.text
         info.value = opt.value
@@ -3476,19 +3490,13 @@ UIDropDownMenu_Initialize(manaPosDropdown, ManaPosDropdown_Initialize)
 UIDropDownMenu_SetWidth(80, manaPosDropdown)
 UIDropDownMenu_SetSelectedValue(manaPosDropdown, Settings.manaTextPosition)
 
--- Mana Text Format Dropdown (below Mana Text Position)
-local manaFormatLabel = manaTab:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
-manaFormatLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -165)
+-- Mana Text Format Dropdown
+local manaFormatLabel = scrollContent:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
+manaFormatLabel:SetPoint("TOPLEFT", manaPosLabel, "BOTTOMLEFT", 0, -15)
 manaFormatLabel:SetText("Mana Text Format:")
 
-local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", manaTab, "UIDropDownMenuTemplate")
+local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 manaFormatDropdown:SetPoint("TOPLEFT", manaFormatLabel, "TOPRIGHT", -10, 8)
-
-local manaFormatOptions = {
-    {value = 1, text = "Percent"},
-    {value = 2, text = "Current Mana"},
-    {value = 3, text = "Mana (Percent%)"},
-}
 
 local function ManaFormatDropdown_OnClick()
     Settings.manaTextFormat = this.value
@@ -3500,7 +3508,12 @@ local function ManaFormatDropdown_OnClick()
 end
 
 local function ManaFormatDropdown_Initialize()
-    for _, opt in ipairs(manaFormatOptions) do
+    local opts = {
+        {value = 1, text = "Percent"},
+        {value = 2, text = "Current Mana"},
+        {value = 3, text = "Mana (Percent%)"},
+    }
+    for _, opt in ipairs(opts) do
         local info = {}
         info.text = opt.text
         info.value = opt.value
@@ -3513,60 +3526,119 @@ UIDropDownMenu_Initialize(manaFormatDropdown, ManaFormatDropdown_Initialize)
 UIDropDownMenu_SetWidth(150, manaFormatDropdown)
 UIDropDownMenu_SetSelectedValue(manaFormatDropdown, Settings.manaTextFormat)
 
--- Mana Text Color
-local manaTextColorLabel = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-manaTextColorLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -215)
-manaTextColorLabel:SetText("Mana Text Color:")
+-- Friendly Section Header
+local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+friendlyHeader:SetPoint("TOPLEFT", manaFormatLabel, "BOTTOMLEFT", 0, -35)
+friendlyHeader:SetText("Friendly Nameplates")
 
-local manaTextColorSwatch = CreateFrame("Button", nil, manaTab)
-manaTextColorSwatch:SetWidth(20)
-manaTextColorSwatch:SetHeight(20)
-manaTextColorSwatch:SetPoint("LEFT", manaTextColorLabel, "RIGHT", 10, 0)
+-- Friend Show Mana Bar Checkbox
+local friendManaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendManaBarCheckbox", scrollContent, "UICheckButtonTemplate")
+friendManaBarCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
+local friendManaBarLabel = getglobal(friendManaBarCheckbox:GetName().."Text")
+friendManaBarLabel:SetText("Show Mana Bar")
+friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
-local manaTextColorBorder = manaTextColorSwatch:CreateTexture(nil, "BACKGROUND")
-manaTextColorBorder:SetTexture(0, 0, 0, 1)
-manaTextColorBorder:SetAllPoints()
+-- Friend Show Mana Text Checkbox
+local friendShowManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendShowManaTextCheckbox", scrollContent, "UICheckButtonTemplate")
+friendShowManaTextCheckbox:SetPoint("LEFT", friendManaBarLabel, "RIGHT", 100, 0)
+local friendShowManaTextLabel = getglobal(friendShowManaTextCheckbox:GetName().."Text")
+friendShowManaTextLabel:SetText("Show Mana Points")
+friendShowManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
-local manaTextColorBg = manaTextColorSwatch:CreateTexture(nil, "ARTWORK")
-manaTextColorBg:SetTexture(1, 1, 1, 1)
-manaTextColorBg:SetPoint("TOPLEFT", manaTextColorSwatch, "TOPLEFT", 2, -2)
-manaTextColorBg:SetPoint("BOTTOMRIGHT", manaTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+-- Friend Manabar Height Slider
+local friendManaHeightSlider = CreateFrame("Slider", "GudaPlatesFriendManaHeightSlider", scrollContent, "OptionsSliderTemplate")
+friendManaHeightSlider:SetPoint("TOPLEFT", friendManaBarCheckbox, "BOTTOMLEFT", 0, -30)
+friendManaHeightSlider:SetWidth(430)
+friendManaHeightSlider:SetMinMaxValues(2, 10)
+friendManaHeightSlider:SetValueStep(1)
+local friendManaHeightText = getglobal(friendManaHeightSlider:GetName() .. "Text")
+friendManaHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendManaHeightSlider:GetName() .. "Low"):SetText("2")
+getglobal(friendManaHeightSlider:GetName() .. "High"):SetText("10")
+friendManaHeightSlider:SetScript("OnValueChanged", function()
+    Settings.friendManabarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Manabar Height: " .. Settings.friendManabarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
 
-local function UpdateManaTextColorSwatch()
-    local c = Settings.manaTextColor
-    manaTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+-- Friend Mana Text Position Dropdown
+local friendManaPosLabel = scrollContent:CreateFontString("GudaPlatesFriendManaPosLabel", "OVERLAY", "GameFontNormal")
+friendManaPosLabel:SetPoint("TOPLEFT", friendManaHeightSlider, "BOTTOMLEFT", 0, -15)
+friendManaPosLabel:SetText("Mana Text Position:")
+
+local friendManaPosDropdown = CreateFrame("Frame", "GudaPlatesFriendManaPosDropdown", scrollContent, "UIDropDownMenuTemplate")
+friendManaPosDropdown:SetPoint("TOPLEFT", friendManaPosLabel, "TOPRIGHT", -10, 8)
+
+local function FriendManaPosDropdown_OnClick()
+    Settings.friendManaTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFriendManaPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
 end
-UpdateManaTextColorSwatch()
-table.insert(swatches, UpdateManaTextColorSwatch)
 
-manaTextColorSwatch:SetScript("OnClick", function()
-    local c = Settings.manaTextColor
-    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
-        if r then
-            Settings.manaTextColor = {r, g, b, 1}
-            UpdateManaTextColorSwatch()
-            SaveSettings()
-            for plate, _ in pairs(registry) do
-                if plate:IsShown() then
-                    UpdateNamePlate(plate)
-                end
-            end
-        end
-    end)
-end)
+local function FriendManaPosDropdown_Initialize()
+    local opts = {
+        {value = "LEFT", text = "Left"},
+        {value = "CENTER", text = "Center"},
+        {value = "RIGHT", text = "Right"},
+    }
+    for _, opt in ipairs(opts) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FriendManaPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
 
-manaTextColorSwatch:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change mana text color")
-    GameTooltip:Show()
-end)
+UIDropDownMenu_Initialize(friendManaPosDropdown, FriendManaPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(80, friendManaPosDropdown)
+UIDropDownMenu_SetSelectedValue(friendManaPosDropdown, Settings.friendManaTextPosition)
 
-manaTextColorSwatch:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-end)
+-- Friend Mana Text Format Dropdown
+local friendManaFormatLabel = scrollContent:CreateFontString("GudaPlatesFriendManaFormatLabel", "OVERLAY", "GameFontNormal")
+friendManaFormatLabel:SetPoint("TOPLEFT", friendManaPosLabel, "BOTTOMLEFT", 0, -15)
+friendManaFormatLabel:SetText("Mana Text Format:")
+
+local friendManaFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
+friendManaFormatDropdown:SetPoint("TOPLEFT", friendManaFormatLabel, "TOPRIGHT", -10, 8)
+
+local function FriendManaFormatDropdown_OnClick()
+    Settings.friendManaTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFriendManaFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function FriendManaFormatDropdown_Initialize()
+    local opts = {
+        {value = 1, text = "Percent"},
+        {value = 2, text = "Current Mana"},
+        {value = 3, text = "Mana (Percent%)"},
+    }
+    for _, opt in ipairs(opts) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FriendManaFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(friendManaFormatDropdown, FriendManaFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, friendManaFormatDropdown)
+UIDropDownMenu_SetSelectedValue(friendManaFormatDropdown, Settings.friendManaTextFormat)
 
 -- Function to update mana options enabled state
 function UpdateManaOptionsState()
+    -- Enemy
     local enabled = Settings.showManaBar
     local manaTextCb = getglobal("GudaPlatesShowManaTextCheckbox")
     local manaTextLbl = getglobal("GudaPlatesShowManaTextCheckboxText")
@@ -3586,6 +3658,27 @@ function UpdateManaOptionsState()
         if manaPosLbl then manaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
         if manaHtSliderText then manaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
     end
+    
+    -- Friendly
+    local fEnabled = Settings.friendShowManaBar
+    local fManaTextCb = getglobal("GudaPlatesFriendShowManaTextCheckbox")
+    local fManaTextLbl = getglobal("GudaPlatesFriendShowManaTextCheckboxText")
+    local fManaFmtLbl = getglobal("GudaPlatesFriendManaFormatLabel")
+    local fManaPosLbl = getglobal("GudaPlatesFriendManaPosLabel")
+    local fManaHtSliderText = getglobal("GudaPlatesFriendManaHeightSliderText")
+    if fEnabled then
+        if fManaTextCb then fManaTextCb:Enable() end
+        if fManaTextLbl then fManaTextLbl:SetTextColor(1, 1, 1) end
+        if fManaFmtLbl then fManaFmtLbl:SetTextColor(1, 0.82, 0) end
+        if fManaPosLbl then fManaPosLbl:SetTextColor(1, 0.82, 0) end
+        if fManaHtSliderText then fManaHtSliderText:SetTextColor(1, 0.82, 0) end
+    else
+        if fManaTextCb then fManaTextCb:Disable() end
+        if fManaTextLbl then fManaTextLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if fManaFmtLbl then fManaFmtLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if fManaPosLbl then fManaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if fManaHtSliderText then fManaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
+    end
 end
 
 -- Mana Bar Checkbox OnClick
@@ -3599,7 +3692,7 @@ manaBarCheckbox:SetScript("OnClick", function()
 end)
 manaBarCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Show Mana Bar")
+    GameTooltip:AddLine("Show Mana Bar (Enemy)")
     GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
     GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
     GameTooltip:Show()
@@ -3611,6 +3704,35 @@ end)
 -- Show Mana Text Checkbox OnClick
 showManaTextCheckbox:SetScript("OnClick", function()
     Settings.showManaText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Friend Mana Bar Checkbox OnClick
+friendManaBarCheckbox:SetScript("OnClick", function()
+    Settings.friendShowManaBar = this:GetChecked() == 1
+    UpdateManaOptionsState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+friendManaBarCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Mana Bar (Friendly)")
+    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
+    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+friendManaBarCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Friend Show Mana Text Checkbox OnClick
+friendShowManaTextCheckbox:SetScript("OnClick", function()
+    Settings.friendShowManaText = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -3873,9 +3995,66 @@ local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNor
 textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -170)
 textColorsHeader:SetText("|cff00ff00Text Colors:|r")
 
+-- Other Colors Section Header
+local otherColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+otherColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -165)
+otherColorsHeader:SetText("Other Colors")
+
+-- Mana Text Color Swatch
+local manaTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaTextColorLabel:SetPoint("TOPLEFT", otherColorsHeader, "BOTTOMLEFT", 0, -10)
+manaTextColorLabel:SetText("Mana Text")
+
+local manaTextColorSwatch = CreateFrame("Button", nil, colorsTab)
+manaTextColorSwatch:SetWidth(20)
+manaTextColorSwatch:SetHeight(20)
+manaTextColorSwatch:SetPoint("LEFT", manaTextColorLabel, "RIGHT", 10, 0)
+
+local manaTextColorBorder = manaTextColorSwatch:CreateTexture(nil, "BACKGROUND")
+manaTextColorBorder:SetTexture(0, 0, 0, 1)
+manaTextColorBorder:SetAllPoints()
+
+local manaTextColorBg = manaTextColorSwatch:CreateTexture(nil, "ARTWORK")
+manaTextColorBg:SetTexture(1, 1, 1, 1)
+manaTextColorBg:SetPoint("TOPLEFT", manaTextColorSwatch, "TOPLEFT", 2, -2)
+manaTextColorBg:SetPoint("BOTTOMRIGHT", manaTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateManaTextColorSwatch()
+    local c = Settings.manaTextColor
+    manaTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateManaTextColorSwatch()
+table.insert(swatches, UpdateManaTextColorSwatch)
+
+manaTextColorSwatch:SetScript("OnClick", function()
+    local c = Settings.manaTextColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.manaTextColor = {r, g, b, 1}
+            UpdateManaTextColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.mana and plate.nameplate.mana.text then
+                    plate.nameplate.mana.text:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+manaTextColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change mana text color")
+    GameTooltip:Show()
+end)
+
+manaTextColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 -- Name Color Swatch
 local nameColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-nameColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -195)
+nameColorLabel:SetPoint("TOPLEFT", manaTextColorLabel, "BOTTOMLEFT", 0, -10)
 nameColorLabel:SetText("Name")
 
 local nameColorSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4074,6 +4253,14 @@ optionsFrame:SetScript("OnShow", function()
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaPosDropdown"), Settings.manaTextPosition)
     getglobal("GudaPlatesManaHeightSlider"):SetValue(Settings.manabarHeight)
     getglobal("GudaPlatesManaHeightSliderText"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    
+    getglobal("GudaPlatesFriendManaBarCheckbox"):SetChecked(Settings.friendShowManaBar)
+    getglobal("GudaPlatesFriendShowManaTextCheckbox"):SetChecked(Settings.friendShowManaText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaFormatDropdown"), Settings.friendManaTextFormat)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaPosDropdown"), Settings.friendManaTextPosition)
+    getglobal("GudaPlatesFriendManaHeightSlider"):SetValue(Settings.friendManabarHeight)
+    getglobal("GudaPlatesFriendManaHeightSliderText"):SetText("Manabar Height: " .. Settings.friendManabarHeight)
+    
     UpdateManaOptionsState()
     -- Castbar tab
     getglobal("GudaPlatesCastbarIconCheckbox"):SetChecked(Settings.showCastbarIcon)
@@ -4125,6 +4312,11 @@ resetButton:SetScript("OnClick", function()
     Settings.manaTextFormat = 1
     Settings.manaTextPosition = "CENTER"
     Settings.manabarHeight = 4
+    Settings.friendShowManaBar = false
+    Settings.friendShowManaText = true
+    Settings.friendManaTextFormat = 1
+    Settings.friendManaTextPosition = "CENTER"
+    Settings.friendManabarHeight = 4
     Settings.levelFontSize = 10
     Settings.nameFontSize = 10
     Settings.textFont = "Fonts\\ARIALN.TTF"

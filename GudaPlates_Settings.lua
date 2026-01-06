@@ -19,12 +19,18 @@ GudaPlates.Settings = {
     friendShowHealthText = true,
     friendHealthTextPosition = "CENTER",
     friendHealthTextFormat = 1,
-    -- Manabar
+    -- Manabar (Enemy)
     showManaBar = false,
     showManaText = true,
     manaTextFormat = 1,  -- 1=Percent, 2=Current Mana, 3=Current Mana (%)
     manaTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
     manabarHeight = 4,
+    -- Manabar (Friendly)
+    friendShowManaBar = false,
+    friendShowManaText = true,
+    friendManaTextFormat = 1,
+    friendManaTextPosition = "CENTER",
+    friendManabarHeight = 4,
     -- Castbar
     castbarHeight = 12,
     castbarWidth = 115,
