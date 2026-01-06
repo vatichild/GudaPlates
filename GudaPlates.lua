@@ -1,179 +1,4044 @@
--- GudaPlates for WoW 1.12.1 (Refactored)
-GudaPlates = GudaPlates or {}
-GudaPlates.registry = GudaPlates.registry or {}
+-- GudaPlates for WoW 1.12.1
+-- Written for Lua 5.0 (Vanilla)
 
--- Initialize local references from core
-local Settings = GudaPlates.Settings
-local THREAT_COLORS = GudaPlates.THREAT_COLORS
-local Print = GudaPlates.Print or function(msg) DEFAULT_CHAT_FRAME:AddMessage(tostring(msg)) end
+-- Macro Texture Hover Only
+local macroFrame = CreateFrame("Frame")
 
--- Event handling frame
-local eventFrame = CreateFrame("Frame", "GudaPlatesEventFrame")
-
-function GudaPlates.SaveSettings()
-    GudaPlatesDB = GudaPlatesDB or {}
-    GudaPlatesDB.playerRole = GudaPlates.playerRole
-    GudaPlatesDB.THREAT_COLORS = GudaPlates.THREAT_COLORS
-    GudaPlatesDB.nameplateOverlap = GudaPlates.nameplateOverlap
-    GudaPlatesDB.minimapAngle = GudaPlates.minimapAngle
-    GudaPlatesDB.Settings = GudaPlates.Settings
+if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Loading...")
 end
 
-function GudaPlates.LoadSettings()
-    GudaPlatesDB = GudaPlatesDB or {}
-    if GudaPlatesDB.playerRole then GudaPlates.playerRole = GudaPlatesDB.playerRole end
-    if GudaPlatesDB.nameplateOverlap ~= nil then GudaPlates.nameplateOverlap = GudaPlatesDB.nameplateOverlap end
-    if GudaPlatesDB.minimapAngle then GudaPlates.minimapAngle = GudaPlatesDB.minimapAngle end
-    if GudaPlatesDB.Settings then
-        for k, v in pairs(GudaPlatesDB.Settings) do GudaPlates.Settings[k] = v end
+-- Disable pfUI nameplates module
+local function DisablePfUINameplates()
+    if pfUI then
+        -- Disable the module registration
+        if pfUI.modules then
+            pfUI.modules["nameplates"] = nil
+        end
+        -- Hide existing pfUI nameplate frame if it exists
+        if pfNameplates then
+            pfNameplates:Hide()
+            pfNameplates:UnregisterAllEvents()
+        end
+        -- Block pfUI nameplate creation function
+        if pfUI.nameplates then
+            pfUI.nameplates = nil
+        end
+        return true
     end
-    -- Support for migration/legacy if needed
+    return false
+end
+
+-- Try to disable pfUI nameplates immediately
+if DisablePfUINameplates() then
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Disabled pfUI nameplates module")
+    end
+end
+
+-- Debug flag for duration tracking
+local DEBUG_DURATION = false
+
+local function Print(msg)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[GudaPlates]|r " .. tostring(msg))
+    end
+end
+
+local initialized = 0
+local parentcount = 0
+local platecount = 0
+local registry = {}
+local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
+-- Track combat state per nameplate frame to avoid issues with same-named mobs
+local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
+local twthreat_active = UnitThreat ~= nil -- TWThreat detection
+
+-- Debuff settings
+local MAX_DEBUFFS = 16
+local DEBUFF_SIZE = 16
+
+-- Debuff tracking for non-SuperWoW
+local debuffTracker = {}
+
+-- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
+-- This prevents timer reset every frame
+local debuffTimers = {}
+
+-- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
+local castDB = {}
+
+-- Cast tracking for non-SuperWoW
+local castTracker = {}
+
+-- Role setting: "TANK" or "DPS" (DPS includes healers)
+local playerRole = "DPS"
+local minimapAngle = 220
+
+-- Nameplate overlap setting: true = overlapping, false = stacking (default)
+local nameplateOverlap = true
+
+-- Settings table to reduce upvalues
+local Settings = {
+    -- Healthbar
+    healthbarHeight = 14,
+    healthbarWidth = 115,
+    healthFontSize = 10,
+    showHealthText = true,
+    healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
+    healthTextFormat = 1,  -- 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
+    -- Manabar
+    showManaBar = false,
+    showManaText = true,
+    manaTextFormat = 1,  -- 1=Percent, 2=Current Mana, 3=Current Mana (%)
+    manaTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
+    manabarHeight = 4,
+    -- Castbar
+    castbarHeight = 12,
+    castbarWidth = 115,
+    castbarIndependent = false,
+    showCastbarIcon = true,
+    castbarColor = {1, 0.8, 0, 1},  -- Gold/Yellow color
+    -- Fonts
+    levelFontSize = 10,
+    nameFontSize = 10,
+    textFont = "Fonts\\ARIALN.TTF",  -- Default WoW font
+    -- Layout
+    raidIconPosition = "LEFT",
+    swapNameDebuff = true,
+    -- Features
+    showOnlyMyDebuffs = true,
+    showDebuffTimers = true,
+    -- Target Glow
+    showTargetGlow = true,
+    targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
+    -- Text Colors
+    nameColor = {1, 1, 1, 1},
+    healthTextColor = {1, 1, 1, 1},
+    manaTextColor = {1, 1, 1, 1},
+    levelColor = {1, 1, 0.6, 1},
+}
+
+-- Plater-style threat colors
+local THREAT_COLORS = {
+    -- DPS/Healer colors
+    DPS = {
+        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue: mob attacking you (BAD)
+        HIGH_THREAT = {1.0, 0.6, 0.0, 1},  -- Orange: high threat, about to pull (WARNING)
+        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red: tank has aggro (GOOD)
+    },
+    -- Tank colors
+    TANK = {
+        AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue (matching DPS AGGRO)
+        LOSING_AGGRO = {1.0, 0.6, 0.0, 1}, -- Orange (matching DPS HIGH_THREAT)
+        NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
+        OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
+    },
+    -- Misc colors
+    TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
+    MANA_BAR = {0.07, 0.58, 1.0, 1},  -- Cyan: mana bar color
+}
+
+-- Tank class detection for OTHER_TANK coloring
+local TANK_CLASSES = {
+    ["Warrior"] = true,
+    ["Paladin"] = true,
+    ["Druid"] = true,
+}
+
+-- Helper function to check if a unit is a tank class
+local function IsTankClass(unit)
+    if not unit or not UnitExists(unit) then return false end
+    local _, class = UnitClass(unit)
+    return class and TANK_CLASSES[class]
+end
+
+-- Helper function to check if a unit is in the player's group (player, party, or raid)
+local function IsInPlayerGroup(unit)
+    if not unit or not UnitExists(unit) then return false end
+    -- Check if it's the player
+    if UnitIsUnit(unit, "player") then return true end
+    -- Check party members (party1-4)
+    for i = 1, 4 do
+        if UnitIsUnit(unit, "party" .. i) then return true end
+    end
+    -- Check raid members (raid1-40)
+    if UnitInRaid("player") then
+        for i = 1, 40 do
+            if UnitIsUnit(unit, "raid" .. i) then return true end
+        end
+    end
+    -- Check pets
+    if UnitIsUnit(unit, "pet") then return true end
+    for i = 1, 4 do
+        if UnitIsUnit(unit, "partypet" .. i) then return true end
+    end
+    return false
+end
+
+-- Load spell database if available
+local SpellDB = GudaPlates_SpellDB
+
+-- Verify SpellDB loaded correctly
+if not SpellDB then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r ERROR: SpellDB failed to load!")
+end
+
+-- ============================================
+-- SPELL CAST HOOKS (ShaguTweaks-style)
+-- Detects when player casts spells to track debuff durations with correct rank
+-- ============================================
+
+-- Helper: Extract rank number from rank string like "Rank 2" (Lua 5.0 compatible)
+local function GetRankNumber(rankStr)
+	if not rankStr then return 0 end
+	-- Lua 5.0 uses string.gfind instead of string.match
+	for num in string.gfind(rankStr, "(%d+)") do
+		return tonumber(num) or 0
+	end
+	return 0
+end
+
+-- Helper: Get spell name and rank from spellbook by ID
+local function GetSpellInfoFromBook(spellId, bookType)
+	local name, rank = GetSpellName(spellId, bookType)
+	return name, GetRankNumber(rank)
+end
+
+-- Helper: Get spell name and rank from spell name string (e.g., "Rend(Rank 2)")
+local function ParseSpellName(spellString)
+	if not spellString then return nil, 0 end
+	-- Try to match "SpellName(Rank X)" format (Lua 5.0 compatible)
+	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+		return name, tonumber(rank) or 0
+	end
+	-- No rank specified, just spell name
+	return spellString, 0
+end
+
+-- Strip rank suffix from spell name (for combat log parsing)
+-- "Rend (Rank 2)" -> "Rend", rank 2
+-- "Rend" -> "Rend", rank 0
+local function StripSpellRank(spellString)
+	if not spellString then return nil, 0 end
+	-- Match "SpellName (Rank X)" with space before parenthesis
+	for name, rank in string.gfind(spellString, "^(.+) %(Rank (%d+)%)$") do
+		return name, tonumber(rank) or 0
+	end
+	-- Also try without space
+	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+		return name, tonumber(rank) or 0
+	end
+	return spellString, 0
+end
+
+-- Hook original CastSpell (ShaguPlates-style)
+local Original_CastSpell = CastSpell
+CastSpell = function(spellId, bookType)
+	if SpellDB and spellId and bookType then
+		local spellName, rank = GetSpellName(spellId, bookType)
+		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
+			local targetName = UnitName("target")
+			local targetLevel = UnitLevel("target") or 0
+			local duration = SpellDB:GetDuration(spellName, rank)
+			if duration and duration > 0 then
+				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+			end
+		end
+	end
+	return Original_CastSpell(spellId, bookType)
+end
+
+-- Hook original CastSpellByName (ShaguPlates-style)
+local Original_CastSpellByName = CastSpellByName
+CastSpellByName = function(spellString, onSelf)
+	if SpellDB and spellString then
+		local spellName, rank = ParseSpellName(spellString)
+		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
+			local targetName = UnitName("target")
+			local targetLevel = UnitLevel("target") or 0
+			local duration = SpellDB:GetDuration(spellName, rank)
+			if duration and duration > 0 then
+				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+			end
+		end
+	end
+	return Original_CastSpellByName(spellString, onSelf)
+end
+
+-- Hook UseAction (for action bar clicks) (ShaguPlates-style)
+local Original_UseAction = UseAction
+UseAction = function(slot, checkCursor, onSelf)
+	if SpellDB and slot then
+		local actionTexture = GetActionTexture(slot)
+		if GetActionText(slot) == nil and actionTexture ~= nil then
+			local spellName, rank = SpellDB:ScanAction(slot)
+			if spellName then
+				-- Cache texture -> spell name for debuff display lookup
+				if SpellDB.textureToSpell then
+					SpellDB.textureToSpell[actionTexture] = spellName
+				end
+				if UnitExists("target") then
+					local targetName = UnitName("target")
+					local targetLevel = UnitLevel("target") or 0
+					local duration = SpellDB:GetDuration(spellName, rank)
+					if duration and duration > 0 then
+						SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+					end
+				end
+			end
+		end
+	end
+	return Original_UseAction(slot, checkCursor, onSelf)
+end
+
+-- Initialize tooltip scanner for action bar scanning
+if SpellDB then
+	SpellDB:InitScanner()
+end
+
+local function IsNamePlate(frame)
+    if not frame then return nil end
+    local objType = frame:GetObjectType()
+    if objType ~= "Frame" and objType ~= "Button" then return nil end
+
+    -- Check ALL regions for the nameplate border texture
+    local regions = { frame:GetRegions() }
+    for _, r in ipairs(regions) do
+        if r and r.GetObjectType and r:GetObjectType() == "Texture" then
+            if r.GetTexture then
+                local tex = r:GetTexture()
+                if tex == "Interface\\Tooltips\\Nameplate-Border" then
+                    return true
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function DisableObject(object)
+    if not object then return end
+    if object.SetAlpha then object:SetAlpha(0) end
+end
+
+local function HideVisual(object)
+    if not object then return end
+    if object.SetAlpha then object:SetAlpha(0) end
+    if object.GetObjectType then
+        local otype = object:GetObjectType()
+        if otype == "Texture" then
+            object:SetTexture("")
+        elseif otype == "FontString" then
+            object:SetTextColor(0, 0, 0, 0)
+        end
+    end
+end
+
+local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
+GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
+GudaPlates:RegisterEvent("ADDON_LOADED")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
+-- SuperWoW cast event (provides exact GUID of caster)
+GudaPlates:RegisterEvent("UNIT_CASTEVENT")
+-- ShaguPlates-style events for debuff tracking
+GudaPlates:RegisterEvent("SPELLCAST_STOP")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
+GudaPlates:RegisterEvent("PLAYER_TARGET_CHANGED")
+GudaPlates:RegisterEvent("UNIT_AURA")
+
+-- Patterns for removing pending spells (ShaguPlates-style)
+local REMOVE_PENDING_PATTERNS = {
+	SPELLIMMUNESELFOTHER or "%s is immune to your %s.",
+	IMMUNEDAMAGECLASSSELFOTHER or "%s is immune to your %s damage.",
+	SPELLMISSSELFOTHER or "Your %s missed %s.",
+	SPELLRESISTSELFOTHER or "Your %s was resisted by %s.",
+	SPELLEVADEDSELFOTHER or "Your %s was evaded by %s.",
+	SPELLDODGEDSELFOTHER or "Your %s was dodged by %s.",
+	SPELLDEFLECTEDSELFOTHER or "Your %s was deflected by %s.",
+	SPELLREFLECTSELFOTHER or "Your %s was reflected back by %s.",
+	SPELLPARRIEDSELFOTHER or "Your %s was parried by %s.",
+	SPELLLOGABSORBSELFOTHER or "Your %s is absorbed by %s.",
+}
+
+local function UpdateNamePlateDimensions(frame)
+    local nameplate = frame.nameplate
+    if not nameplate then return end
+
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
+    
+    -- Update castbar dimensions
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
+    if Settings.castbarIndependent then
+        nameplate.castbar:SetWidth(Settings.castbarWidth)
+    else
+        nameplate.castbar:SetWidth(Settings.healthbarWidth)
+    end
+    
+    -- Update castbar icon size (will be properly positioned in UpdateNamePlate when casting)
+    local iconSize
+    if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+        -- Castbar wider: icon aligns with healthbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + Settings.manabarHeight
+        else
+            iconSize = Settings.healthbarHeight
+        end
+    else
+        -- Normal: icon spans healthbar + castbar (+ manabar if visible)
+        if nameplate.mana and nameplate.mana:IsShown() then
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+        else
+            iconSize = Settings.healthbarHeight + Settings.castbarHeight
+        end
+    end
+    nameplate.castbar.icon:SetWidth(iconSize)
+    nameplate.castbar.icon:SetHeight(iconSize)
+    
+    -- Update mana bar dimensions and text position
+    if nameplate.mana then
+        nameplate.mana:SetWidth(Settings.healthbarWidth)
+        nameplate.mana:SetHeight(Settings.manabarHeight)
+        
+        -- Update mana text position
+        if nameplate.mana.text then
+            nameplate.mana.text:ClearAllPoints()
+            if Settings.manaTextPosition == "LEFT" then
+                nameplate.mana.text:SetPoint("LEFT", nameplate.mana, "LEFT", 2, 0)
+                nameplate.mana.text:SetJustifyH("LEFT")
+            elseif Settings.manaTextPosition == "RIGHT" then
+                nameplate.mana.text:SetPoint("RIGHT", nameplate.mana, "RIGHT", -2, 0)
+                nameplate.mana.text:SetJustifyH("RIGHT")
+            else
+                nameplate.mana.text:SetPoint("CENTER", nameplate.mana, "CENTER", 0, 0)
+                nameplate.mana.text:SetJustifyH("CENTER")
+            end
+        end
+    end
+
+    local healthFont, _, healthFlags = nameplate.healthtext:GetFont()
+    nameplate.healthtext:SetFont(healthFont, Settings.healthFontSize, healthFlags)
+    
+    -- Update health text position
+    nameplate.healthtext:ClearAllPoints()
+    if Settings.healthTextPosition == "LEFT" then
+        nameplate.healthtext:SetPoint("LEFT", nameplate.health, "LEFT", 2, 0)
+        nameplate.healthtext:SetJustifyH("LEFT")
+    elseif Settings.healthTextPosition == "RIGHT" then
+        nameplate.healthtext:SetPoint("RIGHT", nameplate.health, "RIGHT", -2, 0)
+        nameplate.healthtext:SetJustifyH("RIGHT")
+    else
+        nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+        nameplate.healthtext:SetJustifyH("CENTER")
+    end
+
+    -- Apply font from settings
+    nameplate.level:SetFont(Settings.textFont, Settings.levelFontSize, "OUTLINE")
+    nameplate.name:SetFont(Settings.textFont, Settings.nameFontSize, "OUTLINE")
+    nameplate.healthtext:SetFont(Settings.textFont, Settings.healthFontSize, "OUTLINE")
+    if nameplate.mana and nameplate.mana.text then
+        nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
+    end
+    if nameplate.castbar then
+        nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
+        nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
+    end
+    -- Update debuff fonts
+    if nameplate.debuffs then
+        for i = 1, MAX_DEBUFFS do
+            if nameplate.debuffs[i] then
+                nameplate.debuffs[i].cd:SetFont(Settings.textFont, 10, "OUTLINE")
+                nameplate.debuffs[i].count:SetFont(Settings.textFont, 9, "OUTLINE")
+            end
+        end
+    end
+
+    -- Apply text colors from settings
+    nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+    if nameplate.mana and nameplate.mana.text then
+        nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
+    end
+    
+    -- Apply castbar color
+    if nameplate.castbar then
+        nameplate.castbar:SetStatusBarColor(Settings.castbarColor[1], Settings.castbarColor[2], Settings.castbarColor[3], Settings.castbarColor[4])
+    end
+
+    -- Update Raid Icon position
+    if nameplate.original.raidicon then
+        nameplate.original.raidicon:ClearAllPoints()
+        if Settings.raidIconPosition == "LEFT" then
+            nameplate.original.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        else
+            nameplate.original.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
+        end
+    end
+    if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
+        frame.raidicon:ClearAllPoints()
+        if Settings.raidIconPosition == "LEFT" then
+            frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        else
+            frame.raidicon:SetPoint("LEFT", nameplate.health, "RIGHT", 5, 0)
+        end
+    end
+
+    -- Update Name and Debuff positions
+    nameplate.name:ClearAllPoints()
+    
+    -- Update mana bar position based on swap setting
+    if nameplate.mana then
+        nameplate.mana:ClearAllPoints()
+    end
+    
+    if Settings.swapNameDebuff then
+        -- Swapped: Name above, Debuffs below healthbar, Mana bar below healthbar
+        nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 6)
+        
+        -- Mana bar below healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+        end
+        
+        -- Debuffs below mana bar (or healthbar if no mana)
+        for i = 1, MAX_DEBUFFS do
+            nameplate.debuffs[i]:ClearAllPoints()
+            if i == 1 then
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
+                else
+                    nameplate.debuffs[i]:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                end
+            else
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
+            end
+        end
+        
+        -- Castbar above healthbar (no gap), align based on raid icon position when wider
+        nameplate.castbar:ClearAllPoints()
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+            else
+                nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
+            end
+        else
+            nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+        end
+        
+        -- Level above healthbar (swapped mode - mana is below)
+        nameplate.level:ClearAllPoints()
+        nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+    else
+        -- Default: Name below, Mana bar above healthbar, Debuffs above mana bar
+        nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
+        
+        -- Mana bar above healthbar
+        if nameplate.mana then
+            nameplate.mana:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+        end
+        
+        -- Level above mana bar (or healthbar if no mana)
+        nameplate.level:ClearAllPoints()
+        if nameplate.mana and nameplate.mana:IsShown() then
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.mana, "TOPRIGHT", 0, 2)
+        else
+            nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+        end
+        
+        -- Debuffs above mana bar (or healthbar if no mana)
+        for i = 1, MAX_DEBUFFS do
+            nameplate.debuffs[i]:ClearAllPoints()
+            if i == 1 then
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.mana, "TOPLEFT", 0, 1)
+                else
+                    nameplate.debuffs[i]:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                end
+            else
+                nameplate.debuffs[i]:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
+            end
+        end
+        
+        -- Castbar below healthbar (default mode), align based on raid icon position when wider
+        nameplate.castbar:ClearAllPoints()
+        if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+            if Settings.raidIconPosition == "RIGHT" then
+                nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, -2)
+            else
+                nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
+            end
+        else
+            nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+        end
+    end
+
+    -- When stacking, we also need to update the parent frame size
+    -- so the game's stacking logic uses the new dimensions
+    if not nameplateOverlap then
+        local npWidth = Settings.healthbarWidth * UIParent:GetScale()
+        local npHeight = (Settings.healthbarHeight + 20) * UIParent:GetScale() -- Added space for name/level
+        frame:SetWidth(npWidth)
+        frame:SetHeight(npHeight)
+        nameplate:SetAllPoints(frame)
+    else
+    -- In overlap mode, frame is 1x1 but nameplate should be clickable
+        nameplate:ClearAllPoints()
+        nameplate:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        nameplate:SetWidth(Settings.healthbarWidth)
+        nameplate:SetHeight(Settings.healthbarHeight + 20)
+    end
+end
+
+
+local function round(input, places)
+    if not places then places = 0 end
+    if type(input) == "number" and type(places) == "number" then
+        local pow = 1
+        for i = 1, places do pow = pow * 10 end
+        return math.floor(input * pow + 0.5) / pow
+    end
+end
+
+local function FormatTime(remaining)
+    if not remaining or remaining < 0 then return "", 1, 1, 1, 1 end
+    if remaining > 356400 then -- 99 hours
+        return round(remaining / 86400) .. "d", 0.2, 0.2, 1, 1
+    elseif remaining > 5940 then -- 99 minutes
+        return round(remaining / 3600) .. "h", 0.2, 0.5, 1, 1
+    elseif remaining > 99 then
+        return round(remaining / 60) .. "m", 0.2, 1, 1, 1
+    elseif remaining > 10 then
+        -- White: more than 10 seconds
+        return round(remaining) .. "", 1, 1, 1, 1
+    elseif remaining > 5 then
+        -- Yellow: 5-10 seconds
+        return round(remaining) .. "", 1, 1, 0, 1
+    elseif remaining > 0 then
+        -- Red: less than 5 seconds
+        return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
+    end
+    return "", 1, 1, 1, 1
+end
+
+local function HandleNamePlate(frame)
+    if not frame then return end
+    if registry[frame] then return end
+
+    platecount = platecount + 1
+    local platename = "GudaPlate" .. platecount
+
+    local nameplate = CreateFrame("Button", platename, frame)
+    nameplate.platename = platename
+    nameplate:EnableMouse(false)
+    nameplate.parent = frame
+    nameplate.original = {}
+
+    -- Click handler for overlap mode - forward clicks to parent
+    nameplate:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    nameplate:SetScript("OnClick", function()
+        if arg1 == "LeftButton" then
+            this.parent:Click()
+        elseif arg1 == "RightButton" then
+            this.parent:Click()
+        end
+    end)
+
+    -- Get healthbar - ShaguTweaks sets frame.healthbar directly
+    if frame.healthbar then
+        nameplate.original.healthbar = frame.healthbar
+    else
+        nameplate.original.healthbar = frame:GetChildren()
+    end
+
+    -- Find name and level from regions before hiding
+    -- Get regions by index (vanilla nameplate order: border, glow, name, level, levelicon, raidicon)
+    local regions = {frame:GetRegions()}
+    for i, region in ipairs(regions) do
+        if region and region.GetObjectType then
+            local rtype = region:GetObjectType()
+            if i == 2 then
+            -- 2nd region is glow texture
+                nameplate.original.glow = region
+            elseif i == 6 then
+            -- 6th region is raid icon
+                nameplate.original.raidicon = region
+            elseif rtype == "FontString" then
+                local text = region:GetText()
+                if text then
+                    if tonumber(text) then
+                        nameplate.original.level = region
+                    else
+                        nameplate.original.name = region
+                    end
+                end
+            end
+        end
+    end
+
+    -- Also check frame.new (ShaguTweaks creates this)
+    if frame.new then
+        for _, region in ipairs({frame.new:GetRegions()}) do
+            if region and region.GetObjectType then
+                local rtype = region:GetObjectType()
+                if rtype == "FontString" then
+                    local text = region:GetText()
+                    if text and not tonumber(text) and not nameplate.original.name then
+                        nameplate.original.name = region
+                    end
+                end
+            end
+        end
+    end
+
+    nameplate:SetAllPoints(frame)
+    nameplate:SetFrameLevel(frame:GetFrameLevel() + 10)
+
+    -- Plater-style health bar with higher frame level
+    nameplate.health = CreateFrame("StatusBar", nil, nameplate)
+    nameplate.health:SetFrameLevel(frame:GetFrameLevel() + 11)
+    nameplate.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    nameplate.health:SetHeight(Settings.healthbarHeight)
+    nameplate.health:SetWidth(Settings.healthbarWidth)
+    nameplate.health:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
+
+    -- Dark background
+    nameplate.health.bg = nameplate.health:CreateTexture(nil, "BACKGROUND")
+    nameplate.health.bg:SetTexture(0, 0, 0, 0.8)
+    nameplate.health.bg:SetAllPoints()
+
+    -- Border
+    nameplate.health.border = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.health.border:SetTexture(0, 0, 0, 1)
+    nameplate.health.border:SetPoint("TOPLEFT", nameplate.health, "TOPLEFT", -1, 1)
+    nameplate.health.border:SetPoint("BOTTOMRIGHT", nameplate.health, "BOTTOMRIGHT", 1, -1)
+    nameplate.health.border:SetDrawLayer("BACKGROUND", -1)
+
+    -- Reparent original raid icon to our health bar
+    if nameplate.original.raidicon then
+        nameplate.original.raidicon:SetParent(nameplate.health)
+        nameplate.original.raidicon:ClearAllPoints()
+        nameplate.original.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        nameplate.original.raidicon:SetWidth(24)
+        nameplate.original.raidicon:SetHeight(24)
+        nameplate.original.raidicon:SetDrawLayer("OVERLAY")
+    end
+
+    -- Also reparent ShaguTweaks raid icon if present (frame.raidicon)
+    if frame.raidicon and frame.raidicon ~= nameplate.original.raidicon then
+        frame.raidicon:SetParent(nameplate.health)
+        frame.raidicon:ClearAllPoints()
+        frame.raidicon:SetPoint("RIGHT", nameplate.health, "LEFT", -5, 0)
+        frame.raidicon:SetWidth(24)
+        frame.raidicon:SetHeight(24)
+        frame.raidicon:SetDrawLayer("OVERLAY")
+    end
+
+    -- Target highlight brackets (square bracket shape [ ])
+    -- Left bracket [
+    nameplate.targetBracket = {}
+    
+    nameplate.targetBracket.leftVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftVert:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftVert:SetWidth(1)
+    nameplate.targetBracket.leftVert:Hide()
+    
+    nameplate.targetBracket.leftTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftTop:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftTop:SetHeight(1)
+    nameplate.targetBracket.leftTop:SetWidth(6)
+    nameplate.targetBracket.leftTop:Hide()
+    
+    nameplate.targetBracket.leftBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.leftBottom:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.leftBottom:SetHeight(1)
+    nameplate.targetBracket.leftBottom:SetWidth(6)
+    nameplate.targetBracket.leftBottom:Hide()
+    
+    -- Right bracket ]
+    nameplate.targetBracket.rightVert = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightVert:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightVert:SetWidth(1)
+    nameplate.targetBracket.rightVert:Hide()
+    
+    nameplate.targetBracket.rightTop = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightTop:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightTop:SetHeight(1)
+    nameplate.targetBracket.rightTop:SetWidth(6)
+    nameplate.targetBracket.rightTop:Hide()
+    
+    nameplate.targetBracket.rightBottom = nameplate.health:CreateTexture(nil, "OVERLAY")
+    nameplate.targetBracket.rightBottom:SetTexture(1, 1, 1, 0.5)
+    nameplate.targetBracket.rightBottom:SetHeight(1)
+    nameplate.targetBracket.rightBottom:SetWidth(6)
+    nameplate.targetBracket.rightBottom:Hide()
+
+    -- Target glow effect (Dragonflight3-style with top and bottom glow)
+    nameplate.targetGlowTop = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowTop:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowTop:SetHeight(20)
+    nameplate.targetGlowTop:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 0)
+    nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowTop:Hide()
+
+    nameplate.targetGlowBottom = nameplate:CreateTexture(nil, "BACKGROUND")
+    nameplate.targetGlowBottom:SetTexture("Interface\\AddOns\\-Dragonflight3\\media\\tex\\generic\\nocontrol_glow.blp")
+    nameplate.targetGlowBottom:SetTexCoord(0, 1, 1, 0)  -- Flip vertically
+    nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+    nameplate.targetGlowBottom:SetHeight(20)
+    nameplate.targetGlowBottom:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+    nameplate.targetGlowBottom:Hide()
+
+    -- Name below the health bar (like in Plater)
+    nameplate.name = nameplate:CreateFontString(nil, "OVERLAY")
+    nameplate.name:SetFont(Settings.textFont, 9, "OUTLINE")
+    nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+    nameplate.name:SetJustifyH("CENTER")
+
+    -- Level above the health bar on the right
+    nameplate.level = nameplate:CreateFontString(nil, "OVERLAY")
+    nameplate.level:SetFont(Settings.textFont, 9, "OUTLINE")
+    nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    nameplate.level:SetJustifyH("RIGHT")
+
+    -- Health text centered on bar
+    nameplate.healthtext = nameplate.health:CreateFontString(nil, "OVERLAY")
+    nameplate.healthtext:SetFont(Settings.textFont, 8, "OUTLINE")
+    nameplate.healthtext:SetPoint("CENTER", nameplate.health, "CENTER", 0, 0)
+    nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+
+    -- Mana Bar below healthbar (optional, hidden by default)
+    nameplate.mana = CreateFrame("StatusBar", nil, nameplate)
+    nameplate.mana:SetFrameLevel(frame:GetFrameLevel() + 11)
+    nameplate.mana:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
+    nameplate.mana:SetHeight(Settings.manabarHeight)
+    nameplate.mana:SetWidth(Settings.healthbarWidth)
+    nameplate.mana:SetPoint("TOP", nameplate.health, "BOTTOM", 0, 0)
+    nameplate.mana:Hide()
+
+    nameplate.mana.bg = nameplate.mana:CreateTexture(nil, "BACKGROUND")
+    nameplate.mana.bg:SetTexture(0, 0, 0, 0.8)
+    nameplate.mana.bg:SetAllPoints()
+
+    nameplate.mana.border = nameplate.mana:CreateTexture(nil, "OVERLAY")
+    nameplate.mana.border:SetTexture(0, 0, 0, 1)
+    nameplate.mana.border:SetPoint("TOPLEFT", nameplate.mana, "TOPLEFT", -1, 1)
+    nameplate.mana.border:SetPoint("BOTTOMRIGHT", nameplate.mana, "BOTTOMRIGHT", 1, -1)
+    nameplate.mana.border:SetDrawLayer("BACKGROUND", -1)
+
+    -- Mana text (position based on settings)
+    nameplate.mana.text = nameplate.mana:CreateFontString(nil, "OVERLAY")
+    nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
+    nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
+
+    -- Cast Bar below the name
+    nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
+    nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    nameplate.castbar:SetHeight(Settings.castbarHeight)
+    nameplate.castbar:SetStatusBarColor(Settings.castbarColor[1], Settings.castbarColor[2], Settings.castbarColor[3], Settings.castbarColor[4])
+    nameplate.castbar:Hide()
+
+    nameplate.castbar.bg = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
+    nameplate.castbar.bg:SetTexture(0, 0, 0, 1.0)
+    nameplate.castbar.bg:SetAllPoints()
+
+    nameplate.castbar.border = nameplate.castbar:CreateTexture(nil, "OVERLAY")
+    nameplate.castbar.border:SetTexture(0, 0, 0, 1)
+    nameplate.castbar.border:SetPoint("TOPLEFT", nameplate.castbar, "TOPLEFT", -1, 1)
+    nameplate.castbar.border:SetPoint("BOTTOMRIGHT", nameplate.castbar, "BOTTOMRIGHT", 1, -1)
+    nameplate.castbar.border:SetDrawLayer("BACKGROUND", -1)
+
+    nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
+    nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
+    nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
+    nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
+    nameplate.castbar.text:SetJustifyH("LEFT")
+
+    nameplate.castbar.timer = nameplate.castbar:CreateFontString(nil, "OVERLAY")
+    nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
+    nameplate.castbar.timer:SetPoint("RIGHT", nameplate.castbar, "RIGHT", -2, 0)
+    nameplate.castbar.timer:SetTextColor(1, 1, 1, 1)
+    nameplate.castbar.timer:SetJustifyH("RIGHT")
+
+    nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
+    -- Icon size will be set dynamically based on healthbar + castbar height
+    nameplate.castbar.icon:SetWidth(Settings.healthbarHeight + Settings.castbarHeight)
+    nameplate.castbar.icon:SetHeight(Settings.healthbarHeight + Settings.castbarHeight)
+    -- Position will be set dynamically based on raidIconPosition
+    nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    nameplate.castbar.icon.border = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
+    nameplate.castbar.icon.border:SetTexture(0, 0, 0, 1)
+    nameplate.castbar.icon.border:SetPoint("TOPLEFT", nameplate.castbar.icon, "TOPLEFT", -1, 1)
+    nameplate.castbar.icon.border:SetPoint("BOTTOMRIGHT", nameplate.castbar.icon, "BOTTOMRIGHT", 1, -1)
+
+    -- Debuff icons
+    nameplate.debuffs = {}
+    for i = 1, MAX_DEBUFFS do
+        local debuff = CreateFrame("Frame", nil, nameplate)
+        debuff:SetWidth(DEBUFF_SIZE)
+        debuff:SetHeight(DEBUFF_SIZE)
+        debuff:SetFrameLevel(nameplate.health:GetFrameLevel() + 5)
+
+        debuff.icon = debuff:CreateTexture(nil, "ARTWORK")
+        debuff.icon:SetAllPoints()
+        debuff.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        debuff.icon:SetDrawLayer("ARTWORK")
+        debuff.icon:SetAlpha(1)
+
+        debuff.border = debuff:CreateTexture(nil, "BACKGROUND")
+        debuff.border:SetTexture(0, 0, 0, 1)
+        debuff.border:SetPoint("TOPLEFT", debuff, "TOPLEFT", -1, 1)
+        debuff.border:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, -1)
+        debuff.border:SetDrawLayer("BACKGROUND")
+
+        -- Create a container frame for countdown text (ensure proper layering)
+        debuff.cdframe = CreateFrame("Frame", nil, debuff)
+        debuff.cdframe:SetAllPoints(debuff)
+        debuff.cdframe:SetFrameLevel(debuff:GetFrameLevel() + 2)
+
+        -- Text on top of the icon
+        debuff.cd = debuff.cdframe:CreateFontString(nil, "OVERLAY")
+        debuff.cd:SetFont(Settings.textFont, 10, "OUTLINE")
+        debuff.cd:SetPoint("CENTER", debuff.cdframe, "CENTER", 0, 0)
+        debuff.cd:SetTextColor(1, 1, 1, 1)
+        debuff.cd:SetText("")
+        debuff.cd:SetDrawLayer("OVERLAY", 7)
+
+        debuff.count = debuff.cdframe:CreateFontString(nil, "OVERLAY")
+        debuff.count:SetFont(Settings.textFont, 9, "OUTLINE")
+        debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, 0)
+        debuff.count:SetTextColor(1, 1, 1, 1)
+        debuff.count:SetText("")
+        debuff.count:SetDrawLayer("OVERLAY", 7)
+
+        debuff:SetScript("OnUpdate", function()
+            local now = GetTime()
+            if (this.tick or 0) > now then return else this.tick = now + 0.1 end
+
+            if not this.expirationTime or this.expirationTime == 0 then
+                if this.cd and this.cd:GetAlpha() > 0 then
+                    this.cd:SetText("")
+                    this.cd:SetAlpha(0)
+                end
+                return
+            end
+
+            local timeLeft = this.expirationTime - now
+
+            if timeLeft > 0 then
+                local text, r, g, b, a = FormatTime(timeLeft)
+                if this.cd and text and text ~= "" then
+                    this.cd:SetText(text)
+                    if r then
+                        this.cd:SetTextColor(r, g, b, a or 1)
+                    end
+                    if this.cd:GetAlpha() < 1 then
+                        this.cd:SetAlpha(1)
+                    end
+                end
+            else
+                if this.cd then
+                    this.cd:SetText("")
+                    this.cd:SetAlpha(0)
+                end
+                this.expirationTime = 0
+            end
+        end)
+
+        debuff:Hide()
+        nameplate.debuffs[i] = debuff
+    end
+
+    UpdateNamePlateDimensions(frame)
+
+    frame.nameplate = nameplate
+    registry[frame] = nameplate
+
+    --Print("Hooked: " .. platename)
+end
+
+
+
+local function UpdateNamePlate(frame)
+    local nameplate = frame.nameplate
+    if not nameplate then return end
+
+    local original = nameplate.original
+    if not original.healthbar then return end
+
+    -- Hide ALL original elements every frame
+    original.healthbar:SetStatusBarTexture("")
+    original.healthbar:SetAlpha(0)
+
+    -- Hide regions on main frame (but NOT the raid icon - it's reparented to us)
+    for i, region in ipairs({frame:GetRegions()}) do
+        if region and region.GetObjectType then
+            local otype = region:GetObjectType()
+            if otype == "Texture" then
+            -- Skip raid icons - we reparented them
+                if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
+                    region:SetAlpha(0)
+                end
+            elseif otype == "FontString" then
+                region:SetAlpha(0)
+            end
+        end
+    end
+
+    -- Hide all other children frames (like Blizzard or other addon castbars)
+    for i, child in ipairs({frame:GetChildren()}) do
+        if child and child ~= nameplate and child ~= original.healthbar then
+        -- Only hide if it's not a known useful child (like the original castbar if we want it)
+        -- ShaguPlates disables the original castbar explicitly.
+            if child.SetAlpha then child:SetAlpha(0) end
+            if child.Hide then child:Hide() end
+        end
+    end
+
+    -- Hide ShaguTweaks new frame elements if present (but not raidicon)
+    if frame.new then
+        frame.new:SetAlpha(0)
+        for _, region in ipairs({frame.new:GetRegions()}) do
+            if region and region ~= frame.raidicon then
+                if region.SetTexture then region:SetTexture("") end
+                if region.SetAlpha then region:SetAlpha(0) end
+                if region.SetWidth and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    region:SetWidth(0.001)
+                end
+            end
+        end
+    end
+
+    local hp = original.healthbar:GetValue() or 0
+    local hpmin, hpmax = original.healthbar:GetMinMaxValues()
+    if not hpmax or hpmax == 0 then hpmax = 1 end
+
+    nameplate.health:SetMinMaxValues(hpmin, hpmax)
+    nameplate.health:SetValue(hp)
+
+    -- Format health text based on settings
+    local hpText = ""
+    if Settings.showHealthText then
+        local perc = (hp / hpmax) * 100
+        local format = Settings.healthTextFormat
+        if format == 1 then
+            -- Percent only
+            hpText = string.format("%.0f%%", perc)
+        elseif format == 2 then
+            -- Current HP only
+            if hp > 1000 then
+                hpText = string.format("%.1fK", hp / 1000)
+            else
+                hpText = string.format("%d", hp)
+            end
+        elseif format == 3 then
+            -- Health (percentage%)
+            if hp > 1000 then
+                hpText = string.format("%.1fK (%.0f%%)", hp / 1000, perc)
+            else
+                hpText = string.format("%d (%.0f%%)", hp, perc)
+            end
+        elseif format == 4 then
+            -- Current HP - Max HP
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK", hp / 1000, hpmax / 1000)
+            else
+                hpText = string.format("%d - %d", hp, hpmax)
+            end
+        elseif format == 5 then
+            -- Current HP - Max HP (Percentage %)
+            if hpmax > 1000 then
+                hpText = string.format("%.1fK - %.1fK (%.0f%%)", hp / 1000, hpmax / 1000, perc)
+            else
+                hpText = string.format("%d - %d (%.0f%%)", hp, hpmax, perc)
+            end
+        end
+    end
+    nameplate.healthtext:SetText(hpText)
+
+    -- Update level from original or ShaguTweaks
+    local levelText = nil
+    if original.level and original.level.GetText then
+        levelText = original.level:GetText()
+    end
+    -- ShaguTweaks stores level on frame.level
+    if not levelText and frame.level and frame.level.GetText then
+        levelText = frame.level:GetText()
+    end
+    if levelText then
+        nameplate.level:SetText(levelText)
+    end
+
+    -- Plater-style colors with threat support
+    local r, g, b = original.healthbar:GetStatusBarColor()
+
+    local isHostile = r > 0.9 and g < 0.2 and b < 0.2
+    local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
+    local isFriendly = r < 0.2 and g > 0.9 and b < 0.2
+
+    -- Get unit string for threat check
+    local unitstr = nil
+    local plateName = nil
+    if original.name and original.name.GetText then
+        plateName = original.name:GetText()
+    end
+
+    -- SuperWoW: get GUID for unit from the parent nameplate frame
+    if superwow_active and frame and frame.GetName then
+        unitstr = frame:GetName(1)
+    end
+
+    -- Check if this mob is attacking the player (mob→player targeting)
+    local isAttackingPlayer = false
+    local hasValidGUID = unitstr and unitstr ~= ""
+
+    -- Check original glow texture (shows when having aggro in Vanilla)
+    local hasAggroGlow = false
+    if original.glow and original.glow.IsShown and original.glow:IsShown() then
+        hasAggroGlow = true
+    end
+
+    -- SuperWoW method: use GUID to check mob's target directly (real-time, per-plate)
+    if hasValidGUID then
+        local mobTarget = unitstr .. "target"
+        -- This check works regardless of what player is targeting
+        if UnitIsUnit(mobTarget, "player") then
+            isAttackingPlayer = true
+            -- Store on nameplate object for this specific plate
+            nameplate.isAttackingPlayer = true
+            nameplate.lastAttackTime = GetTime()
+        else
+        -- Check if this specific plate was recently attacking
+            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
+                isAttackingPlayer = true
+            else
+                nameplate.isAttackingPlayer = false
+            end
+        end
+    else
+    -- Fallback: use name-based tracking (has same-name mob limitation)
+        if plateName then
+        -- Use original glow texture as primary indicator if available
+        -- Glow usually appears when unit is in combat and has threat
+            if hasAggroGlow then
+                isAttackingPlayer = true
+                nameplate.isAttackingPlayer = true
+                nameplate.lastAttackTime = GetTime()
+            end
+
+            -- Check if this specific plate was recently confirmed attacking
+            if not isAttackingPlayer and nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 5) then
+                isAttackingPlayer = true
+            end
+
+            -- If we're targeting this mob, verify and update tracking
+            if UnitExists("target") and UnitName("target") == plateName then
+            -- Check if target is actually this nameplate (alpha check is a common vanilla trick)
+            -- Usually target nameplate has alpha 1.0, others might be 0.x
+            -- Note: GetAlpha might be affected by UI modifications, but 1.0 is default for target
+                if frame:GetAlpha() > 0.9 then
+                    if UnitExists("targettarget") and UnitIsUnit("targettarget", "player") then
+                        nameplate.isAttackingPlayer = true
+                        nameplate.lastAttackTime = GetTime()
+                        isAttackingPlayer = true
+                    elseif UnitExists("targettarget") and not UnitIsUnit("targettarget", "player") then
+                    -- Mob is targeting someone else, clear tracking
+                        nameplate.isAttackingPlayer = false
+                        nameplate.lastAttackTime = nil
+                        isAttackingPlayer = false
+                    end
+                end
+            end
+
+            -- Expire old entries after 5 seconds without refresh
+            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime > 5) then
+                nameplate.isAttackingPlayer = false
+                nameplate.lastAttackTime = nil
+                isAttackingPlayer = false
+            end
+        end
+    end
+
+    -- TWThreat: get threat information
+    local threatPct = 0
+    local isTanking = false
+    local threatStatus = 0
+
+    if twthreat_active and unitstr and isHostile then
+    -- UnitThreat returns: isTanking, status, threatpct, rawthreatpct, threatvalue
+        local tanking, status, pct = UnitThreat("player", unitstr)
+        if tanking ~= nil then
+            isTanking = tanking
+            threatStatus = status or 0
+            threatPct = pct or 0
+        end
+    end
+
+    -- Determine color based on role and threat
+    if isFriendly then
+        nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
+    elseif isNeutral and not isAttackingPlayer then
+    -- Neutral and not attacking - yellow
+        nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+    elseif isHostile or (isNeutral and isAttackingPlayer) then
+    -- Hostile OR neutral that is attacking player
+    -- Check if mob is in combat (has a target)
+        local mobInCombat = false
+        local mobTargetUnit = nil
+
+        if hasValidGUID then
+            mobTargetUnit = unitstr .. "target"
+            mobInCombat = UnitExists(mobTargetUnit)
+        else
+        -- Fallback: assume in combat if attacking player or we have threat data or has glow
+            mobInCombat = isAttackingPlayer or (twthreat_active and threatPct > 0) or hasAggroGlow
+            -- For fallback, use targettarget if we're targeting this mob
+            if plateName and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+                mobTargetUnit = "targettarget"
+            end
+        end
+
+        -- Check if mob is tapped by others (in combat but NOT targeting our group)
+        local isTappedByOthers = false
+        if mobInCombat then
+            local isMobTargetingGroup = false
+
+            if mobTargetUnit and UnitExists(mobTargetUnit) then
+                isMobTargetingGroup = IsInPlayerGroup(mobTargetUnit)
+            else
+                -- Can't determine mob's target - assume it's ours if attacking us or has aggro glow
+                isMobTargetingGroup = isAttackingPlayer or hasAggroGlow
+            end
+
+            isTappedByOthers = not isMobTargetingGroup
+        end
+
+        -- Apply color based on state (priority order: not in combat -> tapped -> threat colors)
+        if not mobInCombat then
+        -- Not in combat - default hostile red
+            nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
+        elseif isTappedByOthers then
+        -- TAPPED: Mob is tapped by others - no other colors applied
+            nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
+        elseif hasValidGUID and twthreat_active then
+        -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
+            if playerRole == "TANK" then
+                if isTanking or isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif threatPct > 80 then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
+                else
+                    if IsTankClass(mobTargetUnit) then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
+                end
+            else
+                if isAttackingPlayer or isTanking then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                elseif threatPct > 80 then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
+                else
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
+                end
+            end
+        elseif hasValidGUID then
+        -- Has GUID but no TWThreat - use targeting-based colors
+            if playerRole == "TANK" then
+                if isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif IsTankClass(mobTargetUnit) then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                else
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                end
+            else
+                if isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                else
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
+                end
+            end
+        else
+        -- No GUID (no SuperWoW) - fallback with name-based detection
+            if playerRole == "TANK" then
+                if isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                else
+                    local otherTankHasAggro = false
+                    if plateName and UnitExists("target") and UnitName("target") == plateName then
+                        if frame:GetAlpha() > 0.9 and UnitExists("targettarget") then
+                            otherTankHasAggro = IsTankClass("targettarget")
+                        end
+                    end
+                    if otherTankHasAggro then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
+                    end
+                end
+            else
+                if isAttackingPlayer then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                else
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
+                end
+            end
+        end
+    else
+        nameplate.health:SetStatusBarColor(r, g, b, 1)
+    end
+
+    -- Update name from original
+    if original.name and original.name.GetText then
+        local name = original.name:GetText()
+        if name then nameplate.name:SetText(name) end
+    end
+
+    -- Update Mana Bar (only with SuperWoW GUID support)
+    if Settings.showManaBar and superwow_active and hasValidGUID then
+        local mana = UnitMana(unitstr) or 0
+        local manaMax = UnitManaMax(unitstr) or 0
+        local powerType = UnitPowerType and UnitPowerType(unitstr) or 0
+        
+        -- Only show for units with mana (powerType 0 = mana)
+        if manaMax > 0 and powerType == 0 then
+            nameplate.mana:SetMinMaxValues(0, manaMax)
+            nameplate.mana:SetValue(mana)
+            nameplate.mana:SetStatusBarColor(unpack(THREAT_COLORS.MANA_BAR))
+            
+            -- Format mana text based on settings
+            local manaText = ""
+            if Settings.showManaText then
+                local manaPerc = (mana / manaMax) * 100
+                if Settings.manaTextFormat == 1 then
+                    -- Percent only
+                    manaText = string.format("%.0f%%", manaPerc)
+                elseif Settings.manaTextFormat == 2 then
+                    -- Current Mana only
+                    if mana > 1000 then
+                        manaText = string.format("%.1fK", mana / 1000)
+                    else
+                        manaText = string.format("%d", mana)
+                    end
+                elseif Settings.manaTextFormat == 3 then
+                    -- Mana (Percent%)
+                    local manaStr
+                    if mana > 1000 then
+                        manaStr = string.format("%.1fK", mana / 1000)
+                    else
+                        manaStr = string.format("%d", mana)
+                    end
+                    manaText = string.format("%s (%.0f%%)", manaStr, manaPerc)
+                end
+            end
+            if nameplate.mana.text then
+                nameplate.mana.text:SetText(manaText)
+            end
+            
+            nameplate.mana:Show()
+        else
+            nameplate.mana:Hide()
+        end
+    else
+        if nameplate.mana then
+            nameplate.mana:Hide()
+        end
+    end
+
+    -- Target highlight - show borders on current target
+    local isTarget = false
+    if UnitExists("target") and plateName then
+        local targetName = UnitName("target")
+        if targetName and targetName == plateName then
+        -- Additional check: verify via alpha (target nameplate has alpha 1)
+            if frame:GetAlpha() == 1 then
+                isTarget = true
+            end
+        end
+    end
+
+    if isTarget then
+        -- Position brackets based on mana bar visibility
+        local topAnchor = nameplate.health
+        local bottomAnchor = nameplate.health
+        local bracketHeight = Settings.healthbarHeight
+        
+        -- Check if mana bar is visible and adjust anchors
+        if nameplate.mana and nameplate.mana:IsShown() then
+            if Settings.swapNameDebuff then
+                -- Swapped mode: mana below healthbar
+                topAnchor = nameplate.health
+                bottomAnchor = nameplate.mana
+                bracketHeight = Settings.healthbarHeight + 4  -- 4 is mana bar height
+            else
+                -- Default mode: mana above healthbar
+                topAnchor = nameplate.mana
+                bottomAnchor = nameplate.health
+                bracketHeight = Settings.healthbarHeight + 4
+            end
+        end
+        
+        -- Position left bracket [ (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.leftVert:ClearAllPoints()
+        nameplate.targetBracket.leftVert:SetPoint("TOPRIGHT", topAnchor, "TOPLEFT", -1, 2)
+        nameplate.targetBracket.leftVert:SetPoint("BOTTOMRIGHT", bottomAnchor, "BOTTOMLEFT", -1, -2)
+        nameplate.targetBracket.leftVert:Show()
+        
+        nameplate.targetBracket.leftTop:ClearAllPoints()
+        nameplate.targetBracket.leftTop:SetPoint("TOPLEFT", nameplate.targetBracket.leftVert, "TOPRIGHT", 0, 0)
+        nameplate.targetBracket.leftTop:Show()
+        
+        nameplate.targetBracket.leftBottom:ClearAllPoints()
+        nameplate.targetBracket.leftBottom:SetPoint("BOTTOMLEFT", nameplate.targetBracket.leftVert, "BOTTOMRIGHT", 0, 0)
+        nameplate.targetBracket.leftBottom:Show()
+        
+        -- Position right bracket ] (offset by 3px from bar, extend 4px beyond borders)
+        nameplate.targetBracket.rightVert:ClearAllPoints()
+        nameplate.targetBracket.rightVert:SetPoint("TOPLEFT", topAnchor, "TOPRIGHT", 1, 2)
+        nameplate.targetBracket.rightVert:SetPoint("BOTTOMLEFT", bottomAnchor, "BOTTOMRIGHT", 1, -2)
+        nameplate.targetBracket.rightVert:Show()
+        
+        nameplate.targetBracket.rightTop:ClearAllPoints()
+        nameplate.targetBracket.rightTop:SetPoint("TOPRIGHT", nameplate.targetBracket.rightVert, "TOPLEFT", 0, 0)
+        nameplate.targetBracket.rightTop:Show()
+        
+        nameplate.targetBracket.rightBottom:ClearAllPoints()
+        nameplate.targetBracket.rightBottom:SetPoint("BOTTOMRIGHT", nameplate.targetBracket.rightVert, "BOTTOMLEFT", 0, 0)
+        nameplate.targetBracket.rightBottom:Show()
+        
+        -- Show target glow if enabled (Dragonflight3-style top/bottom glow)
+        if Settings.showTargetGlow then
+            if nameplate.targetGlowTop then
+                nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowTop:Show()
+            end
+            if nameplate.targetGlowBottom then
+                nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
+                nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowBottom:Show()
+            end
+        end
+        -- Target always has highest z-index
+        nameplate:SetFrameStrata("TOOLTIP")
+    else
+        -- Hide all bracket parts
+        nameplate.targetBracket.leftVert:Hide()
+        nameplate.targetBracket.leftTop:Hide()
+        nameplate.targetBracket.leftBottom:Hide()
+        nameplate.targetBracket.rightVert:Hide()
+        nameplate.targetBracket.rightTop:Hide()
+        nameplate.targetBracket.rightBottom:Hide()
+        -- Hide target glow
+        if nameplate.targetGlowTop then
+            nameplate.targetGlowTop:Hide()
+        end
+        if nameplate.targetGlowBottom then
+            nameplate.targetGlowBottom:Hide()
+        end
+        -- Non-target z-index based on attacking state (only in overlap mode)
+        if nameplateOverlap then
+            if nameplate.isAttackingPlayer then
+                nameplate:SetFrameStrata("HIGH")
+            else
+                nameplate:SetFrameStrata("MEDIUM")
+            end
+        end
+    end
+
+    -- Update Cast Bar
+    local casting = nil
+    local now = GetTime()
+
+    -- Method 1: Check castDB by GUID (SuperWoW UNIT_CASTEVENT - most accurate)
+    if hasValidGUID and castDB[unitstr] then
+        local cast = castDB[unitstr]
+        -- Check if cast is still active
+        if cast.startTime + (cast.duration / 1000) > now then
+            casting = cast
+        else
+            -- Expired, clean up
+            castDB[unitstr] = nil
+        end
+    end
+
+    -- Method 2: Try UnitCastingInfo/UnitChannelInfo (SuperWoW 1.5+)
+    if not casting and superwow_active and hasValidGUID then
+        if UnitCastingInfo then
+            local spell, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(unitstr)
+            if spell then
+                casting = {
+                    spell = spell,
+                    startTime = startTime / 1000,
+                    duration = endTime - startTime,
+                    icon = texture
+                }
+            end
+        end
+
+        if not casting and UnitChannelInfo then
+            local spell, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitChannelInfo(unitstr)
+            if spell then
+                casting = {
+                    spell = spell,
+                    startTime = startTime / 1000,
+                    duration = endTime - startTime,
+                    icon = texture
+                }
+            end
+        end
+    end
+
+    -- Method 3: Fallback to castTracker (combat log based, name-based)
+    -- Only used when SuperWoW GUID-based methods didn't find a cast
+    if not casting and plateName and castTracker[plateName] and not hasValidGUID then
+        -- Clean up expired casts first
+        local i = 1
+        while i <= table.getn(castTracker[plateName]) do
+            local cast = castTracker[plateName][i]
+            if now > cast.startTime + (cast.duration / 1000) then
+                table.remove(castTracker[plateName], i)
+            else
+                -- Use first valid cast for this name
+                if not casting then
+                    casting = cast
+                end
+                i = i + 1
+            end
+        end
+    end
+
+    if casting and casting.spell then
+        local now = GetTime()
+        local start = casting.startTime
+        local duration = casting.duration
+
+        if now < start + (duration / 1000) then
+            nameplate.castbar:SetMinMaxValues(0, duration)
+            nameplate.castbar:SetValue((now - start) * 1000)
+            nameplate.castbar.text:SetText(casting.spell)
+
+            local timeLeft = (start + (duration / 1000)) - now
+            nameplate.castbar.timer:SetText(string.format("%.1fs", timeLeft))
+
+            if casting.icon and Settings.showCastbarIcon then
+                nameplate.castbar.icon:SetTexture(casting.icon)
+                nameplate.castbar.icon:ClearAllPoints()
+                
+                -- Calculate icon size based on castbar width vs healthbar width
+                local iconSize
+                
+                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                    -- Castbar wider than healthbar: icon aligns with healthbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        iconSize = Settings.healthbarHeight + Settings.manabarHeight
+                    else
+                        iconSize = Settings.healthbarHeight
+                    end
+                else
+                    -- Normal mode: icon spans healthbar + castbar (+ manabar if visible)
+                    if nameplate.mana and nameplate.mana:IsShown() then
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight + Settings.manabarHeight
+                    else
+                        iconSize = Settings.healthbarHeight + Settings.castbarHeight
+                    end
+                end
+                
+                nameplate.castbar.icon:SetWidth(iconSize)
+                nameplate.castbar.icon:SetHeight(iconSize)
+                
+                -- Position icon based on raid icon position and swap setting
+                nameplate.castbar.icon:ClearAllPoints()
+                
+                if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                    -- Independent castbar wider than healthbar: anchor to healthbar/manabar
+                    if Settings.raidIconPosition == "RIGHT" then
+                        if Settings.swapNameDebuff then
+                            nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -4, 0)
+                        else
+                            if nameplate.mana and nameplate.mana:IsShown() then
+                                nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.mana, "TOPLEFT", -4, 0)
+                            else
+                                nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.health, "TOPLEFT", -4, 0)
+                            end
+                        end
+                    else
+                        if Settings.swapNameDebuff then
+                            nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 4, 0)
+                        else
+                            if nameplate.mana and nameplate.mana:IsShown() then
+                                nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.mana, "TOPRIGHT", 4, 0)
+                            else
+                                nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.health, "TOPRIGHT", 4, 0)
+                            end
+                        end
+                    end
+                else
+                    -- Normal mode: anchor to castbar
+                    if Settings.raidIconPosition == "RIGHT" then
+                        if Settings.swapNameDebuff then
+                            -- Swapped: castbar above healthbar, anchor icon top to castbar top
+                            nameplate.castbar.icon:SetPoint("TOPRIGHT", nameplate.castbar, "TOPLEFT", -4, 0)
+                        else
+                            -- Normal: castbar below healthbar, anchor icon bottom to castbar bottom
+                            nameplate.castbar.icon:SetPoint("BOTTOMRIGHT", nameplate.castbar, "BOTTOMLEFT", -4, 0)
+                        end
+                    else
+                        if Settings.swapNameDebuff then
+                            -- Swapped: castbar above healthbar, anchor icon top to castbar top
+                            nameplate.castbar.icon:SetPoint("TOPLEFT", nameplate.castbar, "TOPRIGHT", 4, 0)
+                        else
+                            -- Normal: castbar below healthbar, anchor icon bottom to castbar bottom
+                            nameplate.castbar.icon:SetPoint("BOTTOMLEFT", nameplate.castbar, "BOTTOMRIGHT", 4, 0)
+                        end
+                    end
+                end
+                nameplate.castbar.icon:Show()
+                if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Show() end
+            else
+                nameplate.castbar.icon:Hide()
+                if nameplate.castbar.icon.border then nameplate.castbar.icon.border:Hide() end
+            end
+
+            nameplate.castbar:Show()
+        else
+            nameplate.castbar:Hide()
+        end
+    else
+        nameplate.castbar:Hide()
+    end
+
+    -- Update Debuffs
+    for i = 1, MAX_DEBUFFS do
+        nameplate.debuffs[i]:Hide()
+        nameplate.debuffs[i].count:SetText("")
+        nameplate.debuffs[i].expirationTime = 0
+    end
+
+    local debuffIndex = 1
+    local now = GetTime()
+    if superwow_active and hasValidGUID then
+        for i = 1, 40 do
+            if debuffIndex > MAX_DEBUFFS then break end
+
+            -- Get debuff info from the game
+            local texture, stacks = UnitDebuff(unitstr, i)
+            if not texture then break end
+
+            -- Try to get effect name and tracked data from SpellDB
+            local effect, duration, timeleft = nil, nil, nil
+            local isMyDebuff = false
+            if SpellDB then
+                -- Try tooltip scanning (may fail with GUID, will fallback to "target" if GUID matches)
+                effect = SpellDB:ScanDebuff(unitstr, i)
+
+                -- If GUID scanning failed, try "target" ONLY if this exact GUID is the target
+                -- (not just same name - could be different mob with same name)
+                if (not effect or effect == "") then
+                    local targetGUID = UnitGUID and UnitGUID("target")
+                    if targetGUID and targetGUID == unitstr then
+                        effect = SpellDB:ScanDebuff("target", i)
+                    end
+                end
+
+                -- Last resort: try texture-to-spell cache directly
+                if (not effect or effect == "") and SpellDB.textureToSpell and SpellDB.textureToSpell[texture] then
+                    effect = SpellDB.textureToSpell[texture]
+                end
+
+                -- Try to get tracked data from SpellDB.objects
+                -- First try by GUID (unitstr), then by name (plateName)
+                if effect and effect ~= "" then
+                    local unitlevel = UnitLevel(unitstr) or 0
+                    local data = nil
+
+                    -- Try GUID lookup first (most accurate for multiple mobs with same name)
+                    if SpellDB.objects[unitstr] then
+                        if SpellDB.objects[unitstr][unitlevel] and SpellDB.objects[unitstr][unitlevel][effect] then
+                            data = SpellDB.objects[unitstr][unitlevel][effect]
+                        elseif SpellDB.objects[unitstr][0] and SpellDB.objects[unitstr][0][effect] then
+                            data = SpellDB.objects[unitstr][0][effect]
+                        else
+                            for lvl, effects in pairs(SpellDB.objects[unitstr]) do
+                                if effects[effect] then
+                                    data = effects[effect]
+                                    break
+                                end
+                            end
+                        end
+                    end
+
+                    -- Fallback to name lookup
+                    if not data and plateName and SpellDB.objects[plateName] then
+                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
+                            data = SpellDB.objects[plateName][unitlevel][effect]
+                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
+                            data = SpellDB.objects[plateName][0][effect]
+                        else
+                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
+                                if effects[effect] then
+                                    data = effects[effect]
+                                    break
+                                end
+                            end
+                        end
+                    end
+
+                    if data and data.start and data.duration then
+                        if data.start + data.duration > now then
+                            duration = data.duration
+                            timeleft = data.duration + data.start - now
+                            isMyDebuff = data.isOwn == true
+                        end
+                    end
+                end
+
+                -- Get duration from database if we don't have tracked data
+                if effect and effect ~= "" and not duration then
+                    duration = SpellDB:GetDuration(effect, 0)
+                end
+            end
+            
+            -- Filter: show only own debuffs if enabled
+            if Settings.showOnlyMyDebuffs and not isMyDebuff then
+                -- Skip this debuff - not tracked as player's
+            else
+            local debuff = nameplate.debuffs[debuffIndex]
+            debuff.icon:SetTexture(texture)
+
+            -- Set stacks
+            if stacks and stacks > 1 then
+                debuff.count:SetText(stacks)
+                debuff.count:SetAlpha(1)
+            else
+                debuff.count:SetText("")
+                debuff.count:SetAlpha(0)
+            end
+
+            -- Calculate time left for display
+            local displayTimeLeft = nil
+            -- Use GUID (unitstr) for unique cache key, not plateName (multiple mobs can have same name)
+            local debuffKey = unitstr .. "_" .. (effect or texture)
+
+            if timeleft and timeleft > 0 then
+                -- Use accurate tracked data from SpellDB
+                displayTimeLeft = timeleft
+                -- Update cache with correct data so fallback stays in sync
+                debuffTimers[debuffKey] = {
+                    startTime = now - (duration - timeleft),
+                    duration = duration,
+                    lastSeen = now
+                }
+            else
+                -- Fallback: use debuffTimers cache
+                local fallbackDuration = duration or 1  -- Default 1s if unknown
+
+                if not debuffTimers[debuffKey] then
+                    debuffTimers[debuffKey] = {
+                        startTime = now,
+                        duration = fallbackDuration
+                    }
+                end
+                local cached = debuffTimers[debuffKey]
+                cached.lastSeen = now
+                displayTimeLeft = cached.duration - (now - cached.startTime)
+            end
+
+            -- Display timer
+            if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                debuff.expirationTime = now + displayTimeLeft
+
+                local text, r, g, b, a = FormatTime(displayTimeLeft)
+                if debuff.cd and text and text ~= "" then
+                    debuff.cd:SetText(text)
+                    if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                    debuff.cd:SetAlpha(1)
+                    debuff.cd:Show()
+                end
+                if debuff.cdframe then
+                    debuff.cdframe:Show()
+                end
+            else
+                debuff.expirationTime = 0
+                if debuff.cd then
+                    debuff.cd:SetText("")
+                    debuff.cd:SetAlpha(0)
+                end
+            end
+
+            debuff:Show()
+            debuff.icon:SetAlpha(1)
+            debuffIndex = debuffIndex + 1
+            end -- end of Settings.showOnlyMyDebuffs filter else block
+        end
+    elseif plateName then
+    -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
+        if isTarget then
+            for i = 1, 16 do
+                if debuffIndex > MAX_DEBUFFS then break end
+
+                -- Use ShaguPlates-style UnitDebuff wrapper
+                local effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
+                if SpellDB then
+                    effect, rank, texture, stacks, dtype, duration, timeleft, isOwn = SpellDB:UnitDebuff("target", i)
+                else
+                    texture, stacks = UnitDebuff("target", i)
+                end
+
+                if not texture then break end
+
+                -- Filter: show only own debuffs if enabled
+                -- isOwn flag from SpellDB indicates if this is the player's debuff
+                local isMyDebuff = isOwn == true
+                if Settings.showOnlyMyDebuffs and not isMyDebuff then
+                    -- Skip this debuff - not tracked as player's
+                else
+
+                local debuff = nameplate.debuffs[debuffIndex]
+                debuff.icon:SetTexture(texture)
+
+                -- Set stacks
+                if stacks and stacks > 1 then
+                    debuff.count:SetText(stacks)
+                    debuff.count:SetAlpha(1)
+                else
+                    debuff.count:SetText("")
+                    debuff.count:SetAlpha(0)
+                end
+
+                -- Calculate time left for display
+                local displayTimeLeft = nil
+
+                -- If we have valid timeleft from SpellDB (from tracked data), use it directly
+                if timeleft and timeleft > 0 then
+                    displayTimeLeft = timeleft
+                elseif effect and effect ~= "" and duration and duration > 0 then
+                    -- Fallback: use debuffTimers cache to track when we first saw this debuff
+                    local debuffKey = plateName .. "_" .. effect
+                    if not debuffTimers[debuffKey] then
+                        debuffTimers[debuffKey] = {
+                            startTime = now,
+                            duration = duration
+                        }
+                    end
+                    local cached = debuffTimers[debuffKey]
+                    cached.lastSeen = now
+                    displayTimeLeft = cached.duration - (now - cached.startTime)
+                end
+
+                -- Display timer
+                if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
+                    debuff.expirationTime = now + displayTimeLeft
+
+                    local text, r, g, b, a = FormatTime(displayTimeLeft)
+                    if debuff.cd and text and text ~= "" then
+                        debuff.cd:SetText(text)
+                        if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
+                        debuff.cd:SetAlpha(1)
+                        debuff.cd:Show()
+                    end
+                    if debuff.cdframe then
+                        debuff.cdframe:Show()
+                    end
+                else
+                    debuff.expirationTime = 0
+                    if debuff.cd then
+                        debuff.cd:SetText("")
+                        debuff.cd:SetAlpha(0)
+                    end
+                end
+
+                debuff:Show()
+                debuff.icon:SetAlpha(1)
+                debuffIndex = debuffIndex + 1
+                end -- end of Settings.showOnlyMyDebuffs filter else block
+            end
+        end
+    end
+
+    -- Centering logic
+    local numDebuffs = debuffIndex - 1
+    if numDebuffs > 0 then
+        local totalWidth = (numDebuffs * DEBUFF_SIZE) + (numDebuffs - 1) * 1
+        local startOffset = -totalWidth / 2
+
+        for i = 1, numDebuffs do
+            local debuff = nameplate.debuffs[i]
+            debuff:ClearAllPoints()
+            local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
+            if Settings.swapNameDebuff then
+                -- Debuffs below mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("TOP", nameplate.mana, "BOTTOM", x, 0)
+                else
+                    debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
+                end
+
+                -- Adjust name (above castbar which is above healthbar)
+                nameplate.name:ClearAllPoints()
+                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
+            else
+                -- Debuffs above mana bar (or healthbar if no mana)
+                if nameplate.mana and nameplate.mana:IsShown() then
+                    debuff:SetPoint("BOTTOM", nameplate.mana, "TOP", x, 1)
+                else
+                    debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 1)
+                end
+
+                -- Adjust name
+                nameplate.name:ClearAllPoints()
+                nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
+            end
+        end
+    else
+    -- Reset positions if no debuffs
+        UpdateNamePlateDimensions(frame)
+    end
+
+    -- Dynamic castbar positioning based on debuffs (only when castbar is visible)
+    if nameplate.castbar:IsShown() then
+        nameplate.castbar:ClearAllPoints()
+        if Settings.swapNameDebuff then
+            -- Swapped mode: castbar above healthbar (2px gap for border), align based on raid icon when wider
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
+                else
+                    nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
+                end
+            else
+                nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
+            end
+        else
+            -- Default mode: castbar below healthbar (2px gap for border), align based on raid icon when wider, move name down
+            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
+                if Settings.raidIconPosition == "RIGHT" then
+                    nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, -2)
+                else
+                    nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
+                end
+            else
+                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
+            end
+            nameplate.name:ClearAllPoints()
+            nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -16)
+        end
+    end
+end
+
+-- Check if ShaguTweaks libnameplate is available
+local function TryShaguTweaksHook()
+    if ShaguTweaks and ShaguTweaks.libnameplate then
+        Print("Using ShaguTweaks libnameplate")
+
+        -- Hook into ShaguTweaks OnInit
+        ShaguTweaks.libnameplate.OnInit["GudaPlates"] = function(plate)
+            if plate and not registry[plate] then
+                HandleNamePlate(plate)
+            end
+        end
+
+        -- Hook into ShaguTweaks OnUpdate for our updates
+        -- Note: ShaguTweaks passes 'this' as the plate in Lua 5.0 style
+        ShaguTweaks.libnameplate.OnUpdate["GudaPlates"] = function()
+            local plate = this
+            if plate and plate:IsShown() and registry[plate] then
+                UpdateNamePlate(plate)
+            end
+        end
+
+        return true
+    end
+    return false
+end
+
+-- Try ShaguTweaks hook first, otherwise use our own scanner
+local usingShaguTweaks = false
+local scanCount = 0
+local lastChildCount = 0
+-- Throttle for debuff timer cleanup
+local lastDebuffCleanup = 0
+
+GudaPlates:SetScript("OnUpdate", function()
+-- Reset tracking flags for non-SuperWoW timers once per frame
+    if not superwow_active then
+        for _, data in pairs(debuffTracker) do
+            data.usedThisFrame = nil
+        end
+    end
+
+    -- Cleanup stale debuff timers every 1 second
+    -- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
+    local now = GetTime()
+    if now - lastDebuffCleanup > 1 then
+        lastDebuffCleanup = now
+        for key, data in pairs(debuffTimers) do
+            if data.lastSeen and (now - data.lastSeen > 2) then
+                debuffTimers[key] = nil
+            end
+        end
+    end
+
+    -- Try to hook ShaguTweaks once
+    if not usingShaguTweaks and ShaguTweaks and ShaguTweaks.libnameplate then
+        if TryShaguTweaksHook() then
+            usingShaguTweaks = true
+        end
+    end
+
+    -- If using ShaguTweaks, still apply overlap settings
+    if usingShaguTweaks then
+        for plate, nameplate in pairs(registry) do
+            if plate:IsShown() then
+            -- Apply overlap/stacking setting
+                if nameplateOverlap then
+                    plate:EnableMouse(false)
+                    if plate:GetWidth() > 1 then
+                        plate:SetWidth(1)
+                        plate:SetHeight(1)
+                    end
+                    -- Z-index is handled in UpdateNamePlate (target > attacking > others)
+                    nameplate:EnableMouse(true)
+                else
+                    plate:EnableMouse(true)
+                    nameplate:EnableMouse(false)
+                end
+
+                -- Ensure dimensions are correct
+                UpdateNamePlateDimensions(plate)
+            end
+        end
+        return
+    end
+
+    -- Our own scanning logic
+    parentcount = WorldFrame:GetNumChildren()
+
+    local childs = { WorldFrame:GetChildren() }
+    for i = 1, parentcount do
+        local plate = childs[i]
+        if plate then
+            local isPlate = IsNamePlate(plate)
+            if isPlate and not registry[plate] then
+                HandleNamePlate(plate)
+            end
+        end
+    end
+
+    for plate, nameplate in pairs(registry) do
+        if plate:IsShown() then
+            UpdateNamePlate(plate)
+
+            -- Apply overlap/stacking setting
+            if nameplateOverlap then
+            -- Overlapping: disable parent mouse and shrink to 1px
+            -- This prevents game's collision avoidance from moving nameplates
+                plate:EnableMouse(false)
+
+                if plate:GetWidth() > 1 then
+                    plate:SetWidth(1)
+                    plate:SetHeight(1)
+                end
+
+                -- Z-index is handled in UpdateNamePlate (target > attacking > others)
+                -- Enable clicking on nameplate itself
+                nameplate:EnableMouse(true)
+            else
+            -- Stacking: restore parent frame size so game stacks them
+                plate:EnableMouse(true)
+                nameplate:EnableMouse(false)
+            end
+
+            -- Ensure dimensions are correct
+            UpdateNamePlateDimensions(plate)
+        end
+    end
+end)
+
+-- Helper function to match combat log patterns (ShaguPlates-style cmatch)
+local function cmatch(str, pattern)
+    if not str or not pattern then return nil end
+    -- Convert WoW format strings to Lua patterns
+    local pat = gsub(pattern, "%%%d?%$?s", "(.+)")
+    pat = gsub(pat, "%%%d?%$?d", "(%d+)")
+    for a, b, c, d in string.gfind(str, pat) do
+        return a, b, c, d
+    end
+    return nil
+end
+
+
+-- Cast icons lookup table
+local castIcons = {
+    ["Fireball"] = "Interface\\Icons\\Spell_Fire_FlameBolt",
+    ["Frostbolt"] = "Interface\\Icons\\Spell_Frost_FrostBolt02",
+    ["Shadow Bolt"] = "Interface\\Icons\\Spell_Shadow_ShadowBolt",
+    ["Greater Heal"] = "Interface\\Icons\\Spell_Holy_GreaterHeal",
+    ["Flash Heal"] = "Interface\\Icons\\Spell_Holy_FlashHeal",
+    ["Lightning Bolt"] = "Interface\\Icons\\Spell_Nature_Lightning",
+    ["Chain Lightning"] = "Interface\\Icons\\Spell_Nature_ChainLightning",
+    ["Earthbind Totem"] = "Interface\\Icons\\Spell_Nature_StrengthOfEarthTotem02",
+    ["Healing Wave"] = "Interface\\Icons\\Spell_Nature_MagicImmunity",
+    ["Fear"] = "Interface\\Icons\\Spell_Shadow_Possession",
+    ["Polymorph"] = "Interface\\Icons\\Spell_Nature_Polymorph",
+    ["Scorching Totem"] = "Interface\\Icons\\Spell_Fire_ScorchingTotem",
+    ["Slowing Poison"] = "Interface\\Icons\\Ability_PoisonSting",
+    ["Web"] = "Interface\\Icons\\Ability_Ensnare",
+    ["Cursed Blood"] = "Interface\\Icons\\Spell_Shadow_RitualOfSacrifice",
+    ["Shrink"] = "Interface\\Icons\\Spell_Shadow_AntiShadow",
+    ["Shadow Weaving"] = "Interface\\Icons\\Spell_Shadow_BlackPlague",
+    ["Smite"] = "Interface\\Icons\\Spell_Holy_HolySmite",
+    ["Mind Blast"] = "Interface\\Icons\\Spell_Shadow_UnholyFrenzy",
+    ["Holy Light"] = "Interface\\Icons\\Spell_Holy_HolyLight",
+    ["Starfire"] = "Interface\\Icons\\Spell_Arcane_StarFire",
+    ["Wrath"] = "Interface\\Icons\\Spell_Nature_AbolishMagic",
+    ["Entangling Roots"] = "Interface\\Icons\\Spell_Nature_StrangleVines",
+    ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
+    ["Regrowth"] = "Interface\\Icons\\Spell_Nature_ResistNature",
+    ["Rejuvenation"] = "Interface\\Icons\\Spell_Nature_Rejuvenation",
+}
+
+-- Helper function to parse cast starts from combat log
+local function ParseCastStart(msg)
+    if not msg then return end
+
+    local unit, spell = nil, nil
+
+    -- Try "begins to cast"
+    for u, s in string.gfind(msg, "(.+) begins to cast (.+)%.") do
+        unit, spell = u, s
+    end
+
+    -- Try "begins to perform"
+    if not unit then
+        for u, s in string.gfind(msg, "(.+) begins to perform (.+)%.") do
+            unit, spell = u, s
+        end
+    end
+
+    if unit and spell then
+        local duration = 2000 -- Default 2 seconds
+
+        if not castTracker[unit] then castTracker[unit] = {} end
+
+        local newCast = {
+            spell = spell,
+            startTime = GetTime(),
+            duration = duration,
+            icon = castIcons[spell],
+        }
+
+        table.insert(castTracker[unit], newCast)
+    end
+
+    -- Check for interrupts/failures
+    local interruptedUnit = nil
+    for u in string.gfind(msg, "(.+)'s .+ is interrupted%.") do interruptedUnit = u end
+    if not interruptedUnit then
+        for u in string.gfind(msg, "(.+)'s .+ fails%.") do interruptedUnit = u end
+    end
+
+    if interruptedUnit and castTracker[interruptedUnit] then
+        table.remove(castTracker[interruptedUnit], 1)
+    end
+end
+
+GudaPlates:SetScript("OnEvent", function()
+    -- Parse cast starts for ALL combat log events first
+    if arg1 and string.find(event, "CHAT_MSG_SPELL") then
+        ParseCastStart(arg1)
+    end
+
+    if event == "ADDON_LOADED" and arg1 == "pfUI" then
+        -- pfUI just loaded, disable its nameplates
+        if DisablePfUINameplates() then
+            Print("Disabled pfUI nameplates module")
+        end
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
+        DisablePfUINameplates()
+
+        -- Clear trackers on zone/load
+        debuffTracker = {}
+        castTracker = {}
+        castDB = {}
+        if SpellDB then SpellDB.objects = {} end
+        Print("Initialized. Scanning...")
+        if twthreat_active then
+            Print("TWThreat detected - full threat colors enabled")
+        end
+        if superwow_active then
+            Print("SuperWoW detected - GUID targeting enabled")
+            if Settings.showDebuffTimers then
+                Print("Debuff countdowns enabled")
+            end
+        end
+
+    -- SuperWoW UNIT_CASTEVENT handler (ShaguPlates-style)
+    -- This provides exact GUID of caster for accurate per-mob cast tracking
+    elseif event == "UNIT_CASTEVENT" then
+        local guid = arg1      -- GUID of the caster
+        local target = arg2    -- target GUID (can be empty)
+        local eventType = arg3 -- "START", "CAST", "CHANNEL", "FAIL"
+        local spellId = arg4   -- spell ID
+        local timer = arg5     -- duration in milliseconds
+
+        if eventType == "START" or eventType == "CAST" or eventType == "CHANNEL" then
+            -- Get spell info from SpellInfo if available
+            local spell, icon
+            if SpellInfo and spellId then
+                spell, _, icon = SpellInfo(spellId)
+            end
+
+            -- Fallback values
+            spell = spell or "Casting"
+            icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+
+            -- Skip buff procs during cast (same logic as ShaguPlates)
+            if eventType == "CAST" then
+                if castDB[guid] and castDB[guid].spell ~= spell then
+                    return
+                end
+            end
+
+            -- Store cast by GUID
+            castDB[guid] = {
+                spell = spell,
+                startTime = GetTime(),
+                duration = timer or 2000,
+                icon = icon,
+                channel = (eventType == "CHANNEL")
+            }
+        elseif eventType == "FAIL" then
+            -- Remove cast entry for this GUID
+            if castDB[guid] then
+                castDB[guid] = nil
+            end
+        end
+
+    -- ShaguPlates-style event handlers
+    elseif event == "SPELLCAST_STOP" then
+        -- For instant spells that refresh existing debuffs
+        -- The "afflicted" message doesn't fire on refresh, only on initial apply
+        if SpellDB and SpellDB.pending[3] then
+            local effect = SpellDB.pending[3]
+            local duration = SpellDB.pending[4]
+            local unitName = SpellDB.pending[5]
+            local unitlevel = SpellDB.pending[2]
+            
+            local hasObject = SpellDB.objects[unitName] and SpellDB.objects[unitName][unitlevel] and SpellDB.objects[unitName][unitlevel][effect]
+            
+            -- Check if this debuff already exists on target (refresh case)
+            if unitName and hasObject then
+                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration)
+                SpellDB:RemovePending()
+            end
+            -- If not existing, wait for combat log "afflicted" message
+        end
+
+    elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and arg1 then
+        -- Remove pending spell on failure
+        if SpellDB then
+            for _, pattern in pairs(REMOVE_PENDING_PATTERNS) do
+                local effect = cmatch(arg1, pattern)
+                if effect and SpellDB.pending[3] == effect then
+                    SpellDB:RemovePending()
+                    return
+                end
+            end
+        end
+
+    elseif event == "PLAYER_TARGET_CHANGED" or (event == "UNIT_AURA" and arg1 == "target") then
+        -- Add missing debuffs by iteration (ShaguPlates-style)
+        if SpellDB and UnitExists("target") then
+            local unitname = UnitName("target")
+            local unitlevel = UnitLevel("target") or 0
+            for i = 1, 16 do
+                local effect, rank, texture, stacks, dtype, duration, timeleft = SpellDB:UnitDebuff("target", i)
+                if not texture then break end
+                if effect and effect ~= "" then
+                    -- Don't overwrite existing timers
+                    if not SpellDB.objects[unitname] or not SpellDB.objects[unitname][unitlevel] or not SpellDB.objects[unitname][unitlevel][effect] then
+                        SpellDB:AddEffect(unitname, unitlevel, effect)
+                    end
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
+        -- Track debuff applications from combat log (ShaguPlates-style)
+        if arg1 and SpellDB then
+            -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (N)."
+            -- Use hardcoded pattern to avoid conflicts with addons like Cursive that modify AURAADDEDOTHERHARMFUL
+            local unit, effect = cmatch(arg1, "%s is afflicted by %s.")
+            -- If no match, try pattern with stack count (e.g. "X is afflicted by Y (1).")
+            if not unit or not effect then
+                for u, e in string.gfind(arg1, "(.+) is afflicted by (.+) %((%d+)%)%.") do
+                    unit, effect = u, e
+                    break
+                end
+            end
+
+            -- If we matched with Cursive's format (Debuff (1)), the stack-unaware pattern will capture "(1)" as part of the effect name
+            -- Strip any stack counts from the effect name
+            if effect then
+                for e, s in string.gfind(effect, "(.+) %((%d+)%)$") do
+                    effect = e
+                    break
+                end
+            end
+
+            if unit and effect then
+                local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
+                local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
+                
+                -- First try to persist pending spell (this has accurate rank/duration from cast hook)
+                if SpellDB.pending[3] == effect then
+                    SpellDB:PersistPending(effect)
+                elseif isRecentCast then
+                    -- Recent cast - refresh the timer (player reapplied the debuff)
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration, true)
+                else
+                    -- Not our spell, only add if not already tracked
+                    if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
+                        local dbDuration = SpellDB:GetDuration(effect, 0)
+                        SpellDB:AddEffect(unit, unitlevel, effect, dbDuration, false)
+                    end
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" or event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
+        if arg1 then
+            -- Pattern: "Spell fades from Unit."
+            for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
+                local spell = StripSpellRank(rawSpell)
+                -- Also strip stack count if present (Cursive/SuperWoW might add it)
+                for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
+                
+                debuffTracker[unit .. spell] = nil
+                -- Remove from SpellDB objects (all levels)
+                if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                    for level, effects in pairs(SpellDB.objects[unit]) do
+                        if effects[spell] then effects[spell] = nil end
+                    end
+                end
+            end
+            for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
+                local spell = StripSpellRank(rawSpell)
+                -- Also strip stack count if present
+                for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
+
+                debuffTracker[unit .. spell] = nil
+                if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                    for level, effects in pairs(SpellDB.objects[unit]) do
+                        if effects[spell] then effects[spell] = nil end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Slash command to toggle role
+SLASH_GUDAPLATES1 = "/gudaplates"
+SLASH_GUDAPLATES2 = "/gp"
+SlashCmdList["GUDAPLATES"] = function(msg)
+    msg = string.lower(msg or "")
+    if msg == "tank" then
+        playerRole = "TANK"
+        Print("Role set to TANK - Blue=you have aggro, Red=need to taunt")
+    elseif msg == "dps" or msg == "healer" then
+        playerRole = "DPS"
+        Print("Role set to DPS/HEALER - Red=mob attacking you, Blue=tank has aggro")
+    elseif msg == "toggle" then
+        if playerRole == "TANK" then
+            playerRole = "DPS"
+            Print("Role set to DPS/HEALER")
+        else
+            playerRole = "TANK"
+            Print("Role set to TANK")
+        end
+    elseif msg == "config" or msg == "options" then
+        if GudaPlatesOptionsFrame:IsShown() then
+            GudaPlatesOptionsFrame:Hide()
+        else
+            GudaPlatesOptionsFrame:Show()
+        end
+    elseif msg == "debug" or msg == "debuffs" then
+        -- Show all debuffs on current target using tooltip scanning
+        if not UnitExists("target") then
+            Print("No target selected. Target a unit with debuffs first.")
+            return
+        end
+        local targetName = UnitName("target") or "target"
+        Print("=== Debuffs on " .. targetName .. " ===")
+        local found = false
+        for i = 1, 40 do
+            local texture, count = UnitDebuff("target", i)
+            if not texture then break end
+            found = true
+            -- Use tooltip scanning to get spell name
+            local spellName = SpellDB and SpellDB:ScanDebuff("target", i)
+            local duration = spellName and SpellDB and SpellDB:GetDuration(spellName, 0)
+            local durationStr = duration and (duration .. "s") or "NOT IN DB"
+            Print(i .. ": " .. (spellName or "UNKNOWN") .. " (" .. durationStr .. ")")
+            -- Check if we have tracked data
+            if SpellDB and spellName then
+                local tracked = SpellDB:GetTrackedDebuff(targetName, spellName)
+                if tracked then
+                    local remaining = tracked.duration - (GetTime() - tracked.start)
+                    Print("   -> TRACKED: " .. string.format("%.1f", remaining) .. "s left (rank " .. (tracked.rank or 0) .. ")")
+                end
+            end
+        end
+        if not found then
+            Print("No debuffs found on target.")
+        end
+        Print("=== End of debuffs ===")
+    elseif msg == "tracked" then
+        -- Show all tracked debuffs in SpellDB (ShaguPlates-style objects)
+        Print("=== Tracked Debuffs ===")
+        if SpellDB and SpellDB.objects then
+            local count = 0
+            for unitName, levels in pairs(SpellDB.objects) do
+                for level, debuffs in pairs(levels) do
+                    for spellName, data in pairs(debuffs) do
+                        if data.start and data.duration then
+                            local remaining = data.duration - (GetTime() - data.start)
+                            if remaining > 0 then
+                                Print(unitName .. " (L" .. level .. "): " .. spellName .. " - " .. string.format("%.1f", remaining) .. "s left")
+                                count = count + 1
+                            end
+                        end
+                    end
+                end
+            end
+            if count == 0 then
+                Print("No tracked debuffs.")
+            end
+        else
+            Print("SpellDB not loaded or no tracked debuffs.")
+        end
+        Print("=== End of tracked ===")
+    elseif msg == "pending" then
+        -- Show pending spell cast (ShaguPlates-style array format)
+        Print("=== Pending Spell ===")
+        if SpellDB and SpellDB.pending and SpellDB.pending[3] then
+            local p = SpellDB.pending
+            Print("Unit: " .. (p[1] or "nil"))
+            Print("Level: " .. (p[2] or 0))
+            Print("Spell: " .. (p[3] or "nil"))
+            Print("Duration: " .. (p[4] or "nil") .. "s")
+        else
+            Print("No pending spell.")
+        end
+    elseif msg == "spelldb" then
+        -- Test SpellDB loading
+        Print("=== SpellDB Status ===")
+        if SpellDB then
+            Print("SpellDB loaded: YES")
+            Print("GetDuration: " .. tostring(SpellDB.GetDuration ~= nil))
+            Print("ScanDebuff: " .. tostring(SpellDB.ScanDebuff ~= nil))
+            -- Test Rend lookup
+            local rendDur = SpellDB:GetDuration("Rend", 2)
+            Print("Test - Rend Rank 2 -> " .. tostring(rendDur) .. "s")
+            local rendMax = SpellDB:GetDuration("Rend", 0)
+            Print("Test - Rend default -> " .. tostring(rendMax) .. "s")
+        else
+            Print("SpellDB loaded: NO")
+            Print("GudaPlates_SpellDB: " .. tostring(GudaPlates_SpellDB ~= nil))
+        end
+    elseif string.find(msg, "^othertank") then
+        -- Set OTHER_TANK color: /gp othertank <preset> or /gp othertank r g b
+        local args = string.gsub(msg, "^othertank%s*", "")
+        local COLOR_PRESETS = {
+            lightblue = {0.6, 0.8, 1.0, 1},
+            cyan = {0.0, 1.0, 1.0, 1},
+            green = {0.0, 0.8, 0.0, 1},
+            teal = {0.0, 0.5, 0.5, 1},
+            purple = {0.6, 0.4, 0.8, 1},
+            pink = {1.0, 0.6, 0.8, 1},
+            yellow = {1.0, 1.0, 0.0, 1},
+            white = {1.0, 1.0, 1.0, 1},
+            gray = {0.5, 0.5, 0.5, 1},
+        }
+        if args == "" then
+            Print("OTHER_TANK color presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
+            Print("Usage: /gp othertank <preset> or /gp othertank <r> <g> <b> (0-1 values)")
+            local c = THREAT_COLORS.TANK.OTHER_TANK
+            Print("Current: " .. string.format("%.2f %.2f %.2f", c[1], c[2], c[3]))
+        elseif COLOR_PRESETS[args] then
+            THREAT_COLORS.TANK.OTHER_TANK = COLOR_PRESETS[args]
+            SaveSettings()
+            Print("OTHER_TANK color set to: " .. args)
+        else
+            -- Try to parse as RGB values
+            local r, g, b = string.match(args, "([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
+            if r and g and b then
+                r, g, b = tonumber(r), tonumber(g), tonumber(b)
+                if r and g and b and r >= 0 and r <= 1 and g >= 0 and g <= 1 and b >= 0 and b <= 1 then
+                    THREAT_COLORS.TANK.OTHER_TANK = {r, g, b, 1}
+                    SaveSettings()
+                    Print("OTHER_TANK color set to: " .. string.format("%.2f %.2f %.2f", r, g, b))
+                else
+                    Print("Invalid RGB values. Use values between 0 and 1.")
+                end
+            else
+                Print("Unknown preset: " .. args)
+                Print("Available presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
+            end
+        end
+    elseif msg == "finddebuff" then
+        if UnitExists("target") then
+            Print("=== All Debuffs on Target ===")
+            for i = 1, 40 do
+                local texture, stacks = UnitDebuff("target", i)
+                if not texture then break end
+
+                -- Try to get spell name via tooltip
+                local spellName = "Unknown"
+                if SpellDB then
+                    spellName = SpellDB:ScanDebuff("target", i) or "Unknown"
+                end
+
+                Print(i .. ": " .. texture .. " -> " .. spellName)
+            end
+        else
+            Print("No target selected")
+        end
+    else
+        Print("Commands: /gp tank | /gp dps | /gp toggle | /gp config")
+        Print("         /gp othertank <color> - Set Other Tank Aggro color")
+        Print("         /gp debug - Show target debuffs with tooltip scanning")
+        Print("         /gp tracked - Show all tracked debuffs")
+        Print("         /gp pending - Show pending spell cast")
+        Print("         /gp spelldb - Test SpellDB loading")
+        Print("Current role: " .. playerRole)
+    end
+end
+
+-- Saved Variables (will be loaded from SavedVariables)
+GudaPlatesDB = GudaPlatesDB or {}
+
+local function SaveSettings()
+    GudaPlatesDB.playerRole = playerRole
+    GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
+    GudaPlatesDB.nameplateOverlap = nameplateOverlap
+    GudaPlatesDB.minimapAngle = minimapAngle
+    GudaPlatesDB.Settings = Settings  -- Save entire Settings table
+end
+
+local function LoadSettings()
+    if GudaPlatesDB.playerRole then
+        playerRole = GudaPlatesDB.playerRole
+    end
+    if GudaPlatesDB.nameplateOverlap ~= nil then
+        nameplateOverlap = GudaPlatesDB.nameplateOverlap
+    end
+    if GudaPlatesDB.minimapAngle then
+        minimapAngle = GudaPlatesDB.minimapAngle
+    end
+    -- Load Settings table
+    if GudaPlatesDB.Settings then
+        for key, value in pairs(GudaPlatesDB.Settings) do
+            Settings[key] = value
+        end
+    end
+    -- Legacy support: load old individual settings into Settings table
+    if GudaPlatesDB.healthbarHeight then Settings.healthbarHeight = GudaPlatesDB.healthbarHeight end
+    if GudaPlatesDB.healthbarWidth then Settings.healthbarWidth = GudaPlatesDB.healthbarWidth end
+    if GudaPlatesDB.healthFontSize then Settings.healthFontSize = GudaPlatesDB.healthFontSize end
+    if GudaPlatesDB.levelFontSize then Settings.levelFontSize = GudaPlatesDB.levelFontSize end
+    if GudaPlatesDB.nameFontSize then Settings.nameFontSize = GudaPlatesDB.nameFontSize end
+    if GudaPlatesDB.raidIconPosition then Settings.raidIconPosition = GudaPlatesDB.raidIconPosition end
+    if GudaPlatesDB.swapNameDebuff ~= nil then Settings.swapNameDebuff = GudaPlatesDB.swapNameDebuff end
+    if GudaPlatesDB.showDebuffTimers ~= nil then Settings.showDebuffTimers = GudaPlatesDB.showDebuffTimers end
+    if GudaPlatesDB.showOnlyMyDebuffs ~= nil then Settings.showOnlyMyDebuffs = GudaPlatesDB.showOnlyMyDebuffs end
+    if GudaPlatesDB.showManaBar ~= nil then Settings.showManaBar = GudaPlatesDB.showManaBar end
+    if GudaPlatesDB.castbarHeight then Settings.castbarHeight = GudaPlatesDB.castbarHeight end
+    if GudaPlatesDB.castbarWidth then Settings.castbarWidth = GudaPlatesDB.castbarWidth end
+    if GudaPlatesDB.castbarIndependent ~= nil then Settings.castbarIndependent = GudaPlatesDB.castbarIndependent end
+    if GudaPlatesDB.showCastbarIcon ~= nil then Settings.showCastbarIcon = GudaPlatesDB.showCastbarIcon end
+    -- Load THREAT_COLORS
     if GudaPlatesDB.THREAT_COLORS then
         for role, colors in pairs(GudaPlatesDB.THREAT_COLORS) do
             if THREAT_COLORS[role] then
                 for colorType, colorVal in pairs(colors) do
-                    if THREAT_COLORS[role][colorType] then THREAT_COLORS[role][colorType] = colorVal end
+                    if THREAT_COLORS[role][colorType] then
+                        THREAT_COLORS[role][colorType] = colorVal
+                    end
                 end
             end
+        end
+        if GudaPlatesDB.THREAT_COLORS.TAPPED then
+            THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
+        end
+        if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
+            THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
         end
     end
 end
 
 -- Minimap Button
-local function CreateMinimapButton()
-    local btn = CreateFrame("Button", "GudaPlatesMinimapButton", Minimap)
-    btn:SetWidth(32) btn:SetHeight(32) btn:SetFrameStrata("LOW") btn:SetToplevel(true) btn:SetMovable(true) btn:EnableMouse(true)
-    btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    
-    local icon = btn:CreateTexture(nil, "BACKGROUND")
-    icon:SetTexture("Interface\\Icons\\Spell_Nature_WispSplode")
-    icon:SetWidth(20) icon:SetHeight(20) icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
-    
-    local border = btn:CreateTexture(nil, "OVERLAY")
-    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    border:SetWidth(52) border:SetHeight(52) border:SetPoint("CENTER", btn, "CENTER", 10, -10)
+local minimapButton = CreateFrame("Button", "GudaPlatesMinimapButton", Minimap)
+minimapButton:SetWidth(32)
+minimapButton:SetHeight(32)
+minimapButton:SetFrameStrata("LOW")
+minimapButton:SetToplevel(true)
+minimapButton:SetMovable(true)
+minimapButton:EnableMouse(true)
+minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 0, 0)
+minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-    local function UpdatePos()
-        local rad = math.rad(GudaPlates.minimapAngle)
-        local x = math.cos(rad) * 80
-        local y = math.sin(rad) * 80
-        btn:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - x, y - 52)
+local minimapIcon = minimapButton:CreateTexture(nil, "BACKGROUND")
+minimapIcon:SetTexture("Interface\\Icons\\Spell_Nature_WispSplode")
+minimapIcon:SetWidth(20)
+minimapIcon:SetHeight(20)
+minimapIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+minimapIcon:SetPoint("CENTER", minimapButton, "CENTER", 0, 0)
+
+local minimapBorder = minimapButton:CreateTexture(nil, "OVERLAY")
+minimapBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+minimapBorder:SetWidth(52)
+minimapBorder:SetHeight(52)
+minimapBorder:SetPoint("CENTER", minimapButton, "CENTER", 10, -10)
+
+-- Minimap button dragging
+local function UpdateMinimapButtonPosition()
+    local rad = math.rad(minimapAngle)
+    local x = math.cos(rad) * 80
+    local y = math.sin(rad) * 80
+    minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - x, y - 52)
+end
+UpdateMinimapButtonPosition()
+
+minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+minimapButton:RegisterForDrag("LeftButton", "RightButton")
+minimapButton:SetScript("OnDragStart", function()
+    this.dragging = true
+    this:LockHighlight()
+end)
+
+minimapButton:SetScript("OnDragStop", function()
+    this.dragging = false
+    this:UnlockHighlight()
+    SaveSettings()
+end)
+
+minimapButton:SetScript("OnUpdate", function()
+    if this.dragging then
+        local xpos, ypos = GetCursorPosition()
+        local xmin, ymin = Minimap:GetLeft() or 400, Minimap:GetBottom() or 400
+        local mscale = Minimap:GetEffectiveScale()
+
+        -- TrinketMenu logic:
+        -- xpos = xmin - xpos / mscale + 70
+        -- ypos = ypos / mscale - ymin - 70
+        -- angle = math.deg(math.atan2(ypos, xpos))
+
+        local dx = xmin - xpos / mscale + 70
+        local dy = ypos / mscale - ymin - 70
+        minimapAngle = math.deg(math.atan2(dy, dx))
+        UpdateMinimapButtonPosition()
     end
-    UpdatePos()
-    GudaPlates.UpdateMinimapButtonPosition = UpdatePos
+end)
 
-    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    btn:RegisterForDrag("LeftButton", "RightButton")
-    btn:SetScript("OnDragStart", function() this.dragging = true this:LockHighlight() end)
-    btn:SetScript("OnDragStop", function() this.dragging = false this:UnlockHighlight() GudaPlates.SaveSettings() end)
-    btn:SetScript("OnUpdate", function()
-        if this.dragging then
-            local xpos, ypos = GetCursorPosition()
-            local xmin, ymin = Minimap:GetLeft() or 400, Minimap:GetBottom() or 400
-            local mscale = Minimap:GetEffectiveScale()
-            local dx = xmin - xpos / mscale + 70
-            local dy = ypos / mscale - ymin - 70
-            GudaPlates.minimapAngle = math.deg(math.atan2(dy, dx))
-            UpdatePos()
+minimapButton:SetScript("OnClick", function()
+    if arg1 == "RightButton" or IsControlKeyDown() then
+        if GudaPlatesOptionsFrame:IsShown() then
+            GudaPlatesOptionsFrame:Hide()
+        else
+            GudaPlatesOptionsFrame:Show()
         end
-    end)
-    btn:SetScript("OnClick", function()
-        if arg1 == "RightButton" or IsControlKeyDown() then
-            local frame = getglobal("GudaPlatesOptionsFrame")
-            if frame then
-                if frame:IsShown() then frame:Hide() else frame:Show() end
+    end
+end)
+
+minimapButton:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+    GameTooltip:AddLine("GudaPlates")
+    GameTooltip:AddLine("Left-Drag to move button", 1, 1, 1)
+    GameTooltip:AddLine("Right-Click or Ctrl-Left-Click for settings", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+end)
+
+minimapButton:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Options Frame
+local optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
+optionsFrame:SetFrameStrata("DIALOG")
+optionsFrame:SetFrameLevel(100)
+optionsFrame:SetWidth(610)
+optionsFrame:SetHeight(540)
+optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+optionsFrame:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+})
+optionsFrame:SetMovable(true)
+optionsFrame:EnableMouse(true)
+optionsFrame:RegisterForDrag("LeftButton")
+optionsFrame:SetScript("OnDragStart", function() this:StartMoving() end)
+optionsFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+optionsFrame:Hide()
+
+-- Title
+local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+title:SetPoint("TOP", optionsFrame, "TOP", 0, -20)
+title:SetText("GudaPlates Settings")
+
+-- Close Button
+local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
+closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -5, -5)
+
+-- Tab Content Frames
+local generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
+generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+
+local healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
+healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+healthbarTab:Hide()
+
+local manaTab = CreateFrame("Frame", "GudaPlatesManaTab", optionsFrame)
+manaTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+manaTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+manaTab:Hide()
+
+local castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
+castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+castbarTab:Hide()
+
+local colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
+colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
+colorsTab:Hide()
+
+-- Tab Buttons
+local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
+generalTabButton:SetWidth(110)
+generalTabButton:SetHeight(28)
+generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
+
+local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
+generalTabText:SetText("General")
+
+local generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
+generalTabBg:SetTexture(1, 1, 1, 0.3)
+generalTabBg:SetAllPoints()
+
+local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
+healthbarTabButton:SetWidth(110)
+healthbarTabButton:SetHeight(28)
+healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
+
+local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
+healthbarTabText:SetText("Health")
+
+local healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
+healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+healthbarTabBg:SetAllPoints()
+
+local manaTabButton = CreateFrame("Button", "GudaPlatesManaTabButton", optionsFrame)
+manaTabButton:SetWidth(110)
+manaTabButton:SetHeight(28)
+manaTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
+
+local manaTabText = manaTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaTabText:SetPoint("CENTER", manaTabButton, "CENTER", 0, 0)
+manaTabText:SetText("Mana")
+
+local manaTabBg = manaTabButton:CreateTexture(nil, "BACKGROUND")
+manaTabBg:SetTexture(1, 1, 1, 0.1)
+manaTabBg:SetAllPoints()
+
+local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
+castbarTabButton:SetWidth(110)
+castbarTabButton:SetHeight(28)
+castbarTabButton:SetPoint("LEFT", manaTabButton, "RIGHT", 2, 0)
+
+local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
+castbarTabText:SetText("Castbar")
+
+local castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
+castbarTabBg:SetTexture(1, 1, 1, 0.1)
+castbarTabBg:SetAllPoints()
+
+local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
+colorsTabButton:SetWidth(110)
+colorsTabButton:SetHeight(28)
+colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
+
+local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
+colorsTabText:SetText("Colors")
+
+local colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
+colorsTabBg:SetTexture(1, 1, 1, 0.1)
+colorsTabBg:SetAllPoints()
+
+local function SelectTab(tabName)
+    generalTab:Hide()
+    healthbarTab:Hide()
+    manaTab:Hide()
+    castbarTab:Hide()
+    colorsTab:Hide()
+    generalTabBg:SetTexture(1, 1, 1, 0.1)
+    healthbarTabBg:SetTexture(1, 1, 1, 0.1)
+    manaTabBg:SetTexture(1, 1, 1, 0.1)
+    castbarTabBg:SetTexture(1, 1, 1, 0.1)
+    colorsTabBg:SetTexture(1, 1, 1, 0.1)
+    
+    if tabName == "general" then
+        generalTab:Show()
+        generalTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "healthbar" then
+        healthbarTab:Show()
+        healthbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "mana" then
+        manaTab:Show()
+        manaTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "castbar" then
+        castbarTab:Show()
+        castbarTabBg:SetTexture(1, 1, 1, 0.3)
+    elseif tabName == "colors" then
+        colorsTab:Show()
+        colorsTabBg:SetTexture(1, 1, 1, 0.3)
+    end
+end
+
+generalTabButton:SetScript("OnClick", function() SelectTab("general") end)
+healthbarTabButton:SetScript("OnClick", function() SelectTab("healthbar") end)
+manaTabButton:SetScript("OnClick", function() SelectTab("mana") end)
+castbarTabButton:SetScript("OnClick", function() SelectTab("castbar") end)
+colorsTabButton:SetScript("OnClick", function() SelectTab("colors") end)
+
+-- Color picker helper
+local function ShowColorPicker(r, g, b, callback)
+    ColorPickerFrame.func = function()
+        local r, g, b = ColorPickerFrame:GetColorRGB()
+        callback(r, g, b)
+    end
+    ColorPickerFrame.hasOpacity = false
+    ColorPickerFrame.previousValues = {r, g, b}
+    ColorPickerFrame.cancelFunc = function()
+        local prev = ColorPickerFrame.previousValues
+        callback(prev[1], prev[2], prev[3])
+    end
+    ColorPickerFrame:SetColorRGB(r, g, b)
+    ColorPickerFrame:Hide()
+    ColorPickerFrame:Show()
+end
+
+-- Create color swatch helper
+local swatches = {}
+local function CreateColorSwatch(parent, x, y, label, colorTable, colorKey)
+    local swatchLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    swatchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    swatchLabel:SetText(label)
+
+    local swatch = CreateFrame("Button", nil, parent)
+    swatch:SetWidth(20)
+    swatch:SetHeight(20)
+    swatch:SetPoint("LEFT", swatchLabel, "RIGHT", 10, 0)
+
+    local border = swatch:CreateTexture(nil, "BACKGROUND")
+    border:SetTexture(0, 0, 0, 1)
+    border:SetAllPoints()
+
+    local swatchBg = swatch:CreateTexture(nil, "ARTWORK")
+    swatchBg:SetTexture(1, 1, 1, 1)
+    swatchBg:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+    swatchBg:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+
+    local function UpdateSwatchColor()
+        local c = colorTable[colorKey]
+        swatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+    end
+    UpdateSwatchColor()
+
+    table.insert(swatches, UpdateSwatchColor)
+
+    swatch:SetScript("OnClick", function()
+        local c = colorTable[colorKey]
+        ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+            if r then
+                colorTable[colorKey] = {r, g, b, 1}
+                UpdateSwatchColor()
+                SaveSettings()
+                for plate, _ in pairs(registry) do
+                    if plate:IsShown() then
+                        UpdateNamePlate(plate)
+                    end
+                end
             end
-        end
+        end)
     end)
-    btn:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-        GameTooltip:AddLine("GudaPlates")
-        GameTooltip:AddLine("Left-Drag to move button", 1, 1, 1)
-        GameTooltip:AddLine("Right-Click or Ctrl-Left-Click for settings", 0.7, 0.7, 0.7)
+
+    swatch:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Click to change color")
         GameTooltip:Show()
     end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    swatch:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return swatch
 end
 
--- Slash Commands
-SLASH_GUDAPLATES1 = "/gudaplates"
-SLASH_GUDAPLATES2 = "/gp"
-SlashCmdList["GUDAPLATES"] = function(msg)
-    if msg == "tank" then
-        GudaPlates.playerRole = "TANK"
-        GudaPlates.SaveSettings()
-        Print("Role set to TANK")
-    elseif msg == "dps" then
-        GudaPlates.playerRole = "DPS"
-        GudaPlates.SaveSettings()
-        Print("Role set to DPS")
-    elseif msg == "config" then
-        local frame = getglobal("GudaPlatesOptionsFrame")
-        if frame then
-            if frame:IsShown() then frame:Hide() else frame:Show() end
-        end
+-- ==========================================
+-- GENERAL TAB CONTENT
+-- ==========================================
+
+-- Font Dropdown (at the top left)
+local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
+fontLabel:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -25)
+fontLabel:SetText("Font:")
+
+local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
+fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
+
+local fontOptions = {
+    {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
+    {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Continuum.ttf", text = "Continuum"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Expressway.ttf", text = "Expressway"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Homespun.ttf", text = "Homespun"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Hooge.ttf", text = "Hooge"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
+}
+
+local function FontDropdown_OnClick()
+    Settings.textFont = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function FontDropdown_Initialize()
+    for _, opt in ipairs(fontOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FontDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
+UIDropDownMenu_SetWidth(180, fontDropdown)
+UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
+
+-- Nameplate Mode Selection (on the right side of Font dropdown)
+local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
+overlapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 280, -15)
+local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
+overlapLabel:SetText("Overlapping Nameplates")
+overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+overlapCheckbox:SetScript("OnClick", function()
+    nameplateOverlap = this:GetChecked() == 1
+    SaveSettings()
+    if nameplateOverlap then
+        Print("Nameplates set to OVERLAPPING")
     else
-        Print("Commands: /gp tank | /gp dps | /gp config")
+        Print("Nameplates set to STACKING")
+    end
+end)
+overlapCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Overlapping Nameplates")
+    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+overlapCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Level Font Slider (in General tab)
+local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", generalTab, "OptionsSliderTemplate")
+levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -70)
+levelFontSlider:SetWidth(450)
+levelFontSlider:SetMinMaxValues(8, 20)
+levelFontSlider:SetValueStep(1)
+local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
+levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
+levelFontSlider:SetScript("OnValueChanged", function()
+    Settings.levelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Name Font Slider (in General tab)
+local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", generalTab, "OptionsSliderTemplate")
+nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -110)
+nameFontSlider:SetWidth(450)
+nameFontSlider:SetMinMaxValues(8, 20)
+nameFontSlider:SetValueStep(1)
+local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
+nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
+getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
+nameFontSlider:SetScript("OnValueChanged", function()
+    Settings.nameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Raid Mark Position Checkbox
+local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
+raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -150)
+local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
+raidMarkLabel:SetText("Raid Mark on Right")
+raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+raidMarkCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        Settings.raidIconPosition = "RIGHT"
+    else
+        Settings.raidIconPosition = "LEFT"
+    end
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Swap Name and Debuffs Checkbox
+local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
+swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -150)
+local swapLabel = getglobal(swapCheckbox:GetName().."Text")
+swapLabel:SetText("Swap Name and Debuffs")
+swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+swapCheckbox:SetScript("OnClick", function()
+    Settings.swapNameDebuff = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Show Debuff Timers Checkbox
+local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
+debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -185)
+local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
+debuffTimerLabel:SetText("Show Debuff Timers")
+debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+debuffTimerCheckbox:SetScript("OnClick", function()
+    Settings.showDebuffTimers = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Show Only My Debuffs Checkbox
+local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -185)
+local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
+onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
+onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+onlyMyDebuffsCheckbox:SetScript("OnClick", function()
+    Settings.showOnlyMyDebuffs = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Show Target Glow Checkbox
+local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
+targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -220)
+local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
+targetGlowLabel:SetText("Show Target Glow")
+targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+targetGlowCheckbox:SetScript("OnClick", function()
+    Settings.showTargetGlow = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+targetGlowCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Target Glow")
+    GameTooltip:AddLine("Shows a glowing effect around your", 1, 1, 1, 1)
+    GameTooltip:AddLine("current target's nameplate.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+targetGlowCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- ==========================================
+-- HEALTHBAR TAB CONTENT
+-- ==========================================
+
+-- Healthbar Height Slider
+local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", healthbarTab, "OptionsSliderTemplate")
+heightSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -20)
+heightSlider:SetWidth(450)
+heightSlider:SetMinMaxValues(6, 25)
+heightSlider:SetValueStep(1)
+local heightText = getglobal(heightSlider:GetName() .. "Text")
+heightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(heightSlider:GetName() .. "Low"):SetText("6")
+getglobal(heightSlider:GetName() .. "High"):SetText("25")
+heightSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Healthbar Width Slider
+local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", healthbarTab, "OptionsSliderTemplate")
+widthSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -60)
+widthSlider:SetWidth(450)
+widthSlider:SetMinMaxValues(72, 150)
+widthSlider:SetValueStep(1)
+local widthText = getglobal(widthSlider:GetName() .. "Text")
+widthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(widthSlider:GetName() .. "Low"):SetText("72")
+getglobal(widthSlider:GetName() .. "High"):SetText("150")
+widthSlider:SetScript("OnValueChanged", function()
+    Settings.healthbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Health Font Size Slider
+local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", healthbarTab, "OptionsSliderTemplate")
+healthFontSlider:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -100)
+healthFontSlider:SetWidth(450)
+healthFontSlider:SetMinMaxValues(6, 20)
+healthFontSlider:SetValueStep(1)
+local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
+healthFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
+healthFontSlider:SetScript("OnValueChanged", function()
+    Settings.healthFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Show Health Points Checkbox
+local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", healthbarTab, "UICheckButtonTemplate")
+showHealthTextCheckbox:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -140)
+local showHealthTextLabel = getglobal(showHealthTextCheckbox:GetName().."Text")
+showHealthTextLabel:SetText("Show Health Points")
+showHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+showHealthTextCheckbox:SetScript("OnClick", function()
+    Settings.showHealthText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Health Text Position Dropdown
+local healthPosLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthPosLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -175)
+healthPosLabel:SetText("Health Text Position:")
+
+local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthPosDropdown:SetPoint("TOPLEFT", healthPosLabel, "TOPRIGHT", -10, 8)
+
+local healthPosOptions = {"LEFT", "CENTER", "RIGHT"}
+local healthPosLabels = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"}
+
+local function HealthPosDropdown_OnClick()
+    Settings.healthTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
 end
 
--- Main Event Loop
-eventFrame:RegisterEvent("VARIABLES_LOADED")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("UNIT_AURA")
-eventFrame:RegisterEvent("UNIT_CASTEVENT")
-
-local function IsNamePlate(frame)
-    if frame:GetName() then return false end
-    local region = frame:GetRegions()
-    return region and region:GetObjectType() == "Texture" and region:GetTexture() == "Interface\\Tooltips\\Nameplate-Border"
+local function HealthPosDropdown_Initialize()
+    for _, pos in ipairs(healthPosOptions) do
+        local info = {}
+        info.text = healthPosLabels[pos]
+        info.value = pos
+        info.func = HealthPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
 end
 
--- Handle nameplate scanning
-eventFrame:SetScript("OnUpdate", function()
-    local now = GetTime()
-    if (this.tick or 0) > now then return else this.tick = now + 0.05 end
+UIDropDownMenu_Initialize(healthPosDropdown, HealthPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(100, healthPosDropdown)
+UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
 
-    local frames = {WorldFrame:GetChildren()}
-    for _, frame in ipairs(frames) do
-        if IsNamePlate(frame) then
-            if not GudaPlates.registry[frame] then
-                GudaPlates.HookNamePlate(frame)
+-- Health Text Format Dropdown
+local healthFormatLabel = healthbarTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthFormatLabel:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 5, -210)
+healthFormatLabel:SetText("Health Text Format:")
+
+local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", healthbarTab, "UIDropDownMenuTemplate")
+healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
+
+local healthFormatOptions = {
+    {value = 1, text = "Percent"},
+    {value = 2, text = "Current HP"},
+    {value = 3, text = "HP (Percent%)"},
+    {value = 4, text = "Current - Max"},
+    {value = 5, text = "Current - Max (%)"},
+}
+
+local function HealthFormatDropdown_OnClick()
+    Settings.healthTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesHealthFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function HealthFormatDropdown_Initialize()
+    for _, opt in ipairs(healthFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = HealthFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(healthFormatDropdown, HealthFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, healthFormatDropdown)
+UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
+
+-- ==========================================
+-- MANA TAB CONTENT
+-- ==========================================
+
+-- Mana Section Header
+local manaSectionHeader = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaSectionHeader:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -20)
+manaSectionHeader:SetText("|cff00ffffMana Bar Settings:|r")
+
+-- Show Mana Bar Checkbox
+local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", manaTab, "UICheckButtonTemplate")
+manaBarCheckbox:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -45)
+local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
+manaBarLabel:SetText("Show Mana Bar")
+manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Show Mana Text Checkbox
+local showManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowManaTextCheckbox", manaTab, "UICheckButtonTemplate")
+showManaTextCheckbox:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 200, -45)
+local showManaTextLabel = getglobal(showManaTextCheckbox:GetName().."Text")
+showManaTextLabel:SetText("Show Mana Points")
+showManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Manabar Height Slider
+local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", manaTab, "OptionsSliderTemplate")
+manaHeightSlider:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -90)
+manaHeightSlider:SetWidth(450)
+manaHeightSlider:SetMinMaxValues(2, 10)
+manaHeightSlider:SetValueStep(1)
+local manaHeightText = getglobal(manaHeightSlider:GetName() .. "Text")
+manaHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(manaHeightSlider:GetName() .. "Low"):SetText("2")
+getglobal(manaHeightSlider:GetName() .. "High"):SetText("10")
+manaHeightSlider:SetScript("OnValueChanged", function()
+    Settings.manabarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Mana Text Position Dropdown (above Mana Text Format)
+local manaPosLabel = manaTab:CreateFontString("GudaPlatesManaPosLabel", "OVERLAY", "GameFontNormal")
+manaPosLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -130)
+manaPosLabel:SetText("Mana Text Position:")
+
+local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", manaTab, "UIDropDownMenuTemplate")
+manaPosDropdown:SetPoint("TOPLEFT", manaPosLabel, "TOPRIGHT", -10, 8)
+
+local manaPosOptions = {
+    {value = "LEFT", text = "Left"},
+    {value = "CENTER", text = "Center"},
+    {value = "RIGHT", text = "Right"},
+}
+
+local function ManaPosDropdown_OnClick()
+    Settings.manaTextPosition = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesManaPosDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function ManaPosDropdown_Initialize()
+    for _, opt in ipairs(manaPosOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = ManaPosDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(manaPosDropdown, ManaPosDropdown_Initialize)
+UIDropDownMenu_SetWidth(80, manaPosDropdown)
+UIDropDownMenu_SetSelectedValue(manaPosDropdown, Settings.manaTextPosition)
+
+-- Mana Text Format Dropdown (below Mana Text Position)
+local manaFormatLabel = manaTab:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
+manaFormatLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -165)
+manaFormatLabel:SetText("Mana Text Format:")
+
+local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", manaTab, "UIDropDownMenuTemplate")
+manaFormatDropdown:SetPoint("TOPLEFT", manaFormatLabel, "TOPRIGHT", -10, 8)
+
+local manaFormatOptions = {
+    {value = 1, text = "Percent"},
+    {value = 2, text = "Current Mana"},
+    {value = 3, text = "Mana (Percent%)"},
+}
+
+local function ManaFormatDropdown_OnClick()
+    Settings.manaTextFormat = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesManaFormatDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end
+
+local function ManaFormatDropdown_Initialize()
+    for _, opt in ipairs(manaFormatOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = ManaFormatDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(manaFormatDropdown, ManaFormatDropdown_Initialize)
+UIDropDownMenu_SetWidth(150, manaFormatDropdown)
+UIDropDownMenu_SetSelectedValue(manaFormatDropdown, Settings.manaTextFormat)
+
+-- Mana Text Color
+local manaTextColorLabel = manaTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+manaTextColorLabel:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 5, -215)
+manaTextColorLabel:SetText("Mana Text Color:")
+
+local manaTextColorSwatch = CreateFrame("Button", nil, manaTab)
+manaTextColorSwatch:SetWidth(20)
+manaTextColorSwatch:SetHeight(20)
+manaTextColorSwatch:SetPoint("LEFT", manaTextColorLabel, "RIGHT", 10, 0)
+
+local manaTextColorBorder = manaTextColorSwatch:CreateTexture(nil, "BACKGROUND")
+manaTextColorBorder:SetTexture(0, 0, 0, 1)
+manaTextColorBorder:SetAllPoints()
+
+local manaTextColorBg = manaTextColorSwatch:CreateTexture(nil, "ARTWORK")
+manaTextColorBg:SetTexture(1, 1, 1, 1)
+manaTextColorBg:SetPoint("TOPLEFT", manaTextColorSwatch, "TOPLEFT", 2, -2)
+manaTextColorBg:SetPoint("BOTTOMRIGHT", manaTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateManaTextColorSwatch()
+    local c = Settings.manaTextColor
+    manaTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateManaTextColorSwatch()
+table.insert(swatches, UpdateManaTextColorSwatch)
+
+manaTextColorSwatch:SetScript("OnClick", function()
+    local c = Settings.manaTextColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.manaTextColor = {r, g, b, 1}
+            UpdateManaTextColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() then
+                    UpdateNamePlate(plate)
+                end
             end
-            GudaPlates.UpdateNamePlate(frame)
+        end
+    end)
+end)
+
+manaTextColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change mana text color")
+    GameTooltip:Show()
+end)
+
+manaTextColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Function to update mana options enabled state
+local function UpdateManaOptionsState()
+    local enabled = Settings.showManaBar
+    local manaTextCb = getglobal("GudaPlatesShowManaTextCheckbox")
+    local manaTextLbl = getglobal("GudaPlatesShowManaTextCheckboxText")
+    local manaFmtLbl = getglobal("GudaPlatesManaFormatLabel")
+    local manaPosLbl = getglobal("GudaPlatesManaPosLabel")
+    local manaHtSliderText = getglobal("GudaPlatesManaHeightSliderText")
+    if enabled then
+        if manaTextCb then manaTextCb:Enable() end
+        if manaTextLbl then manaTextLbl:SetTextColor(1, 1, 1) end
+        if manaFmtLbl then manaFmtLbl:SetTextColor(1, 0.82, 0) end
+        if manaPosLbl then manaPosLbl:SetTextColor(1, 0.82, 0) end
+        if manaHtSliderText then manaHtSliderText:SetTextColor(1, 0.82, 0) end
+    else
+        if manaTextCb then manaTextCb:Disable() end
+        if manaTextLbl then manaTextLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaFmtLbl then manaFmtLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaPosLbl then manaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
+        if manaHtSliderText then manaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
+    end
+end
+
+-- Mana Bar Checkbox OnClick
+manaBarCheckbox:SetScript("OnClick", function()
+    Settings.showManaBar = this:GetChecked() == 1
+    UpdateManaOptionsState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+manaBarCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Show Mana Bar")
+    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
+    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+manaBarCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Show Mana Text Checkbox OnClick
+showManaTextCheckbox:SetScript("OnClick", function()
+    Settings.showManaText = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- ==========================================
+-- CASTBAR TAB CONTENT
+-- ==========================================
+
+-- Show Spell Icon Checkbox
+local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIconCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -10)
+local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
+castbarIconLabel:SetText("Show Spell Icon")
+castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+castbarIconCheckbox:SetScript("OnClick", function()
+    Settings.showCastbarIcon = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+-- Castbar Height Slider
+local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", castbarTab, "OptionsSliderTemplate")
+castbarHeightSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -60)
+castbarHeightSlider:SetWidth(450)
+castbarHeightSlider:SetMinMaxValues(6, 20)
+castbarHeightSlider:SetValueStep(1)
+local castbarHeightText = getglobal(castbarHeightSlider:GetName() .. "Text")
+castbarHeightText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarHeightSlider:GetName() .. "Low"):SetText("6")
+getglobal(castbarHeightSlider:GetName() .. "High"):SetText("20")
+castbarHeightSlider:SetScript("OnValueChanged", function()
+    Settings.castbarHeight = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Independent Castbar Width Checkbox
+local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", castbarTab, "UICheckButtonTemplate")
+castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -100)
+local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
+castbarIndependentLabel:SetText("Independent Width from Healthbar")
+castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- Castbar Width Slider (only enabled when independent is checked)
+local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
+castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
+castbarWidthSlider:SetWidth(450)
+castbarWidthSlider:SetMinMaxValues(72, 200)
+castbarWidthSlider:SetValueStep(1)
+local castbarWidthText = getglobal(castbarWidthSlider:GetName() .. "Text")
+castbarWidthText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(castbarWidthSlider:GetName() .. "Low"):SetText("72")
+getglobal(castbarWidthSlider:GetName() .. "High"):SetText("200")
+castbarWidthSlider:SetScript("OnValueChanged", function()
+    Settings.castbarWidth = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Function to update castbar width slider enabled state
+local function UpdateCastbarWidthSliderState()
+    if Settings.castbarIndependent then
+        castbarWidthSlider:EnableMouse(true)
+        castbarWidthSlider:SetAlpha(1.0)
+    else
+        castbarWidthSlider:EnableMouse(false)
+        castbarWidthSlider:SetAlpha(0.5)
+    end
+end
+
+castbarIndependentCheckbox:SetScript("OnClick", function()
+    Settings.castbarIndependent = this:GetChecked() == 1
+    UpdateCastbarWidthSliderState()
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+castbarIndependentCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Independent Width from Healthbar")
+    GameTooltip:AddLine("When checked, castbar uses its own width setting.", 1, 1, 1, 1)
+    GameTooltip:AddLine("When unchecked, castbar width follows healthbar width.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+castbarIndependentCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- ==========================================
+-- COLORS/THREAT TAB CONTENT
+-- ==========================================
+
+-- Tank Mode Checkbox
+local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colorsTab, "UICheckButtonTemplate")
+tankCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -10)
+local tankLabel = getglobal(tankCheckbox:GetName().."Text")
+tankLabel:SetText("Tank Mode")
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankCheckbox:SetScript("OnClick", function()
+    if this:GetChecked() == 1 then
+        playerRole = "TANK"
+    else
+        playerRole = "DPS"
+    end
+    SaveSettings()
+    Print("Role set to " .. playerRole)
+end)
+tankCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Tank Mode")
+    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:Show()
+end)
+tankCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- DPS Colors Section
+local dpsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+dpsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -50)
+dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -75, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
+CreateColorSwatch(colorsTab, 5, -100, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
+CreateColorSwatch(colorsTab, 5, -125, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
+
+-- Tank Colors Section
+local tankHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -50)
+tankHeader:SetText("|cff00ff00Tank Colors:|r")
+
+CreateColorSwatch(colorsTab, 235, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(colorsTab, 235, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 235, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 235, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+
+-- Misc Colors Section
+local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -170)
+miscHeader:SetText("|cff00ff00Other Colors:|r")
+
+CreateColorSwatch(colorsTab, 5, -195, "Unit Tapped", THREAT_COLORS, "TAPPED")
+CreateColorSwatch(colorsTab, 5, -220, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+
+-- Target Glow Color Swatch (uses Settings table directly)
+local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -245)
+targetGlowSwatchLabel:SetText("Target Glow")
+
+local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
+targetGlowSwatch:SetWidth(20)
+targetGlowSwatch:SetHeight(20)
+targetGlowSwatch:SetPoint("LEFT", targetGlowSwatchLabel, "RIGHT", 10, 0)
+
+local targetGlowSwatchBorder = targetGlowSwatch:CreateTexture(nil, "BACKGROUND")
+targetGlowSwatchBorder:SetTexture(0, 0, 0, 1)
+targetGlowSwatchBorder:SetAllPoints()
+
+local targetGlowSwatchBg = targetGlowSwatch:CreateTexture(nil, "ARTWORK")
+targetGlowSwatchBg:SetTexture(1, 1, 1, 1)
+targetGlowSwatchBg:SetPoint("TOPLEFT", targetGlowSwatch, "TOPLEFT", 2, -2)
+targetGlowSwatchBg:SetPoint("BOTTOMRIGHT", targetGlowSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateTargetGlowSwatchColor()
+    local c = Settings.targetGlowColor
+    targetGlowSwatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateTargetGlowSwatchColor()
+table.insert(swatches, UpdateTargetGlowSwatchColor)
+
+targetGlowSwatch:SetScript("OnClick", function()
+    local c = Settings.targetGlowColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.targetGlowColor = {r, g, b, 0.4}
+            UpdateTargetGlowSwatchColor()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() then
+                    UpdateNamePlate(plate)
+                end
+            end
+        end
+    end)
+end)
+
+targetGlowSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change target glow color")
+    GameTooltip:Show()
+end)
+
+targetGlowSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Castbar Color Swatch
+local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -270)
+castbarSwatchLabel:SetText("Castbar")
+
+local castbarSwatch = CreateFrame("Button", nil, colorsTab)
+castbarSwatch:SetWidth(20)
+castbarSwatch:SetHeight(20)
+castbarSwatch:SetPoint("LEFT", castbarSwatchLabel, "RIGHT", 10, 0)
+
+local castbarSwatchBorder = castbarSwatch:CreateTexture(nil, "BACKGROUND")
+castbarSwatchBorder:SetTexture(0, 0, 0, 1)
+castbarSwatchBorder:SetAllPoints()
+
+local castbarSwatchBg = castbarSwatch:CreateTexture(nil, "ARTWORK")
+castbarSwatchBg:SetTexture(1, 1, 1, 1)
+castbarSwatchBg:SetPoint("TOPLEFT", castbarSwatch, "TOPLEFT", 2, -2)
+castbarSwatchBg:SetPoint("BOTTOMRIGHT", castbarSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateCastbarSwatchColor()
+    local c = Settings.castbarColor
+    castbarSwatchBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateCastbarSwatchColor()
+table.insert(swatches, UpdateCastbarSwatchColor)
+
+castbarSwatch:SetScript("OnClick", function()
+    local c = Settings.castbarColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.castbarColor = {r, g, b, 1}
+            UpdateCastbarSwatchColor()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.castbar then
+                    plate.nameplate.castbar:SetStatusBarColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+castbarSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change castbar color")
+    GameTooltip:Show()
+end)
+
+castbarSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Text Colors Section
+local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -170)
+textColorsHeader:SetText("|cff00ff00Text Colors:|r")
+
+-- Name Color Swatch
+local nameColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+nameColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -195)
+nameColorLabel:SetText("Name")
+
+local nameColorSwatch = CreateFrame("Button", nil, colorsTab)
+nameColorSwatch:SetWidth(20)
+nameColorSwatch:SetHeight(20)
+nameColorSwatch:SetPoint("LEFT", nameColorLabel, "RIGHT", 10, 0)
+
+local nameColorBorder = nameColorSwatch:CreateTexture(nil, "BACKGROUND")
+nameColorBorder:SetTexture(0, 0, 0, 1)
+nameColorBorder:SetAllPoints()
+
+local nameColorBg = nameColorSwatch:CreateTexture(nil, "ARTWORK")
+nameColorBg:SetTexture(1, 1, 1, 1)
+nameColorBg:SetPoint("TOPLEFT", nameColorSwatch, "TOPLEFT", 2, -2)
+nameColorBg:SetPoint("BOTTOMRIGHT", nameColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateNameColorSwatch()
+    local c = Settings.nameColor
+    nameColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateNameColorSwatch()
+table.insert(swatches, UpdateNameColorSwatch)
+
+nameColorSwatch:SetScript("OnClick", function()
+    local c = Settings.nameColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.nameColor = {r, g, b, 1}
+            UpdateNameColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.name then
+                    plate.nameplate.name:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+nameColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change name text color")
+    GameTooltip:Show()
+end)
+
+nameColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- Health Text Color Swatch
+local healthTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+healthTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -220)
+healthTextColorLabel:SetText("Health Text")
+
+local healthTextColorSwatch = CreateFrame("Button", nil, colorsTab)
+healthTextColorSwatch:SetWidth(20)
+healthTextColorSwatch:SetHeight(20)
+healthTextColorSwatch:SetPoint("LEFT", healthTextColorLabel, "RIGHT", 10, 0)
+
+local healthTextColorBorder = healthTextColorSwatch:CreateTexture(nil, "BACKGROUND")
+healthTextColorBorder:SetTexture(0, 0, 0, 1)
+healthTextColorBorder:SetAllPoints()
+
+local healthTextColorBg = healthTextColorSwatch:CreateTexture(nil, "ARTWORK")
+healthTextColorBg:SetTexture(1, 1, 1, 1)
+healthTextColorBg:SetPoint("TOPLEFT", healthTextColorSwatch, "TOPLEFT", 2, -2)
+healthTextColorBg:SetPoint("BOTTOMRIGHT", healthTextColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateHealthTextColorSwatch()
+    local c = Settings.healthTextColor
+    healthTextColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateHealthTextColorSwatch()
+table.insert(swatches, UpdateHealthTextColorSwatch)
+
+healthTextColorSwatch:SetScript("OnClick", function()
+    local c = Settings.healthTextColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.healthTextColor = {r, g, b, 1}
+            UpdateHealthTextColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.healthtext then
+                    plate.nameplate.healthtext:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+healthTextColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change health text color")
+    GameTooltip:Show()
+end)
+
+healthTextColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+
+-- Level Color Swatch
+local levelColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+levelColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -245)
+levelColorLabel:SetText("Level")
+
+local levelColorSwatch = CreateFrame("Button", nil, colorsTab)
+levelColorSwatch:SetWidth(20)
+levelColorSwatch:SetHeight(20)
+levelColorSwatch:SetPoint("LEFT", levelColorLabel, "RIGHT", 10, 0)
+
+local levelColorBorder = levelColorSwatch:CreateTexture(nil, "BACKGROUND")
+levelColorBorder:SetTexture(0, 0, 0, 1)
+levelColorBorder:SetAllPoints()
+
+local levelColorBg = levelColorSwatch:CreateTexture(nil, "ARTWORK")
+levelColorBg:SetTexture(1, 1, 1, 1)
+levelColorBg:SetPoint("TOPLEFT", levelColorSwatch, "TOPLEFT", 2, -2)
+levelColorBg:SetPoint("BOTTOMRIGHT", levelColorSwatch, "BOTTOMRIGHT", -2, 2)
+
+local function UpdateLevelColorSwatch()
+    local c = Settings.levelColor
+    levelColorBg:SetVertexColor(c[1], c[2], c[3], 1)
+end
+UpdateLevelColorSwatch()
+table.insert(swatches, UpdateLevelColorSwatch)
+
+levelColorSwatch:SetScript("OnClick", function()
+    local c = Settings.levelColor
+    ShowColorPicker(c[1], c[2], c[3], function(r, g, b)
+        if r then
+            Settings.levelColor = {r, g, b, 1}
+            UpdateLevelColorSwatch()
+            SaveSettings()
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() and plate.nameplate and plate.nameplate.level then
+                    plate.nameplate.level:SetTextColor(r, g, b, 1)
+                end
+            end
+        end
+    end)
+end)
+
+levelColorSwatch:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Click to change level text color")
+    GameTooltip:Show()
+end)
+
+levelColorSwatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- OnShow handler
+optionsFrame:SetScript("OnShow", function()
+    -- General tab
+    getglobal("GudaPlatesOverlapCheckbox"):SetChecked(nameplateOverlap)
+    getglobal("GudaPlatesLevelFontSlider"):SetValue(Settings.levelFontSize)
+    getglobal("GudaPlatesLevelFontSliderText"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    getglobal("GudaPlatesNameFontSlider"):SetValue(Settings.nameFontSize)
+    getglobal("GudaPlatesNameFontSliderText"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    getglobal("GudaPlatesRaidMarkCheckbox"):SetChecked(Settings.raidIconPosition == "RIGHT")
+    getglobal("GudaPlatesSwapCheckbox"):SetChecked(Settings.swapNameDebuff)
+    getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
+    getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
+    getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
+    -- Health/Mana tab
+    getglobal("GudaPlatesHeightSlider"):SetValue(Settings.healthbarHeight)
+    getglobal("GudaPlatesHeightSliderText"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    getglobal("GudaPlatesWidthSlider"):SetValue(Settings.healthbarWidth)
+    getglobal("GudaPlatesWidthSliderText"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    getglobal("GudaPlatesHealthFontSlider"):SetValue(Settings.healthFontSize)
+    getglobal("GudaPlatesHealthFontSliderText"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    getglobal("GudaPlatesShowHealthTextCheckbox"):SetChecked(Settings.showHealthText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthPosDropdown"), Settings.healthTextPosition)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthFormatDropdown"), Settings.healthTextFormat)
+    -- Mana settings
+    getglobal("GudaPlatesManaBarCheckbox"):SetChecked(Settings.showManaBar)
+    getglobal("GudaPlatesShowManaTextCheckbox"):SetChecked(Settings.showManaText)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaFormatDropdown"), Settings.manaTextFormat)
+    UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaPosDropdown"), Settings.manaTextPosition)
+    getglobal("GudaPlatesManaHeightSlider"):SetValue(Settings.manabarHeight)
+    getglobal("GudaPlatesManaHeightSliderText"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    UpdateManaOptionsState()
+    -- Castbar tab
+    getglobal("GudaPlatesCastbarIconCheckbox"):SetChecked(Settings.showCastbarIcon)
+    getglobal("GudaPlatesCastbarHeightSlider"):SetValue(Settings.castbarHeight)
+    getglobal("GudaPlatesCastbarHeightSliderText"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    getglobal("GudaPlatesCastbarIndependentCheckbox"):SetChecked(Settings.castbarIndependent)
+    getglobal("GudaPlatesCastbarWidthSlider"):SetValue(Settings.castbarWidth)
+    getglobal("GudaPlatesCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    UpdateCastbarWidthSliderState()
+    -- Colors tab
+    getglobal("GudaPlatesTankCheckbox"):SetChecked(playerRole == "TANK")
+    -- Update color swatches
+    for _, updateFunc in ipairs(swatches) do
+        updateFunc()
+    end
+end)
+
+-- Reset to defaults button
+local resetButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
+resetButton:SetWidth(120)
+resetButton:SetHeight(25)
+resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 15)
+resetButton:SetText("Reset Defaults")
+resetButton:SetScript("OnClick", function()
+    playerRole = "DPS"
+    THREAT_COLORS.DPS.AGGRO = {0.41, 0.35, 0.76, 1}
+    THREAT_COLORS.DPS.HIGH_THREAT = {1.0, 0.6, 0.0, 1}
+    THREAT_COLORS.DPS.NO_AGGRO = {0.85, 0.2, 0.2, 1}
+    THREAT_COLORS.TANK.AGGRO = {0.41, 0.35, 0.76, 1}
+    THREAT_COLORS.TANK.OTHER_TANK = {0.6, 0.8, 1.0, 1}
+    THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
+    THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
+    THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
+    THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
+    Settings.healthbarHeight = 14
+    Settings.healthbarWidth = 115
+    Settings.healthFontSize = 10
+    Settings.showHealthText = true
+    Settings.healthTextPosition = "CENTER"
+    Settings.healthTextFormat = 1
+    Settings.showManaBar = false
+    Settings.showManaText = true
+    Settings.manaTextFormat = 1
+    Settings.manaTextPosition = "CENTER"
+    Settings.manabarHeight = 4
+    Settings.levelFontSize = 10
+    Settings.nameFontSize = 10
+    Settings.textFont = "Fonts\\ARIALN.TTF"
+    Settings.castbarHeight = 12
+    Settings.castbarWidth = 115
+    Settings.castbarIndependent = false
+    Settings.showCastbarIcon = true
+    Settings.castbarColor = {1, 0.8, 0, 1}
+    Settings.raidIconPosition = "LEFT"
+    Settings.swapNameDebuff = false
+    Settings.showDebuffTimers = true
+    Settings.showOnlyMyDebuffs = true
+    Settings.showTargetGlow = true
+    Settings.targetGlowColor = {0.4, 0.8, 0.9, 0.4}
+    Settings.nameColor = {1, 1, 1, 1}
+    Settings.healthTextColor = {1, 1, 1, 1}
+    Settings.manaTextColor = {1, 1, 1, 1}
+    Settings.levelColor = {1, 1, 0.6, 1}
+    SaveSettings()
+    Print("Settings reset to defaults.")
+    -- Update color swatches
+    for _, updateFunc in ipairs(swatches) do
+        updateFunc()
+    end
+    -- Re-show options frame to refresh all UI elements
+    GudaPlatesOptionsFrame:Hide()
+    GudaPlatesOptionsFrame:Show()
+    -- Force refresh of all visible nameplates
+    for plate, _ in pairs(registry) do
+        if plate:IsShown() then
+            UpdateNamePlateDimensions(plate)
+            UpdateNamePlate(plate)
         end
     end
 end)
 
-eventFrame:SetScript("OnEvent", function()
-    local e = event
-    if e == "VARIABLES_LOADED" then
-        Print("VARIABLES_LOADED fired.")
-        local success, err = pcall(function()
-            Print("Loading settings...")
-            GudaPlates.LoadSettings()
-            Print("Disabling pfUI nameplates...")
-            GudaPlates.DisablePfUINameplates()
-            if GudaPlates.CreateOptionsFrame then
-                Print("Creating options frame...")
-                GudaPlates.CreateOptionsFrame()
-            else
-                Print("Error: CreateOptionsFrame not found!")
-            end
-            Print("Creating minimap button...")
-            CreateMinimapButton()
-        end)
-        if not success then
-            Print("Initialization Error: " .. tostring(err))
-        else
-            Print("Loaded successfully. Use /gp config for settings.")
+-- Load settings on addon load
+local loadFrame = CreateFrame("Frame")
+loadFrame:RegisterEvent("VARIABLES_LOADED")
+loadFrame:SetScript("OnEvent", function()
+    LoadSettings()
+    UpdateMinimapButtonPosition()
+    -- Update font dropdown to reflect loaded setting
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, Settings.textFont)
+    -- Also update the displayed text
+    for _, opt in ipairs(fontOptions) do
+        if opt.value == Settings.textFont then
+            UIDropDownMenu_SetText(opt.text, GudaPlatesFontDropdown)
+            break
         end
-    elseif e == "PLAYER_ENTERING_WORLD" then
-        -- Refresh settings or state if needed
+    end
+    Print("Settings loaded.")
+
+    -- Test the spell database
+    if SpellDB then
+        Print("✓ Spell database loaded successfully")
+        -- Quick test with Rend
+        local duration = SpellDB:GetDuration("Rend", 2)
+        Print("  Test - Rend Rank 2 -> " .. tostring(duration) .. "s (expected: 12)")
+    else
+        Print("✗ ERROR: Spell database not loaded!")
     end
 end)
 
--- Initial Startup Message
-if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ffff[GudaPlates]|r Initializing...")
-end
+
+Print("Loaded. Use /gp tank or /gp dps to set role.")
