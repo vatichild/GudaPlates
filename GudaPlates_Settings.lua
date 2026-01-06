@@ -53,6 +53,9 @@ GudaPlates.Settings = {
     healthTextColor = {1, 1, 1, 1},
     manaTextColor = {1, 1, 1, 1},
     levelColor = {1, 1, 0.6, 1},
+    -- UI Settings
+    optionsBgAlpha = 0.9,
+    hideOptionsBorder = false,
 }
 
 -- Plater-style threat colors

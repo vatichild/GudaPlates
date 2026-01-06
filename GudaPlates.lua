@@ -2724,12 +2724,26 @@ local function CreateOptionsFrame()
     optionsFrame:SetWidth(650)
     optionsFrame:SetHeight(580)
     optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    optionsFrame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
-    })
+    
+    local function UpdateOptionsBackdrop()
+        local edge = "Interface\\DialogFrame\\UI-DialogBox-Border"
+        if Settings.hideOptionsBorder then
+            edge = nil
+        end
+        optionsFrame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = edge,
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+        local alpha = Settings.optionsBgAlpha
+        if alpha == nil then alpha = 0.9 end
+        optionsFrame:SetBackdropColor(0, 0, 0, alpha)
+    end
+    
+    UpdateOptionsBackdrop()
+    optionsFrame.UpdateBackdrop = UpdateOptionsBackdrop
+    
     optionsFrame:SetMovable(true)
     optionsFrame:EnableMouse(true)
     optionsFrame:RegisterForDrag("LeftButton")
@@ -2950,9 +2964,49 @@ local function CreateOptionsFrame()
 
     local function SetupGeneralTab()
 
--- Font Dropdown (at the top left)
+-- Settings Frame Section
+local settingsHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+settingsHeader:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, 0)
+settingsHeader:SetText("Settings Frame")
+
+-- Background Transparency Slider
+local transparencySlider = CreateFrame("Slider", "GudaPlatesOptionsTransparencySlider", generalTab, "OptionsSliderTemplate")
+transparencySlider:SetPoint("TOPLEFT", settingsHeader, "BOTTOMLEFT", 0, -20)
+transparencySlider:SetWidth(580)
+transparencySlider:SetMinMaxValues(0, 1)
+transparencySlider:SetValueStep(0.05)
+local transparencyText = getglobal(transparencySlider:GetName() .. "Text")
+transparencyText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(transparencySlider:GetName() .. "Low"):SetText("0%")
+getglobal(transparencySlider:GetName() .. "High"):SetText("100%")
+transparencySlider:SetScript("OnValueChanged", function()
+    -- Value is transparency (0 = opaque, 1 = transparent)
+    -- optionsBgAlpha should be opacity (1 = opaque, 0 = transparent)
+    Settings.optionsBgAlpha = 1 - this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Background Transparency: " .. math.floor(this:GetValue() * 100) .. "%")
+    SaveSettings()
+    if optionsFrame and optionsFrame.UpdateBackdrop then
+        optionsFrame.UpdateBackdrop()
+    end
+end)
+
+-- Hide Border Checkbox
+local hideBorderCheckbox = CreateFrame("CheckButton", "GudaPlatesHideBorderCheckbox", generalTab, "UICheckButtonTemplate")
+hideBorderCheckbox:SetPoint("TOPLEFT", transparencySlider, "BOTTOMLEFT", 0, -10)
+local hideBorderLabel = getglobal(hideBorderCheckbox:GetName().."Text")
+hideBorderLabel:SetText("Hide Borders")
+hideBorderLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+hideBorderCheckbox:SetScript("OnClick", function()
+    Settings.hideOptionsBorder = this:GetChecked() == 1
+    SaveSettings()
+    if optionsFrame and optionsFrame.UpdateBackdrop then
+        optionsFrame.UpdateBackdrop()
+    end
+end)
+
+-- Font Label and Dropdown (Now below Settings Frame section)
 local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
-fontLabel:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -25)
+fontLabel:SetPoint("TOPLEFT", hideBorderCheckbox, "BOTTOMLEFT", 0, -15)
 fontLabel:SetText("Font:")
 
 local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
@@ -2995,37 +3049,27 @@ UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
 UIDropDownMenu_SetWidth(180, fontDropdown)
 UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
 
--- Nameplate Mode Selection (on the right side of Font dropdown)
+-- General Settings (3 checkboxes per row)
+local generalHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+generalHeader:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", 0, -25)
+generalHeader:SetText("General Settings")
+
+-- Row 1
 local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
-overlapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 280, -15)
+overlapCheckbox:SetPoint("TOPLEFT", generalHeader, "BOTTOMLEFT", 0, -10)
 local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
-overlapLabel:SetText("Overlapping Nameplates")
-overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+overlapLabel:SetText("Overlapping")
+overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 overlapCheckbox:SetScript("OnClick", function()
     nameplateOverlap = this:GetChecked() == 1
     SaveSettings()
-    if nameplateOverlap then
-        Print("Nameplates set to OVERLAPPING")
-    else
-        Print("Nameplates set to STACKING")
-    end
-end)
-overlapCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Overlapping Nameplates")
-    GameTooltip:AddLine("If unchecked, nameplates will use 'Stacking' mode.", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-overlapCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
 end)
 
--- Raid Mark Position Checkbox
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -70)
+raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 200, 0)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
-raidMarkLabel:SetText("Raid Mark on Right")
-raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+raidMarkLabel:SetText("Raid Mark Right")
+raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 raidMarkCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
         Settings.raidIconPosition = "RIGHT"
@@ -3038,12 +3082,11 @@ raidMarkCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Swap Name and Debuffs Checkbox
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -105)
+swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 400, 0)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
-swapLabel:SetText("Swap Name and Debuffs")
-swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+swapLabel:SetText("Swap Name/Debuffs")
+swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 swapCheckbox:SetScript("OnClick", function()
     Settings.swapNameDebuff = this:GetChecked() == 1
     SaveSettings()
@@ -3052,12 +3095,12 @@ swapCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Show Debuff Timers Checkbox
+-- Row 2
 local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
+debuffTimerCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "BOTTOMLEFT", 0, -10)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
-debuffTimerLabel:SetText("Show Debuff Timers")
-debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+debuffTimerLabel:SetText("Debuff Timers")
+debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 debuffTimerCheckbox:SetScript("OnClick", function()
     Settings.showDebuffTimers = this:GetChecked() == 1
     SaveSettings()
@@ -3066,12 +3109,11 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Show Only My Debuffs Checkbox
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -140)
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 200, 0)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
-onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
-onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+onlyMyDebuffsLabel:SetText("Only My Debuffs")
+onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 onlyMyDebuffsCheckbox:SetScript("OnClick", function()
     Settings.showOnlyMyDebuffs = this:GetChecked() == 1
     SaveSettings()
@@ -3080,28 +3122,17 @@ onlyMyDebuffsCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Show Target Glow Checkbox
 local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
-targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -175)
+targetGlowCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 400, 0)
 local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
-targetGlowLabel:SetText("Show Target Glow")
-targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+targetGlowLabel:SetText("Target Glow")
+targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 targetGlowCheckbox:SetScript("OnClick", function()
     Settings.showTargetGlow = this:GetChecked() == 1
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
     end
-end)
-targetGlowCheckbox:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Show Target Glow")
-    GameTooltip:AddLine("Shows a glowing effect around your", 1, 1, 1, 1)
-    GameTooltip:AddLine("current target's nameplate.", 1, 1, 1, 1)
-    GameTooltip:Show()
-end)
-targetGlowCheckbox:SetScript("OnLeave", function()
-    GameTooltip:Hide()
 end)
 
     end
@@ -4039,6 +4070,12 @@ end
 -- OnShow handler
 optionsFrame:SetScript("OnShow", function()
     -- General tab
+    local currentAlpha = Settings.optionsBgAlpha
+    if currentAlpha == nil then currentAlpha = 0.9 end
+    local currentTransparency = 1 - currentAlpha
+    getglobal("GudaPlatesOptionsTransparencySlider"):SetValue(currentTransparency)
+    getglobal("GudaPlatesOptionsTransparencySliderText"):SetText("Background Transparency: " .. math.floor(currentTransparency * 100) .. "%")
+    getglobal("GudaPlatesHideBorderCheckbox"):SetChecked(Settings.hideOptionsBorder)
     getglobal("GudaPlatesOverlapCheckbox"):SetChecked(nameplateOverlap)
     getglobal("GudaPlatesLevelFontSlider"):SetValue(Settings.levelFontSize)
     getglobal("GudaPlatesLevelFontSliderText"):SetText("Level Font Size: " .. Settings.levelFontSize)
@@ -4087,6 +4124,9 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesFriendManaHeightSliderText"):SetText("Manabar Height: " .. Settings.friendManabarHeight)
     
     UpdateManaOptionsState()
+    if optionsFrame and optionsFrame.UpdateBackdrop then
+        optionsFrame.UpdateBackdrop()
+    end
     -- Castbar tab
     getglobal("GudaPlatesCastbarIconCheckbox"):SetChecked(Settings.showCastbarIcon)
     getglobal("GudaPlatesCastbarHeightSlider"):SetValue(Settings.castbarHeight)
@@ -4120,6 +4160,8 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
     THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
+    Settings.optionsBgAlpha = 0.9
+    Settings.hideOptionsBorder = false
     Settings.healthbarHeight = 14
     Settings.healthbarWidth = 115
     Settings.healthFontSize = 10
@@ -4191,6 +4233,9 @@ loadFrame:RegisterEvent("VARIABLES_LOADED")
 loadFrame:SetScript("OnEvent", function()
     LoadSettings()
     UpdateMinimapButtonPosition()
+    if optionsFrame and optionsFrame.UpdateBackdrop then
+        optionsFrame.UpdateBackdrop()
+    end
     -- Update font dropdown to reflect loaded setting
     UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, Settings.textFont)
     -- Also update the displayed text
