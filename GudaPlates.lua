@@ -323,12 +323,22 @@ local function UpdateNamePlateDimensions(frame)
     local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
     local isFriendly = not isHostile and not isNeutral
     
-    local hHeight = isFriendly and Settings.friendHealthbarHeight or Settings.healthbarHeight
-    local hWidth = isFriendly and Settings.friendHealthbarWidth or Settings.healthbarWidth
-    local hFontSize = isFriendly and Settings.friendHealthFontSize or Settings.healthFontSize
-    local hTextPos = isFriendly and Settings.friendHealthTextPosition or Settings.healthTextPosition
-    local lFontSize = isFriendly and Settings.friendLevelFontSize or Settings.levelFontSize
-    local nFontSize = isFriendly and Settings.friendNameFontSize or Settings.nameFontSize
+    local hHeight, hWidth, hFontSize, hTextPos, lFontSize, nFontSize
+    if isFriendly then
+        hHeight = Settings.friendHealthbarHeight
+        hWidth = Settings.friendHealthbarWidth
+        hFontSize = Settings.friendHealthFontSize
+        hTextPos = Settings.friendHealthTextPosition
+        lFontSize = Settings.friendLevelFontSize
+        nFontSize = Settings.friendNameFontSize
+    else
+        hHeight = Settings.healthbarHeight
+        hWidth = Settings.healthbarWidth
+        hFontSize = Settings.healthFontSize
+        hTextPos = Settings.healthTextPosition
+        lFontSize = Settings.levelFontSize
+        nFontSize = Settings.nameFontSize
+    end
 
     nameplate.health:SetHeight(hHeight)
     nameplate.health:SetWidth(hWidth)
@@ -363,8 +373,14 @@ local function UpdateNamePlateDimensions(frame)
     
     -- Update mana bar dimensions and text position
     if nameplate.mana then
-        local mManaHeight = isFriendly and Settings.friendManabarHeight or Settings.manabarHeight
-        local mManaTextPos = isFriendly and Settings.friendManaTextPosition or Settings.manaTextPosition
+        local mManaHeight, mManaTextPos
+        if isFriendly then
+            mManaHeight = Settings.friendManabarHeight
+            mManaTextPos = Settings.friendManaTextPosition
+        else
+            mManaHeight = Settings.manabarHeight
+            mManaTextPos = Settings.manaTextPosition
+        end
         
         nameplate.mana:SetWidth(hWidth)
         nameplate.mana:SetHeight(mManaHeight)
@@ -998,7 +1014,12 @@ local function UpdateNamePlate(frame)
     local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
     local isFriendly = not isHostile and not isNeutral
     
-    local hTextFormat = isFriendly and Settings.friendHealthTextFormat or Settings.healthTextFormat
+    local hTextFormat
+    if isFriendly then
+        hTextFormat = Settings.friendHealthTextFormat
+    else
+        hTextFormat = Settings.healthTextFormat
+    end
 
     if hTextFormat ~= 0 then
         local perc = (hp / hpmax) * 100
@@ -1322,8 +1343,14 @@ local function UpdateNamePlate(frame)
     end
 
     -- Update Mana Bar (only with SuperWoW GUID support)
-    local mShowManaBar = isFriendly and Settings.friendShowManaBar or Settings.showManaBar
-    local mManaTextFormat = isFriendly and Settings.friendManaTextFormat or Settings.manaTextFormat
+    local mShowManaBar, mManaTextFormat
+    if isFriendly then
+        mShowManaBar = Settings.friendShowManaBar
+        mManaTextFormat = Settings.friendManaTextFormat
+    else
+        mShowManaBar = Settings.showManaBar
+        mManaTextFormat = Settings.manaTextFormat
+    end
 
     if mShowManaBar and superwow_active and hasValidGUID then
         local mana = UnitMana(unitstr) or 0
@@ -3602,11 +3629,11 @@ UIDropDownMenu_SetSelectedValue(manaPosDropdown, Settings.manaTextPosition)
 
 -- Mana Text Format Dropdown
 local manaFormatLabel = scrollContent:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
-manaFormatLabel:SetPoint("TOPLEFT", manaPosLabel, "BOTTOMLEFT", 0, -15)
+manaFormatLabel:SetPoint("LEFT", manaPosDropdown, "RIGHT", 10, 0)
 manaFormatLabel:SetText("Mana Text Format:")
 
 local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
-manaFormatDropdown:SetPoint("TOPLEFT", manaFormatLabel, "TOPRIGHT", -10, 8)
+manaFormatDropdown:SetPoint("LEFT", manaFormatLabel, "RIGHT", -10, -3)
 
 local function ManaFormatDropdown_OnClick()
     Settings.manaTextFormat = this.value
@@ -3642,7 +3669,7 @@ local separator = scrollContent:CreateTexture(nil, "ARTWORK")
 separator:SetTexture(1, 1, 1, 0.2)
 separator:SetHeight(1)
 separator:SetWidth(560)
-separator:SetPoint("TOPLEFT", manaFormatLabel, "BOTTOMLEFT", 0, -15)
+separator:SetPoint("TOPLEFT", manaPosLabel, "BOTTOMLEFT", 0, -35)
 
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -3713,11 +3740,11 @@ UIDropDownMenu_SetSelectedValue(friendManaPosDropdown, Settings.friendManaTextPo
 
 -- Friend Mana Text Format Dropdown
 local friendManaFormatLabel = scrollContent:CreateFontString("GudaPlatesFriendManaFormatLabel", "OVERLAY", "GameFontNormal")
-friendManaFormatLabel:SetPoint("TOPLEFT", friendManaPosLabel, "BOTTOMLEFT", 0, -15)
+friendManaFormatLabel:SetPoint("LEFT", friendManaPosDropdown, "RIGHT", 10, 0)
 friendManaFormatLabel:SetText("Mana Text Format:")
 
 local friendManaFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
-friendManaFormatDropdown:SetPoint("TOPLEFT", friendManaFormatLabel, "TOPRIGHT", -10, 8)
+friendManaFormatDropdown:SetPoint("LEFT", friendManaFormatLabel, "RIGHT", -10, -3)
 
 local function FriendManaFormatDropdown_OnClick()
     Settings.friendManaTextFormat = this.value
