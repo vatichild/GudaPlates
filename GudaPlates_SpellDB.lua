@@ -186,6 +186,39 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 	["Gouge"] = "Gouge",
 }
 
+-- Unique debuffs that can only exist once on a target (shared across all players)
+GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
+	-- Warrior
+	["Thunder Clap"] = true,
+	["Demoralizing Shout"] = true,
+	["Sunder Armor"] = true,
+	-- Druid
+	["Faerie Fire"] = true,
+	["Faerie Fire (Feral)"] = true,
+	["Demoralizing Roar"] = true,
+	["Insect Swarm"] = true,
+	-- Priest
+	["Shadow Vulnerability"] = true,
+	-- Warlock
+	["Curse of Agony"] = true,
+	["Curse of Weakness"] = true,
+	["Curse of Recklessness"] = true,
+	["Curse of Tongues"] = true,
+	["Curse of the Elements"] = true,
+	["Curse of Shadow"] = true,
+	["Curse of Exhaustion"] = true,
+	["Curse of Doom"] = true,
+	["Shadow Vulnerability"] = true, -- Also Warlock (Improved Shadow Bolt)
+	-- Hunter
+	["Hunter's Mark"] = true,
+	["Scorpid Sting"] = true,
+	-- Paladin
+	["Judgement of the Crusader"] = true,
+	["Judgement of Light"] = true,
+	["Judgement of Wisdom"] = true,
+	["Judgement of Justice"] = true,
+}
+
 -- ============================================
 -- DEBUFF TRACKING STATE
 -- objects[unit][unitlevel][effect] = {effect, start, duration}

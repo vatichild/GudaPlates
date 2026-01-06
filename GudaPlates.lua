@@ -1809,6 +1809,7 @@ local function UpdateNamePlate(frame)
 
     local debuffIndex = 1
     local now = GetTime()
+    local claimedMyDebuffs = {} -- Track which player debuffs are already shown on this nameplate
     if superwow_active and hasValidGUID then
         for i = 1, 40 do
             if debuffIndex > MAX_DEBUFFS then break end
@@ -1880,7 +1881,11 @@ local function UpdateNamePlate(frame)
                         if data.start + data.duration > now then
                             duration = data.duration
                             timeleft = data.duration + data.start - now
-                            isMyDebuff = data.isOwn == true
+                            -- Only count as player's debuff if not already claimed by another icon on this nameplate
+                            if data.isOwn == true and not claimedMyDebuffs[effect] then
+                                isMyDebuff = true
+                                claimedMyDebuffs[effect] = true
+                            end
                         end
                     end
                 end
@@ -1892,8 +1897,9 @@ local function UpdateNamePlate(frame)
             end
             
             -- Filter: show only own debuffs if enabled
-            if Settings.showOnlyMyDebuffs and not isMyDebuff then
-                -- Skip this debuff - not tracked as player's
+            local isUnique = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+            if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
+                -- Skip this debuff - not tracked as player's and not a unique global debuff
             else
             local debuff = nameplate.debuffs[debuffIndex]
             debuff.icon:SetTexture(texture)
@@ -1981,9 +1987,14 @@ local function UpdateNamePlate(frame)
 
                 -- Filter: show only own debuffs if enabled
                 -- isOwn flag from SpellDB indicates if this is the player's debuff
-                local isMyDebuff = isOwn == true
-                if Settings.showOnlyMyDebuffs and not isMyDebuff then
-                    -- Skip this debuff - not tracked as player's
+                local isMyDebuff = false
+                if isOwn == true and not claimedMyDebuffs[effect] then
+                    isMyDebuff = true
+                    claimedMyDebuffs[effect] = true
+                end
+                local isUnique = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+                if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
+                    -- Skip this debuff - not tracked as player's and not a unique global debuff
                 else
 
                 local debuff = nameplate.debuffs[debuffIndex]
