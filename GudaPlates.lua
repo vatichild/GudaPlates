@@ -2762,26 +2762,26 @@ local function CreateOptionsFrame()
 
     -- Tab Content Frames
     generalTab = CreateFrame("Frame", "GudaPlatesGeneralTab", optionsFrame)
-    generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    generalTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -85)
     generalTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
 
     healthbarTab = CreateFrame("Frame", "GudaPlatesHealthbarTab", optionsFrame)
-    healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    healthbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -85)
     healthbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     healthbarTab:Hide()
 
     manaTab = CreateFrame("Frame", "GudaPlatesManaTab", optionsFrame)
-    manaTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    manaTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -85)
     manaTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     manaTab:Hide()
 
     castbarTab = CreateFrame("Frame", "GudaPlatesCastbarTab", optionsFrame)
-    castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    castbarTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -85)
     castbarTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     castbarTab:Hide()
 
     colorsTab = CreateFrame("Frame", "GudaPlatesColorsTab", optionsFrame)
-    colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -70)
+    colorsTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -85)
     colorsTab:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -15, 50)
     colorsTab:Hide()
 
@@ -3004,59 +3004,21 @@ hideBorderCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Font Label and Dropdown (Now below Settings Frame section)
-local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
-fontLabel:SetPoint("TOPLEFT", hideBorderCheckbox, "BOTTOMLEFT", 0, -15)
-fontLabel:SetText("Font:")
+-- Separator 1
+local separator1 = generalTab:CreateTexture(nil, "ARTWORK")
+separator1:SetTexture(1, 1, 1, 0.2)
+separator1:SetHeight(1)
+separator1:SetWidth(580)
+separator1:SetPoint("TOPLEFT", hideBorderCheckbox, "BOTTOMLEFT", 0, -15)
 
-local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
-fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
-
-local fontOptions = {
-    {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
-    {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Continuum.ttf", text = "Continuum"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Expressway.ttf", text = "Expressway"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Homespun.ttf", text = "Homespun"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Hooge.ttf", text = "Hooge"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
-    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
-}
-
-local function FontDropdown_OnClick()
-    Settings.textFont = this.value
-    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, this.value)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end
-
-local function FontDropdown_Initialize()
-    for _, opt in ipairs(fontOptions) do
-        local info = {}
-        info.text = opt.text
-        info.value = opt.value
-        info.func = FontDropdown_OnClick
-        UIDropDownMenu_AddButton(info)
-    end
-end
-
-UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
-UIDropDownMenu_SetWidth(180, fontDropdown)
-UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
-
--- General Settings (3 checkboxes per row)
-local generalHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-generalHeader:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", 0, -25)
-generalHeader:SetText("General Settings")
+-- Nameplate Settings (formerly General Settings)
+local nameplateHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+nameplateHeader:SetPoint("TOPLEFT", separator1, "BOTTOMLEFT", 0, -15)
+nameplateHeader:SetText("Nameplate Settings")
 
 -- Row 1
 local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
-overlapCheckbox:SetPoint("TOPLEFT", generalHeader, "BOTTOMLEFT", 0, -10)
+overlapCheckbox:SetPoint("TOPLEFT", nameplateHeader, "BOTTOMLEFT", 0, -10)
 local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
 overlapLabel:SetText("Overlapping")
 overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3135,6 +3097,61 @@ targetGlowCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Separator 2
+local separator2 = generalTab:CreateTexture(nil, "ARTWORK")
+separator2:SetTexture(1, 1, 1, 0.2)
+separator2:SetHeight(1)
+separator2:SetWidth(580)
+separator2:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -15)
+
+-- Font Section
+local fontHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+fontHeader:SetPoint("TOPLEFT", separator2, "BOTTOMLEFT", 0, -15)
+fontHeader:SetText("Font Settings")
+
+local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
+fontLabel:SetPoint("TOPLEFT", fontHeader, "BOTTOMLEFT", 0, -15)
+fontLabel:SetText("Global Font:")
+
+local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
+fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
+
+local fontOptions = {
+    {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
+    {value = "Fonts\\FRIZQT__.TTF", text = "Friz Quadrata"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\BigNoodleTitling.ttf", text = "Big Noodle Titling"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Continuum.ttf", text = "Continuum"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\DieDieDie.ttf", text = "DieDieDie"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Expressway.ttf", text = "Expressway"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Homespun.ttf", text = "Homespun"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Hooge.ttf", text = "Hooge"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\Myriad-Pro.ttf", text = "Myriad Pro"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Bold.ttf", text = "PT Sans Narrow Bold"},
+    {value = "Interface\\AddOns\\GudaPlates\\fonts\\PT-Sans-Narrow-Regular.ttf", text = "PT Sans Narrow"},
+}
+
+local function FontDropdown_OnClick()
+    Settings.textFont = this.value
+    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, this.value)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function FontDropdown_Initialize()
+    for _, opt in ipairs(fontOptions) do
+        local info = {}
+        info.text = opt.text
+        info.value = opt.value
+        info.func = FontDropdown_OnClick
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
+UIDropDownMenu_Initialize(fontDropdown, FontDropdown_Initialize)
+UIDropDownMenu_SetWidth(180, fontDropdown)
+UIDropDownMenu_SetSelectedValue(fontDropdown, Settings.textFont)
     end
 
     local function SetupHealthbarTab()
