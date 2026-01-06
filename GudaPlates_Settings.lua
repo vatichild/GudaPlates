@@ -9,14 +9,12 @@ GudaPlates.Settings = {
     healthbarHeight = 14,
     healthbarWidth = 115,
     healthFontSize = 10,
-    showHealthText = true,
     healthTextPosition = "CENTER",  -- "LEFT", "RIGHT", "CENTER"
-    healthTextFormat = 1,  -- 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
+    healthTextFormat = 1,  -- 0=None, 1=Percent, 2=Current HP, 3=Health (%), 4=Current-Max, 5=Current-Max (%)
     -- Healthbar (Friendly)
     friendHealthbarHeight = 4,
     friendHealthbarWidth = 85,
     friendHealthFontSize = 10,
-    friendShowHealthText = true,
     friendHealthTextPosition = "CENTER",
     friendHealthTextFormat = 1,
     -- Manabar (Enemy)
@@ -38,6 +36,8 @@ GudaPlates.Settings = {
     -- Fonts
     levelFontSize = 10,
     nameFontSize = 10,
+    friendLevelFontSize = 8,
+    friendNameFontSize = 8,
     textFont = "Fonts\\ARIALN.TTF",  -- Default WoW font
     -- Layout
     raidIconPosition = "LEFT",

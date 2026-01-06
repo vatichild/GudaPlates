@@ -327,6 +327,8 @@ local function UpdateNamePlateDimensions(frame)
     local hWidth = isFriendly and Settings.friendHealthbarWidth or Settings.healthbarWidth
     local hFontSize = isFriendly and Settings.friendHealthFontSize or Settings.healthFontSize
     local hTextPos = isFriendly and Settings.friendHealthTextPosition or Settings.healthTextPosition
+    local lFontSize = isFriendly and Settings.friendLevelFontSize or Settings.levelFontSize
+    local nFontSize = isFriendly and Settings.friendNameFontSize or Settings.nameFontSize
 
     nameplate.health:SetHeight(hHeight)
     nameplate.health:SetWidth(hWidth)
@@ -400,8 +402,8 @@ local function UpdateNamePlateDimensions(frame)
     end
 
     -- Apply font from settings
-    nameplate.level:SetFont(Settings.textFont, Settings.levelFontSize, "OUTLINE")
-    nameplate.name:SetFont(Settings.textFont, Settings.nameFontSize, "OUTLINE")
+    nameplate.level:SetFont(Settings.textFont, lFontSize, "OUTLINE")
+    nameplate.name:SetFont(Settings.textFont, nFontSize, "OUTLINE")
     nameplate.healthtext:SetFont(Settings.textFont, hFontSize, "OUTLINE")
     if nameplate.mana and nameplate.mana.text then
         nameplate.mana.text:SetFont(Settings.textFont, 7, "OUTLINE")
@@ -996,10 +998,9 @@ local function UpdateNamePlate(frame)
     local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
     local isFriendly = not isHostile and not isNeutral
     
-    local showHText = isFriendly and Settings.friendShowHealthText or Settings.showHealthText
     local hTextFormat = isFriendly and Settings.friendHealthTextFormat or Settings.healthTextFormat
 
-    if showHText then
+    if hTextFormat ~= 0 then
         local perc = (hp / hpmax) * 100
         local format = hTextFormat
         if format == 1 then
@@ -2683,8 +2684,8 @@ local function CreateOptionsFrame()
     optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
     optionsFrame:SetFrameStrata("DIALOG")
     optionsFrame:SetFrameLevel(100)
-    optionsFrame:SetWidth(610)
-    optionsFrame:SetHeight(540)
+    optionsFrame:SetWidth(650)
+    optionsFrame:SetHeight(580)
     optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     optionsFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -2735,9 +2736,9 @@ local function CreateOptionsFrame()
 
     -- Tab Buttons
     local generalTabButton = CreateFrame("Button", "GudaPlatesGeneralTabButton", optionsFrame)
-    generalTabButton:SetWidth(110)
+    generalTabButton:SetWidth(120)
     generalTabButton:SetHeight(28)
-    generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 20, -42)
+    generalTabButton:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 15, -42)
 
     local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
@@ -2748,9 +2749,9 @@ local function CreateOptionsFrame()
     generalTabBg:SetAllPoints()
 
     local healthbarTabButton = CreateFrame("Button", "GudaPlatesHealthbarTabButton", optionsFrame)
-    healthbarTabButton:SetWidth(110)
+    healthbarTabButton:SetWidth(120)
     healthbarTabButton:SetHeight(28)
-    healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 2, 0)
+    healthbarTabButton:SetPoint("LEFT", generalTabButton, "RIGHT", 5, 0)
 
     local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
@@ -2761,9 +2762,9 @@ local function CreateOptionsFrame()
     healthbarTabBg:SetAllPoints()
 
     local manaTabButton = CreateFrame("Button", "GudaPlatesManaTabButton", optionsFrame)
-    manaTabButton:SetWidth(110)
+    manaTabButton:SetWidth(120)
     manaTabButton:SetHeight(28)
-    manaTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 2, 0)
+    manaTabButton:SetPoint("LEFT", healthbarTabButton, "RIGHT", 5, 0)
 
     local manaTabText = manaTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     manaTabText:SetPoint("CENTER", manaTabButton, "CENTER", 0, 0)
@@ -2774,9 +2775,9 @@ local function CreateOptionsFrame()
     manaTabBg:SetAllPoints()
 
     local castbarTabButton = CreateFrame("Button", "GudaPlatesCastbarTabButton", optionsFrame)
-    castbarTabButton:SetWidth(110)
+    castbarTabButton:SetWidth(120)
     castbarTabButton:SetHeight(28)
-    castbarTabButton:SetPoint("LEFT", manaTabButton, "RIGHT", 2, 0)
+    castbarTabButton:SetPoint("LEFT", manaTabButton, "RIGHT", 5, 0)
 
     local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
@@ -2787,9 +2788,9 @@ local function CreateOptionsFrame()
     castbarTabBg:SetAllPoints()
 
     local colorsTabButton = CreateFrame("Button", "GudaPlatesColorsTabButton", optionsFrame)
-    colorsTabButton:SetWidth(110)
+    colorsTabButton:SetWidth(120)
     colorsTabButton:SetHeight(28)
-    colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 2, 0)
+    colorsTabButton:SetPoint("LEFT", castbarTabButton, "RIGHT", 5, 0)
 
     local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
@@ -2982,47 +2983,9 @@ overlapCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- Level Font Slider (in General tab)
-local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", generalTab, "OptionsSliderTemplate")
-levelFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -70)
-levelFontSlider:SetWidth(450)
-levelFontSlider:SetMinMaxValues(8, 20)
-levelFontSlider:SetValueStep(1)
-local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
-levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(levelFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
-levelFontSlider:SetScript("OnValueChanged", function()
-    Settings.levelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
--- Name Font Slider (in General tab)
-local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", generalTab, "OptionsSliderTemplate")
-nameFontSlider:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -110)
-nameFontSlider:SetWidth(450)
-nameFontSlider:SetMinMaxValues(8, 20)
-nameFontSlider:SetValueStep(1)
-local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
-nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(nameFontSlider:GetName() .. "Low"):SetText("8")
-getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
-nameFontSlider:SetScript("OnValueChanged", function()
-    Settings.nameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlateDimensions(plate)
-    end
-end)
-
 -- Raid Mark Position Checkbox
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -150)
+raidMarkCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -70)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark on Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3040,7 +3003,7 @@ end)
 
 -- Swap Name and Debuffs Checkbox
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -150)
+swapCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -105)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name and Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3054,7 +3017,7 @@ end)
 
 -- Show Debuff Timers Checkbox
 local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -185)
+debuffTimerCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -140)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
 debuffTimerLabel:SetText("Show Debuff Timers")
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3068,7 +3031,7 @@ end)
 
 -- Show Only My Debuffs Checkbox
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -185)
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 230, -140)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
 onlyMyDebuffsLabel:SetText("Show Only My Debuffs")
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3082,7 +3045,7 @@ end)
 
 -- Show Target Glow Checkbox
 local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
-targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -220)
+targetGlowCheckbox:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, -175)
 local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
 targetGlowLabel:SetText("Show Target Glow")
 targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
@@ -3113,8 +3076,8 @@ scrollFrame:SetPoint("TOPLEFT", healthbarTab, "TOPLEFT", 0, -5)
 scrollFrame:SetPoint("BOTTOMRIGHT", healthbarTab, "BOTTOMRIGHT", -25, 5)
 
 local scrollContent = CreateFrame("Frame", "GudaPlatesHealthScrollContent", scrollFrame)
-scrollContent:SetWidth(460)
-scrollContent:SetHeight(750)
+scrollContent:SetWidth(580)
+scrollContent:SetHeight(780)
 scrollFrame:SetScrollChild(scrollContent)
 
 -- Enemy Section Header
@@ -3125,7 +3088,7 @@ enemyHeader:SetText("Enemy Nameplates")
 -- Healthbar Height Slider
 local heightSlider = CreateFrame("Slider", "GudaPlatesHeightSlider", scrollContent, "OptionsSliderTemplate")
 heightSlider:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -20)
-heightSlider:SetWidth(430)
+heightSlider:SetWidth(560)
 heightSlider:SetMinMaxValues(4, 25)
 heightSlider:SetValueStep(1)
 local heightText = getglobal(heightSlider:GetName() .. "Text")
@@ -3144,7 +3107,7 @@ end)
 -- Healthbar Width Slider
 local widthSlider = CreateFrame("Slider", "GudaPlatesWidthSlider", scrollContent, "OptionsSliderTemplate")
 widthSlider:SetPoint("TOPLEFT", heightSlider, "BOTTOMLEFT", 0, -30)
-widthSlider:SetWidth(430)
+widthSlider:SetWidth(560)
 widthSlider:SetMinMaxValues(72, 150)
 widthSlider:SetValueStep(1)
 local widthText = getglobal(widthSlider:GetName() .. "Text")
@@ -3163,7 +3126,7 @@ end)
 -- Health Font Size Slider
 local healthFontSlider = CreateFrame("Slider", "GudaPlatesHealthFontSlider", scrollContent, "OptionsSliderTemplate")
 healthFontSlider:SetPoint("TOPLEFT", widthSlider, "BOTTOMLEFT", 0, -30)
-healthFontSlider:SetWidth(430)
+healthFontSlider:SetWidth(560)
 healthFontSlider:SetMinMaxValues(6, 20)
 healthFontSlider:SetValueStep(1)
 local healthFontText = getglobal(healthFontSlider:GetName() .. "Text")
@@ -3179,23 +3142,47 @@ healthFontSlider:SetScript("OnValueChanged", function()
     end
 end)
 
--- Show Health Points Checkbox
-local showHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowHealthTextCheckbox", scrollContent, "UICheckButtonTemplate")
-showHealthTextCheckbox:SetPoint("TOPLEFT", healthFontSlider, "BOTTOMLEFT", 0, -20)
-local showHealthTextLabel = getglobal(showHealthTextCheckbox:GetName().."Text")
-showHealthTextLabel:SetText("Show Health Points")
-showHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-showHealthTextCheckbox:SetScript("OnClick", function()
-    Settings.showHealthText = this:GetChecked() == 1
+-- Level Font Size Slider (Enemy)
+local levelFontSlider = CreateFrame("Slider", "GudaPlatesLevelFontSlider", scrollContent, "OptionsSliderTemplate")
+levelFontSlider:SetPoint("TOPLEFT", healthFontSlider, "BOTTOMLEFT", 0, -30)
+levelFontSlider:SetWidth(560)
+levelFontSlider:SetMinMaxValues(6, 20)
+levelFontSlider:SetValueStep(1)
+local levelFontText = getglobal(levelFontSlider:GetName() .. "Text")
+levelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(levelFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
+levelFontSlider:SetScript("OnValueChanged", function()
+    Settings.levelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Name Font Size Slider (Enemy)
+local nameFontSlider = CreateFrame("Slider", "GudaPlatesNameFontSlider", scrollContent, "OptionsSliderTemplate")
+nameFontSlider:SetPoint("TOPLEFT", levelFontSlider, "BOTTOMLEFT", 0, -30)
+nameFontSlider:SetWidth(560)
+nameFontSlider:SetMinMaxValues(6, 20)
+nameFontSlider:SetValueStep(1)
+local nameFontText = getglobal(nameFontSlider:GetName() .. "Text")
+nameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(nameFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
+nameFontSlider:SetScript("OnValueChanged", function()
+    Settings.nameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
 end)
 
 -- Health Text Position Dropdown
 local healthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthPosLabel:SetPoint("TOPLEFT", showHealthTextCheckbox, "BOTTOMLEFT", 0, -10)
+healthPosLabel:SetPoint("TOPLEFT", nameFontSlider, "BOTTOMLEFT", 0, -15)
 healthPosLabel:SetText("Health Text Position:")
 
 local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
@@ -3236,6 +3223,7 @@ local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdow
 healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
 
 local healthFormatOptions = {
+    {value = 0, text = "None"},
     {value = 1, text = "Percent"},
     {value = 2, text = "Current HP"},
     {value = 3, text = "HP (Percent%)"},
@@ -3266,15 +3254,22 @@ UIDropDownMenu_Initialize(healthFormatDropdown, HealthFormatDropdown_Initialize)
 UIDropDownMenu_SetWidth(150, healthFormatDropdown)
 UIDropDownMenu_SetSelectedValue(healthFormatDropdown, Settings.healthTextFormat)
 
+-- Separator Line
+local separator = scrollContent:CreateTexture(nil, "ARTWORK")
+separator:SetTexture(1, 1, 1, 0.2)
+separator:SetHeight(1)
+separator:SetWidth(560)
+separator:SetPoint("TOPLEFT", healthFormatLabel, "BOTTOMLEFT", 0, -15)
+
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-friendlyHeader:SetPoint("TOPLEFT", healthFormatLabel, "BOTTOMLEFT", 0, -35)
+friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
 friendlyHeader:SetText("Friendly Nameplates")
 
 -- Friend Healthbar Height Slider
 local friendHeightSlider = CreateFrame("Slider", "GudaPlatesFriendHeightSlider", scrollContent, "OptionsSliderTemplate")
 friendHeightSlider:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -20)
-friendHeightSlider:SetWidth(430)
+friendHeightSlider:SetWidth(560)
 friendHeightSlider:SetMinMaxValues(4, 25)
 friendHeightSlider:SetValueStep(1)
 local friendHeightText = getglobal(friendHeightSlider:GetName() .. "Text")
@@ -3293,7 +3288,7 @@ end)
 -- Friend Healthbar Width Slider
 local friendWidthSlider = CreateFrame("Slider", "GudaPlatesFriendWidthSlider", scrollContent, "OptionsSliderTemplate")
 friendWidthSlider:SetPoint("TOPLEFT", friendHeightSlider, "BOTTOMLEFT", 0, -30)
-friendWidthSlider:SetWidth(430)
+friendWidthSlider:SetWidth(560)
 friendWidthSlider:SetMinMaxValues(72, 150)
 friendWidthSlider:SetValueStep(1)
 local friendWidthText = getglobal(friendWidthSlider:GetName() .. "Text")
@@ -3312,7 +3307,7 @@ end)
 -- Friend Health Font Size Slider
 local friendHealthFontSlider = CreateFrame("Slider", "GudaPlatesFriendHealthFontSlider", scrollContent, "OptionsSliderTemplate")
 friendHealthFontSlider:SetPoint("TOPLEFT", friendWidthSlider, "BOTTOMLEFT", 0, -30)
-friendHealthFontSlider:SetWidth(430)
+friendHealthFontSlider:SetWidth(560)
 friendHealthFontSlider:SetMinMaxValues(6, 20)
 friendHealthFontSlider:SetValueStep(1)
 local friendHealthFontText = getglobal(friendHealthFontSlider:GetName() .. "Text")
@@ -3328,23 +3323,47 @@ friendHealthFontSlider:SetScript("OnValueChanged", function()
     end
 end)
 
--- Friend Show Health Points Checkbox
-local friendShowHealthTextCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendShowHealthTextCheckbox", scrollContent, "UICheckButtonTemplate")
-friendShowHealthTextCheckbox:SetPoint("TOPLEFT", friendHealthFontSlider, "BOTTOMLEFT", 0, -20)
-local friendShowHealthTextLabel = getglobal(friendShowHealthTextCheckbox:GetName().."Text")
-friendShowHealthTextLabel:SetText("Show Health Points")
-friendShowHealthTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-friendShowHealthTextCheckbox:SetScript("OnClick", function()
-    Settings.friendShowHealthText = this:GetChecked() == 1
+-- Friend Level Font Size Slider
+local friendLevelFontSlider = CreateFrame("Slider", "GudaPlatesFriendLevelFontSlider", scrollContent, "OptionsSliderTemplate")
+friendLevelFontSlider:SetPoint("TOPLEFT", friendHealthFontSlider, "BOTTOMLEFT", 0, -30)
+friendLevelFontSlider:SetWidth(560)
+friendLevelFontSlider:SetMinMaxValues(6, 20)
+friendLevelFontSlider:SetValueStep(1)
+local friendLevelFontText = getglobal(friendLevelFontSlider:GetName() .. "Text")
+friendLevelFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendLevelFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(friendLevelFontSlider:GetName() .. "High"):SetText("20")
+friendLevelFontSlider:SetScript("OnValueChanged", function()
+    Settings.friendLevelFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.friendLevelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
+        UpdateNamePlateDimensions(plate)
+    end
+end)
+
+-- Friend Name Font Size Slider
+local friendNameFontSlider = CreateFrame("Slider", "GudaPlatesFriendNameFontSlider", scrollContent, "OptionsSliderTemplate")
+friendNameFontSlider:SetPoint("TOPLEFT", friendLevelFontSlider, "BOTTOMLEFT", 0, -30)
+friendNameFontSlider:SetWidth(560)
+friendNameFontSlider:SetMinMaxValues(6, 20)
+friendNameFontSlider:SetValueStep(1)
+local friendNameFontText = getglobal(friendNameFontSlider:GetName() .. "Text")
+friendNameFontText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(friendNameFontSlider:GetName() .. "Low"):SetText("6")
+getglobal(friendNameFontSlider:GetName() .. "High"):SetText("20")
+friendNameFontSlider:SetScript("OnValueChanged", function()
+    Settings.friendNameFontSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.friendNameFontSize)
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlateDimensions(plate)
     end
 end)
 
 -- Friend Health Text Position Dropdown
 local friendHealthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-friendHealthPosLabel:SetPoint("TOPLEFT", friendShowHealthTextCheckbox, "BOTTOMLEFT", 0, -10)
+friendHealthPosLabel:SetPoint("TOPLEFT", friendNameFontSlider, "BOTTOMLEFT", 0, -15)
 friendHealthPosLabel:SetText("Health Text Position:")
 
 local friendHealthPosDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
@@ -3391,6 +3410,14 @@ local function FriendHealthFormatDropdown_OnClick()
 end
 
 local function FriendHealthFormatDropdown_Initialize()
+    local healthFormatOptions = {
+        {value = 0, text = "None"},
+        {value = 1, text = "Percent"},
+        {value = 2, text = "Current HP"},
+        {value = 3, text = "HP (Percent%)"},
+        {value = 4, text = "Current - Max"},
+        {value = 5, text = "Current - Max (%)"},
+    }
     for _, opt in ipairs(healthFormatOptions) do
         local info = {}
         info.text = opt.text
@@ -3411,8 +3438,8 @@ scrollFrame:SetPoint("TOPLEFT", manaTab, "TOPLEFT", 0, -5)
 scrollFrame:SetPoint("BOTTOMRIGHT", manaTab, "BOTTOMRIGHT", -25, 5)
 
 local scrollContent = CreateFrame("Frame", "GudaPlatesManaScrollContent", scrollFrame)
-scrollContent:SetWidth(460)
-scrollContent:SetHeight(600)
+scrollContent:SetWidth(580)
+scrollContent:SetHeight(650)
 scrollFrame:SetScrollChild(scrollContent)
 
 -- Enemy Section Header
@@ -3430,7 +3457,7 @@ manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 -- Manabar Height Slider
 local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", scrollContent, "OptionsSliderTemplate")
 manaHeightSlider:SetPoint("TOPLEFT", manaBarCheckbox, "BOTTOMLEFT", 0, -30)
-manaHeightSlider:SetWidth(430)
+manaHeightSlider:SetWidth(560)
 manaHeightSlider:SetMinMaxValues(2, 10)
 manaHeightSlider:SetValueStep(1)
 local manaHeightText = getglobal(manaHeightSlider:GetName() .. "Text")
@@ -3519,9 +3546,16 @@ UIDropDownMenu_Initialize(manaFormatDropdown, ManaFormatDropdown_Initialize)
 UIDropDownMenu_SetWidth(150, manaFormatDropdown)
 UIDropDownMenu_SetSelectedValue(manaFormatDropdown, Settings.manaTextFormat)
 
+-- Separator Line
+local separator = scrollContent:CreateTexture(nil, "ARTWORK")
+separator:SetTexture(1, 1, 1, 0.2)
+separator:SetHeight(1)
+separator:SetWidth(560)
+separator:SetPoint("TOPLEFT", manaFormatLabel, "BOTTOMLEFT", 0, -15)
+
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-friendlyHeader:SetPoint("TOPLEFT", manaFormatLabel, "BOTTOMLEFT", 0, -35)
+friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
 friendlyHeader:SetText("Friendly Nameplates")
 
 -- Friend Show Mana Bar Checkbox
@@ -3534,7 +3568,7 @@ friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 -- Friend Manabar Height Slider
 local friendManaHeightSlider = CreateFrame("Slider", "GudaPlatesFriendManaHeightSlider", scrollContent, "OptionsSliderTemplate")
 friendManaHeightSlider:SetPoint("TOPLEFT", friendManaBarCheckbox, "BOTTOMLEFT", 0, -30)
-friendManaHeightSlider:SetWidth(430)
+friendManaHeightSlider:SetWidth(560)
 friendManaHeightSlider:SetMinMaxValues(2, 10)
 friendManaHeightSlider:SetValueStep(1)
 local friendManaHeightText = getglobal(friendManaHeightSlider:GetName() .. "Text")
@@ -3716,7 +3750,7 @@ end)
 -- Castbar Height Slider
 local castbarHeightSlider = CreateFrame("Slider", "GudaPlatesCastbarHeightSlider", castbarTab, "OptionsSliderTemplate")
 castbarHeightSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -60)
-castbarHeightSlider:SetWidth(450)
+castbarHeightSlider:SetWidth(580)
 castbarHeightSlider:SetMinMaxValues(6, 20)
 castbarHeightSlider:SetValueStep(1)
 local castbarHeightText = getglobal(castbarHeightSlider:GetName() .. "Text")
@@ -3742,7 +3776,7 @@ castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 -- Castbar Width Slider (only enabled when independent is checked)
 local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
 castbarWidthSlider:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -150)
-castbarWidthSlider:SetWidth(450)
+castbarWidthSlider:SetWidth(580)
 castbarWidthSlider:SetMinMaxValues(72, 200)
 castbarWidthSlider:SetValueStep(1)
 local castbarWidthText = getglobal(castbarWidthSlider:GetName() .. "Text")
@@ -3827,13 +3861,13 @@ CreateColorSwatch(colorsTab, 5, -125, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_
 
 -- Tank Colors Section
 local tankHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -50)
+tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -50)
 tankHeader:SetText("|cff00ff00Tank Colors:|r")
 
-CreateColorSwatch(colorsTab, 235, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(colorsTab, 235, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
-CreateColorSwatch(colorsTab, 235, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(colorsTab, 235, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+CreateColorSwatch(colorsTab, 320, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(colorsTab, 320, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 320, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 320, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
 
 -- Misc Colors Section
 local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3949,12 +3983,12 @@ end)
 
 -- Text Colors Section
 local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -170)
+textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -170)
 textColorsHeader:SetText("|cff00ff00Text Colors:|r")
 
 -- Other Colors Section Header
 local otherColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-otherColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -165)
+otherColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -165)
 otherColorsHeader:SetText("Other Colors")
 
 -- Mana Text Color Swatch
@@ -4063,7 +4097,7 @@ end)
 
 -- Health Text Color Swatch
 local healthTextColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -220)
+healthTextColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -220)
 healthTextColorLabel:SetText("Health Text")
 
 local healthTextColorSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4116,7 +4150,7 @@ end)
 
 -- Level Color Swatch
 local levelColorLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-levelColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 235, -245)
+levelColorLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -245)
 levelColorLabel:SetText("Level")
 
 local levelColorSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4189,7 +4223,6 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesWidthSliderText"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
     getglobal("GudaPlatesHealthFontSlider"):SetValue(Settings.healthFontSize)
     getglobal("GudaPlatesHealthFontSliderText"):SetText("Health Font Size: " .. Settings.healthFontSize)
-    getglobal("GudaPlatesShowHealthTextCheckbox"):SetChecked(Settings.showHealthText)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthPosDropdown"), Settings.healthTextPosition)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthFormatDropdown"), Settings.healthTextFormat)
 
@@ -4200,7 +4233,10 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesFriendWidthSliderText"):SetText("Healthbar Width: " .. Settings.friendHealthbarWidth)
     getglobal("GudaPlatesFriendHealthFontSlider"):SetValue(Settings.friendHealthFontSize)
     getglobal("GudaPlatesFriendHealthFontSliderText"):SetText("Health Font Size: " .. Settings.friendHealthFontSize)
-    getglobal("GudaPlatesFriendShowHealthTextCheckbox"):SetChecked(Settings.friendShowHealthText)
+    getglobal("GudaPlatesFriendLevelFontSlider"):SetValue(Settings.friendLevelFontSize)
+    getglobal("GudaPlatesFriendLevelFontSliderText"):SetText("Level Font Size: " .. Settings.friendLevelFontSize)
+    getglobal("GudaPlatesFriendNameFontSlider"):SetValue(Settings.friendNameFontSize)
+    getglobal("GudaPlatesFriendNameFontSliderText"):SetText("Name Font Size: " .. Settings.friendNameFontSize)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthPosDropdown"), Settings.friendHealthTextPosition)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthFormatDropdown"), Settings.friendHealthTextFormat)
     -- Mana settings
@@ -4253,13 +4289,11 @@ resetButton:SetScript("OnClick", function()
     Settings.healthbarHeight = 14
     Settings.healthbarWidth = 115
     Settings.healthFontSize = 10
-    Settings.showHealthText = true
     Settings.healthTextPosition = "CENTER"
     Settings.healthTextFormat = 1
     Settings.friendHealthbarHeight = 4
     Settings.friendHealthbarWidth = 85
     Settings.friendHealthFontSize = 10
-    Settings.friendShowHealthText = true
     Settings.friendHealthTextPosition = "CENTER"
     Settings.friendHealthTextFormat = 1
     Settings.showManaBar = false
@@ -4272,6 +4306,8 @@ resetButton:SetScript("OnClick", function()
     Settings.friendManabarHeight = 4
     Settings.levelFontSize = 10
     Settings.nameFontSize = 10
+    Settings.friendLevelFontSize = 8
+    Settings.friendNameFontSize = 8
     Settings.textFont = "Fonts\\ARIALN.TTF"
     Settings.castbarHeight = 12
     Settings.castbarWidth = 115
