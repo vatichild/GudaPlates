@@ -1216,6 +1216,11 @@ local function UpdateNamePlate(frame)
             -- Store on nameplate object for this specific plate
             nameplate.isAttackingPlayer = true
             nameplate.lastAttackTime = GetTime()
+        elseif UnitExists(mobTarget) then
+            -- Mob has a target and it's NOT the player - clear stickiness immediately
+            isAttackingPlayer = false
+            nameplate.isAttackingPlayer = false
+            nameplate.lastAttackTime = nil
         else
         -- Check if this specific plate was recently attacking
             if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
@@ -1236,7 +1241,7 @@ local function UpdateNamePlate(frame)
             end
 
             -- Check if this specific plate was recently confirmed attacking
-            if not isAttackingPlayer and nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 5) then
+            if not isAttackingPlayer and nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
                 isAttackingPlayer = true
             end
 
@@ -1250,8 +1255,8 @@ local function UpdateNamePlate(frame)
                         nameplate.isAttackingPlayer = true
                         nameplate.lastAttackTime = GetTime()
                         isAttackingPlayer = true
-                    elseif UnitExists("targettarget") and not UnitIsUnit("targettarget", "player") then
-                    -- Mob is targeting someone else, clear tracking
+                    elseif UnitExists("targettarget") then
+                    -- Mob is targeting someone else, clear tracking immediately
                         nameplate.isAttackingPlayer = false
                         nameplate.lastAttackTime = nil
                         isAttackingPlayer = false
@@ -1259,8 +1264,8 @@ local function UpdateNamePlate(frame)
                 end
             end
 
-            -- Expire old entries after 5 seconds without refresh
-            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime > 5) then
+            -- Expire old entries after 2 seconds without refresh
+            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime > 2) then
                 nameplate.isAttackingPlayer = false
                 nameplate.lastAttackTime = nil
                 isAttackingPlayer = false
@@ -1372,11 +1377,9 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Apply color based on state (priority order: THREAT COLORS -> TAPPED -> NEUTRAL)
-        local hasInvolvement = isAttackingPlayer or isTanking or (twthreat_active and threatPct > 0) or (hasValidGUID and mobInCombat and not isTappedByOthers)
-        
-        if isTappedByOthers and hp < hpmax and not hasInvolvement then
-        -- TAPPED: Mob is tapped by others, took damage, and we are not involved - gray
+        -- Apply color based on state (priority order: TAPPED -> NEUTRAL -> THREAT COLORS)
+        if isTappedByOthers and hp < hpmax then
+        -- TAPPED: Mob is tapped by others and took damage - no other colors applied
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
         elseif isNeutral and not isAttackingPlayer then
         -- Neutral and not attacking - yellow
@@ -1387,7 +1390,10 @@ local function UpdateNamePlate(frame)
         elseif hasValidGUID and twthreat_active then
         -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
-                if isTanking or isAttackingPlayer then
+                if isTanking then
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                elseif isAttackingPlayer then
+                    -- Stickiness or mob mid-swing but we don't officially have 'isTanking' status yet
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 elseif threatPct > 80 then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
@@ -1399,7 +1405,10 @@ local function UpdateNamePlate(frame)
                     end
                 end
             else
-                if isAttackingPlayer or isTanking then
+                if isTanking then
+                    -- DPS having aggro is bad
+                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
+                elseif isAttackingPlayer then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 elseif threatPct > 80 then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
