@@ -749,6 +749,7 @@ local function HandleNamePlate(frame)
     end
 
     nameplate:SetAllPoints(frame)
+    nameplate:SetFrameStrata("BACKGROUND")
     nameplate:SetFrameLevel(frame:GetFrameLevel() + 10)
 
     -- Plater-style health bar with higher frame level
@@ -1591,7 +1592,8 @@ local function UpdateNamePlate(frame)
             end
         end
         -- Target always has highest z-index
-        nameplate:SetFrameStrata("TOOLTIP")
+        nameplate:SetFrameStrata("BACKGROUND")
+        nameplate:SetFrameLevel(10)
     else
         -- Hide all bracket parts
         nameplate.targetBracket.leftVert:Hide()
@@ -1607,13 +1609,12 @@ local function UpdateNamePlate(frame)
         if nameplate.targetGlowBottom then
             nameplate.targetGlowBottom:Hide()
         end
-        -- Non-target z-index based on attacking state (only in overlap mode)
-        if nameplateOverlap then
-            if nameplate.isAttackingPlayer then
-                nameplate:SetFrameStrata("HIGH")
-            else
-                nameplate:SetFrameStrata("MEDIUM")
-            end
+        -- Non-target z-index based on attacking state
+        nameplate:SetFrameStrata("BACKGROUND")
+        if nameplate.isAttackingPlayer then
+            nameplate:SetFrameLevel(5)
+        else
+            nameplate:SetFrameLevel(2)
         end
     end
 
