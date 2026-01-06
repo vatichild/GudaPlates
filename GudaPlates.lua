@@ -349,6 +349,7 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
 -- SuperWoW cast event (provides exact GUID of caster)
@@ -2290,8 +2291,26 @@ GudaPlates:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
         -- Track debuff applications from combat log (ShaguPlates-style)
         if arg1 and SpellDB then
-            -- Pattern: "Unit is afflicted by Spell."
-            local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL or "%s is afflicted by %s.")
+            -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (N)."
+            -- Use hardcoded pattern to avoid conflicts with addons like Cursive that modify AURAADDEDOTHERHARMFUL
+            local unit, effect = cmatch(arg1, "%s is afflicted by %s.")
+            -- If no match, try pattern with stack count (e.g. "X is afflicted by Y (1).")
+            if not unit or not effect then
+                for u, e in string.gfind(arg1, "(.+) is afflicted by (.+) %((%d+)%)%.") do
+                    unit, effect = u, e
+                    break
+                end
+            end
+
+            -- If we matched with Cursive's format (Debuff (1)), the stack-unaware pattern will capture "(1)" as part of the effect name
+            -- Strip any stack counts from the effect name
+            if effect then
+                for e, s in string.gfind(effect, "(.+) %((%d+)%)$") do
+                    effect = e
+                    break
+                end
+            end
+
             if unit and effect then
                 local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
                 local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
@@ -2313,43 +2332,32 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
 
-    elseif arg1 then
-        -- Pattern: "Spell fades from Unit."
-        for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            -- Remove from SpellDB objects (all levels)
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
+    elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" or event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
+        if arg1 then
+            -- Pattern: "Spell fades from Unit."
+            for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
+                local spell = StripSpellRank(rawSpell)
+                -- Also strip stack count if present (Cursive/SuperWoW might add it)
+                for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
+                
+                debuffTracker[unit .. spell] = nil
+                -- Remove from SpellDB objects (all levels)
+                if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                    for level, effects in pairs(SpellDB.objects[unit]) do
+                        if effects[spell] then effects[spell] = nil end
+                    end
                 end
             end
-        end
-        for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
-        end
-    elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" and arg1 then
-        for rawSpell, unit in string.gfind(arg1, "(.+) fades from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
-                end
-            end
-        end
-        for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
-            local spell = StripSpellRank(rawSpell)
-            debuffTracker[unit .. spell] = nil
-            if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                for level, effects in pairs(SpellDB.objects[unit]) do
-                    if effects[spell] then effects[spell] = nil end
+            for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
+                local spell = StripSpellRank(rawSpell)
+                -- Also strip stack count if present
+                for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
+
+                debuffTracker[unit .. spell] = nil
+                if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
+                    for level, effects in pairs(SpellDB.objects[unit]) do
+                        if effects[spell] then effects[spell] = nil end
+                    end
                 end
             end
         end

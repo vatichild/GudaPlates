@@ -4,7 +4,9 @@
 GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
+	-- Warrior
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest"
 }  -- Cache: texture path -> spell name
@@ -555,8 +557,3 @@ function GudaPlates_SpellDB:ScanAction(slot)
 
 	return effect, rank
 end
-
--- ============================================
--- INITIALIZATION
--- ============================================
--- GudaPlates_SpellDB is already global from line 4
