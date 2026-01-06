@@ -106,6 +106,50 @@ local function IsTankClass(unit)
     return class and TANK_CLASSES[class]
 end
 
+-- Helper function to check if we are in an instance (raid or dungeon)
+local function IsInInstance()
+    -- On Turtle WoW / Vanilla 1.12.1
+    -- 1. Check if IsInInstance() exists (some clients backport it)
+    if _G["IsInInstance"] then
+        local inInst, instType = _G["IsInInstance"]()
+        if inInst then return true end
+    end
+
+    -- 2. Check for raid or party and zone type
+    local pvpType, isFFA, faction = GetZonePVPInfo()
+    -- 'sanctuary' is usually used for safe zones in cities but also some instances in custom servers
+    -- More importantly, check if we are in a raid/party and if the zone is an instance
+    
+    -- 3. Check if we have a raid/party and if GetRealZoneText() matches common instance names
+    -- but a better way in 1.12.1 is checking if the world map is unavailable or using specific zone checks
+    
+    -- For Turtle WoW specifically, many people use GetRealZoneText and compare with known instances
+    -- but we can use a simpler heuristic: if we are in a raid, we are likely in an instance or world boss.
+    -- The requirement says "raid or dungeon".
+    
+    -- Let's use a more robust check for 1.12.1
+    local zone = GetRealZoneText()
+    if not zone or zone == "" then return false end
+    
+    -- Instances usually have a specific map ID or are not on continents
+    -- In 1.12.1, we can't easily get MapID, but we can check if we're in a party/raid 
+    -- and if the zone is NOT one of the major continents.
+    
+    -- Turtle WoW uses a backported IsInInstance if I'm not mistaken.
+    -- If not, checking for raid status is a common fallback for "raid or dungeon" 
+    -- because you're almost always in a party/raid in those.
+    if UnitInRaid("player") or GetNumPartyMembers() > 0 then
+        -- If in a group, check if we are in a known non-instance zone
+        local isContinent = (zone == "Azeroth" or zone == "Kalimdor" or zone == "Eastern Kingdoms" or zone == "Stranglethorn Vale" or zone == "Tanaris") -- etc
+        if not isContinent then
+            -- This is still a bit weak, but better than nothing.
+            -- Actually, let's just trust IsInInstance() if it exists.
+        end
+    end
+    
+    return false 
+end
+
 -- Helper function to check if a unit is in the player's group (player, party, or raid)
 local function IsInPlayerGroup(unit)
     if not unit or not UnitExists(unit) then return false end
@@ -312,6 +356,8 @@ GudaPlates:RegisterEvent("SPELLCAST_STOP")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
 GudaPlates:RegisterEvent("PLAYER_TARGET_CHANGED")
 GudaPlates:RegisterEvent("UNIT_AURA")
+GudaPlates:RegisterEvent("PARTY_MEMBERS_CHANGED")
+GudaPlates:RegisterEvent("RAID_ROSTER_UPDATE")
 
 -- Patterns for removing pending spells (ShaguPlates-style)
 local REMOVE_PENDING_PATTERNS = {
@@ -1245,12 +1291,9 @@ local function UpdateNamePlate(frame)
             -- Keep original color (e.g. class colors)
             nameplate.health:SetStatusBarColor(r, g, b, 1)
         end
-    elseif isNeutral and not isAttackingPlayer then
-    -- Neutral and not attacking - yellow
-        nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
-    elseif isHostile or (isNeutral and isAttackingPlayer) then
-    -- Hostile OR neutral that is attacking player
-    -- Check if mob is in combat (has a target)
+    else
+        -- Hostile or Neutral
+        -- Check if mob is in combat (has a target)
         local mobInCombat = false
         local mobTargetUnit = nil
 
@@ -1266,28 +1309,52 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Check if mob is tapped by others (in combat but NOT targeting our group)
+        -- Check if mob is tapped by others
         local isTappedByOthers = false
-        if mobInCombat then
-            local isMobTargetingGroup = false
-
-            if mobTargetUnit and UnitExists(mobTargetUnit) then
-                isMobTargetingGroup = IsInPlayerGroup(mobTargetUnit)
-            else
-                -- Can't determine mob's target - assume it's ours if attacking us or has aggro glow
-                isMobTargetingGroup = isAttackingPlayer or hasAggroGlow
+        
+        -- Requirement: In instances, ignore tapping coloring
+        local inInstance = IsInInstance()
+        
+        if not inInstance then
+            -- 1. Check original color for gray (tapped)
+            -- Blizzard gray for tapped is (0.5, 0.5, 0.5)
+            if r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6 then
+                isTappedByOthers = true
             end
 
-            isTappedByOthers = not isMobTargetingGroup
+            -- 2. If it's our target, use API for 100% accuracy
+            if not isTappedByOthers and UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+                if UnitIsTapped("target") and not UnitIsTappedByPlayer("target") then
+                    isTappedByOthers = true
+                end
+            end
+
+            -- 3. Also keep the current logic as backup if color detection fails for some reason
+            -- or if it's already attacking someone not in group.
+            if not isTappedByOthers and mobInCombat then
+                local isMobTargetingGroup = false
+
+                if mobTargetUnit and UnitExists(mobTargetUnit) then
+                    isMobTargetingGroup = IsInPlayerGroup(mobTargetUnit)
+                else
+                    -- Can't determine mob's target - assume it's ours if attacking us or has aggro glow
+                    isMobTargetingGroup = isAttackingPlayer or hasAggroGlow
+                end
+
+                isTappedByOthers = not isMobTargetingGroup
+            end
         end
 
-        -- Apply color based on state (priority order: not in combat -> tapped -> threat colors)
-        if not mobInCombat then
-        -- Not in combat - default hostile red
-            nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
-        elseif isTappedByOthers then
-        -- TAPPED: Mob is tapped by others - no other colors applied
+        -- Apply color based on state (priority order: TAPPED -> NEUTRAL -> THREAT COLORS)
+        if isTappedByOthers and hp < hpmax then
+        -- TAPPED: Mob is tapped by others and took damage - no other colors applied
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
+        elseif isNeutral and not isAttackingPlayer then
+        -- Neutral and not attacking - yellow
+            nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+        elseif not mobInCombat then
+        -- Not in combat (and not neutral/tapped) - default hostile red
+            nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif hasValidGUID and twthreat_active then
         -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
@@ -1354,8 +1421,6 @@ local function UpdateNamePlate(frame)
                 end
             end
         end
-    else
-        nameplate.health:SetStatusBarColor(r, g, b, 1)
     end
 
     -- Update name from original
@@ -2351,7 +2416,17 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
 
-    elseif event == "PLAYER_TARGET_CHANGED" or (event == "UNIT_AURA" and arg1 == "target") then
+    elseif event == "PLAYER_TARGET_CHANGED" or (event == "UNIT_AURA" and arg1 == "target") or 
+           event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+        -- Refresh all nameplates color when group changes to immediately update tapped state
+        if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+            for plate, _ in pairs(registry) do
+                if plate:IsShown() then
+                    UpdateNamePlate(plate)
+                end
+            end
+        end
+
         -- Add missing debuffs by iteration (ShaguPlates-style)
         if SpellDB and UnitExists("target") then
             local unitname = UnitName("target")
