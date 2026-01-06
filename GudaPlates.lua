@@ -2995,7 +2995,7 @@ local hideBorderCheckbox = CreateFrame("CheckButton", "GudaPlatesHideBorderCheck
 hideBorderCheckbox:SetPoint("TOPLEFT", transparencySlider, "BOTTOMLEFT", 0, -10)
 local hideBorderLabel = getglobal(hideBorderCheckbox:GetName().."Text")
 hideBorderLabel:SetText("Hide Borders")
-hideBorderLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+hideBorderLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 hideBorderCheckbox:SetScript("OnClick", function()
     Settings.hideOptionsBorder = this:GetChecked() == 1
     SaveSettings()
@@ -3111,7 +3111,7 @@ fontHeader:SetText("Font Settings")
 
 local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
 fontLabel:SetPoint("TOPLEFT", fontHeader, "BOTTOMLEFT", 0, -15)
-fontLabel:SetText("Global Font:")
+fontLabel:SetText("Nameplates Font:")
 
 local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
 fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
@@ -3301,11 +3301,11 @@ UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
 
 -- Health Text Format Dropdown
 local healthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-healthFormatLabel:SetPoint("TOPLEFT", healthPosLabel, "BOTTOMLEFT", 0, -15)
+healthFormatLabel:SetPoint("LEFT", healthPosDropdown, "RIGHT", 10, 0)
 healthFormatLabel:SetText("Health Text Format:")
 
 local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
-healthFormatDropdown:SetPoint("TOPLEFT", healthFormatLabel, "TOPRIGHT", -10, 8)
+healthFormatDropdown:SetPoint("LEFT", healthFormatLabel, "RIGHT", -10, -3)
 
 local healthFormatOptions = {
     {value = 0, text = "None"},
@@ -3347,7 +3347,7 @@ local separator = scrollContent:CreateTexture(nil, "ARTWORK")
 separator:SetTexture(1, 1, 1, 0.2)
 separator:SetHeight(1)
 separator:SetWidth(560)
-separator:SetPoint("TOPLEFT", healthFormatLabel, "BOTTOMLEFT", 0, -15)
+separator:SetPoint("TOPLEFT", healthPosLabel, "BOTTOMLEFT", 0, -35)
 
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -3482,11 +3482,11 @@ UIDropDownMenu_SetSelectedValue(friendHealthPosDropdown, Settings.friendHealthTe
 
 -- Friend Health Text Format Dropdown
 local friendHealthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-friendHealthFormatLabel:SetPoint("TOPLEFT", friendHealthPosLabel, "BOTTOMLEFT", 0, -15)
+friendHealthFormatLabel:SetPoint("LEFT", friendHealthPosDropdown, "RIGHT", 10, 0)
 friendHealthFormatLabel:SetText("Health Text Format:")
 
 local friendHealthFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
-friendHealthFormatDropdown:SetPoint("TOPLEFT", friendHealthFormatLabel, "TOPRIGHT", -10, 8)
+friendHealthFormatDropdown:SetPoint("LEFT", friendHealthFormatLabel, "RIGHT", -10, -3)
 
 local function FriendHealthFormatDropdown_OnClick()
     Settings.friendHealthTextFormat = this.value
@@ -3520,7 +3520,7 @@ end
 
 UIDropDownMenu_Initialize(friendHealthFormatDropdown, FriendHealthFormatDropdown_Initialize)
 UIDropDownMenu_SetWidth(150, friendHealthFormatDropdown)
-    UIDropDownMenu_SetSelectedValue(friendHealthFormatDropdown, Settings.friendHealthTextFormat)
+UIDropDownMenu_SetSelectedValue(friendHealthFormatDropdown, Settings.friendHealthTextFormat)
     end
 
     local function SetupManaTab()
@@ -3543,7 +3543,7 @@ local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", 
 manaBarCheckbox:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -10)
 local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
 manaBarLabel:SetText("Show Mana Bar")
-manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Manabar Height Slider
 local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", scrollContent, "OptionsSliderTemplate")
@@ -3654,7 +3654,7 @@ local friendManaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendManaBa
 friendManaBarCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
 local friendManaBarLabel = getglobal(friendManaBarCheckbox:GetName().."Text")
 friendManaBarLabel:SetText("Show Mana Bar")
-friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Friend Manabar Height Slider
 local friendManaHeightSlider = CreateFrame("Slider", "GudaPlatesFriendManaHeightSlider", scrollContent, "OptionsSliderTemplate")
@@ -3829,7 +3829,7 @@ local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconChe
 castbarIconCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -10)
 local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
 castbarIconLabel:SetText("Show Spell Icon")
-castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 castbarIconCheckbox:SetScript("OnClick", function()
     Settings.showCastbarIcon = this:GetChecked() == 1
     SaveSettings()
@@ -3862,7 +3862,7 @@ local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbar
 castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarTab, "TOPLEFT", 5, -100)
 local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
 castbarIndependentLabel:SetText("Independent Width from Healthbar")
-castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
+castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Castbar Width Slider (only enabled when independent is checked)
 local castbarWidthSlider = CreateFrame("Slider", "GudaPlatesCastbarWidthSlider", castbarTab, "OptionsSliderTemplate")
@@ -3921,7 +3921,7 @@ local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colors
 tankCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -10)
 local tankLabel = getglobal(tankCheckbox:GetName().."Text")
 tankLabel:SetText("Tank Mode")
-tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 14)
+tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 tankCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
         playerRole = "TANK"
