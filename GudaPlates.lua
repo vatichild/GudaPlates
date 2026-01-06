@@ -1285,7 +1285,6 @@ local function UpdateNamePlate(frame)
 
     -- Update Mana Bar (only with SuperWoW GUID support)
     local mShowManaBar = isFriendly and Settings.friendShowManaBar or Settings.showManaBar
-    local mShowManaText = isFriendly and Settings.friendShowManaText or Settings.showManaText
     local mManaTextFormat = isFriendly and Settings.friendManaTextFormat or Settings.manaTextFormat
 
     if mShowManaBar and superwow_active and hasValidGUID then
@@ -1301,7 +1300,7 @@ local function UpdateNamePlate(frame)
             
             -- Format mana text based on settings
             local manaText = ""
-            if mShowManaText then
+            if mManaTextFormat ~= 0 then
                 local manaPerc = (mana / manaMax) * 100
                 if mManaTextFormat == 1 then
                     -- Percent only
@@ -3428,13 +3427,6 @@ local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
 manaBarLabel:SetText("Show Mana Bar")
 manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
--- Show Mana Text Checkbox
-local showManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesShowManaTextCheckbox", scrollContent, "UICheckButtonTemplate")
-showManaTextCheckbox:SetPoint("LEFT", manaBarLabel, "RIGHT", 100, 0)
-local showManaTextLabel = getglobal(showManaTextCheckbox:GetName().."Text")
-showManaTextLabel:SetText("Show Mana Points")
-showManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-
 -- Manabar Height Slider
 local manaHeightSlider = CreateFrame("Slider", "GudaPlatesManaHeightSlider", scrollContent, "OptionsSliderTemplate")
 manaHeightSlider:SetPoint("TOPLEFT", manaBarCheckbox, "BOTTOMLEFT", 0, -30)
@@ -3509,6 +3501,7 @@ end
 
 local function ManaFormatDropdown_Initialize()
     local opts = {
+        {value = 0, text = "None"},
         {value = 1, text = "Percent"},
         {value = 2, text = "Current Mana"},
         {value = 3, text = "Mana (Percent%)"},
@@ -3537,13 +3530,6 @@ friendManaBarCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
 local friendManaBarLabel = getglobal(friendManaBarCheckbox:GetName().."Text")
 friendManaBarLabel:SetText("Show Mana Bar")
 friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
-
--- Friend Show Mana Text Checkbox
-local friendShowManaTextCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendShowManaTextCheckbox", scrollContent, "UICheckButtonTemplate")
-friendShowManaTextCheckbox:SetPoint("LEFT", friendManaBarLabel, "RIGHT", 100, 0)
-local friendShowManaTextLabel = getglobal(friendShowManaTextCheckbox:GetName().."Text")
-friendShowManaTextLabel:SetText("Show Mana Points")
-friendShowManaTextLabel:SetFont("Fonts\\FRIZQT__.TTF", 12)
 
 -- Friend Manabar Height Slider
 local friendManaHeightSlider = CreateFrame("Slider", "GudaPlatesFriendManaHeightSlider", scrollContent, "OptionsSliderTemplate")
@@ -3619,6 +3605,7 @@ end
 
 local function FriendManaFormatDropdown_Initialize()
     local opts = {
+        {value = 0, text = "None"},
         {value = 1, text = "Percent"},
         {value = 2, text = "Current Mana"},
         {value = 3, text = "Mana (Percent%)"},
@@ -3640,20 +3627,14 @@ UIDropDownMenu_SetSelectedValue(friendManaFormatDropdown, Settings.friendManaTex
 function UpdateManaOptionsState()
     -- Enemy
     local enabled = Settings.showManaBar
-    local manaTextCb = getglobal("GudaPlatesShowManaTextCheckbox")
-    local manaTextLbl = getglobal("GudaPlatesShowManaTextCheckboxText")
     local manaFmtLbl = getglobal("GudaPlatesManaFormatLabel")
     local manaPosLbl = getglobal("GudaPlatesManaPosLabel")
     local manaHtSliderText = getglobal("GudaPlatesManaHeightSliderText")
     if enabled then
-        if manaTextCb then manaTextCb:Enable() end
-        if manaTextLbl then manaTextLbl:SetTextColor(1, 1, 1) end
         if manaFmtLbl then manaFmtLbl:SetTextColor(1, 0.82, 0) end
         if manaPosLbl then manaPosLbl:SetTextColor(1, 0.82, 0) end
         if manaHtSliderText then manaHtSliderText:SetTextColor(1, 0.82, 0) end
     else
-        if manaTextCb then manaTextCb:Disable() end
-        if manaTextLbl then manaTextLbl:SetTextColor(0.5, 0.5, 0.5) end
         if manaFmtLbl then manaFmtLbl:SetTextColor(0.5, 0.5, 0.5) end
         if manaPosLbl then manaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
         if manaHtSliderText then manaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
@@ -3661,20 +3642,14 @@ function UpdateManaOptionsState()
     
     -- Friendly
     local fEnabled = Settings.friendShowManaBar
-    local fManaTextCb = getglobal("GudaPlatesFriendShowManaTextCheckbox")
-    local fManaTextLbl = getglobal("GudaPlatesFriendShowManaTextCheckboxText")
     local fManaFmtLbl = getglobal("GudaPlatesFriendManaFormatLabel")
     local fManaPosLbl = getglobal("GudaPlatesFriendManaPosLabel")
     local fManaHtSliderText = getglobal("GudaPlatesFriendManaHeightSliderText")
     if fEnabled then
-        if fManaTextCb then fManaTextCb:Enable() end
-        if fManaTextLbl then fManaTextLbl:SetTextColor(1, 1, 1) end
         if fManaFmtLbl then fManaFmtLbl:SetTextColor(1, 0.82, 0) end
         if fManaPosLbl then fManaPosLbl:SetTextColor(1, 0.82, 0) end
         if fManaHtSliderText then fManaHtSliderText:SetTextColor(1, 0.82, 0) end
     else
-        if fManaTextCb then fManaTextCb:Disable() end
-        if fManaTextLbl then fManaTextLbl:SetTextColor(0.5, 0.5, 0.5) end
         if fManaFmtLbl then fManaFmtLbl:SetTextColor(0.5, 0.5, 0.5) end
         if fManaPosLbl then fManaPosLbl:SetTextColor(0.5, 0.5, 0.5) end
         if fManaHtSliderText then fManaHtSliderText:SetTextColor(0.5, 0.5, 0.5) end
@@ -3701,15 +3676,6 @@ manaBarCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- Show Mana Text Checkbox OnClick
-showManaTextCheckbox:SetScript("OnClick", function()
-    Settings.showManaText = this:GetChecked() == 1
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
-    end
-end)
-
 -- Friend Mana Bar Checkbox OnClick
 friendManaBarCheckbox:SetScript("OnClick", function()
     Settings.friendShowManaBar = this:GetChecked() == 1
@@ -3728,15 +3694,6 @@ friendManaBarCheckbox:SetScript("OnEnter", function()
 end)
 friendManaBarCheckbox:SetScript("OnLeave", function()
     GameTooltip:Hide()
-end)
-
--- Friend Show Mana Text Checkbox OnClick
-friendShowManaTextCheckbox:SetScript("OnClick", function()
-    Settings.friendShowManaText = this:GetChecked() == 1
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
-    end
 end)
     end
 
@@ -4248,14 +4205,12 @@ optionsFrame:SetScript("OnShow", function()
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthFormatDropdown"), Settings.friendHealthTextFormat)
     -- Mana settings
     getglobal("GudaPlatesManaBarCheckbox"):SetChecked(Settings.showManaBar)
-    getglobal("GudaPlatesShowManaTextCheckbox"):SetChecked(Settings.showManaText)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaFormatDropdown"), Settings.manaTextFormat)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaPosDropdown"), Settings.manaTextPosition)
     getglobal("GudaPlatesManaHeightSlider"):SetValue(Settings.manabarHeight)
     getglobal("GudaPlatesManaHeightSliderText"):SetText("Manabar Height: " .. Settings.manabarHeight)
     
     getglobal("GudaPlatesFriendManaBarCheckbox"):SetChecked(Settings.friendShowManaBar)
-    getglobal("GudaPlatesFriendShowManaTextCheckbox"):SetChecked(Settings.friendShowManaText)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaFormatDropdown"), Settings.friendManaTextFormat)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaPosDropdown"), Settings.friendManaTextPosition)
     getglobal("GudaPlatesFriendManaHeightSlider"):SetValue(Settings.friendManabarHeight)
@@ -4308,12 +4263,10 @@ resetButton:SetScript("OnClick", function()
     Settings.friendHealthTextPosition = "CENTER"
     Settings.friendHealthTextFormat = 1
     Settings.showManaBar = false
-    Settings.showManaText = true
     Settings.manaTextFormat = 1
     Settings.manaTextPosition = "CENTER"
     Settings.manabarHeight = 4
     Settings.friendShowManaBar = false
-    Settings.friendShowManaText = true
     Settings.friendManaTextFormat = 1
     Settings.friendManaTextPosition = "CENTER"
     Settings.friendManabarHeight = 4
