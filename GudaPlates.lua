@@ -114,8 +114,8 @@ end
 local function IsInInstance()
     -- On Turtle WoW / Vanilla 1.12.1
     -- 1. Check if IsInInstance() exists (some clients backport it)
-    if _G["IsInInstance"] then
-        local inInst, instType = _G["IsInInstance"]()
+    if getglobal("IsInInstance") then
+        local inInst, instType = getglobal("IsInInstance")()
         if inInst then return true end
     end
 

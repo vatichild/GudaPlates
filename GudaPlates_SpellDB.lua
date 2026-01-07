@@ -8,7 +8,10 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
-	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest"
+	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
+	-- Other
+	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
+	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }  -- Cache: texture path -> spell name
 
 -- ============================================
@@ -167,6 +170,10 @@ GudaPlates_SpellDB.DEBUFFS = {
 
 	-- Felhunter
 	["Tainted Blood Effect"] = {[0]=10},
+
+	-- Other
+	["Thunderfury"] = {[0]=12},
+	["Thunderfury's Blessing"] = {[0]=12},
 }
 
 -- Dynamic debuffs that scale with combo points
@@ -216,6 +223,9 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Judgement of Light"] = "PALADIN",
 	["Judgement of Wisdom"] = "PALADIN",
 	["Judgement of Justice"] = "PALADIN",
+	-- Other
+	["Thunderfury"] = true,
+	["Thunderfury's Blessing"] = true,
 }
 
 -- ============================================
