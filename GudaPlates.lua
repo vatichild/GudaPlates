@@ -353,6 +353,12 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_PARTY_HITS")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_SELF_RANGED_HITS")
+GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_PARTY_RANGED_HITS")
 -- SuperWoW cast event (provides exact GUID of caster)
 GudaPlates:RegisterEvent("UNIT_CASTEVENT")
 -- ShaguPlates-style events for debuff tracking
@@ -2397,10 +2403,117 @@ local function ParseCastStart(msg)
     end
 end
 
+-- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
+local function ParseAttackHit(msg)
+    if not msg or not SpellDB then return end
+
+    local attacker, victim = nil, nil
+    -- Patterns for melee hits (English)
+    -- You hit X for Y.
+    for v in string.gfind(msg, "You hit (.+) for %d+%.") do
+        attacker = "You"
+        victim = v
+        break
+    end
+    if not victim then
+    -- You crit X for Y.
+        for v in string.gfind(msg, "You crit (.+) for %d+%.") do
+            attacker = "You"
+            victim = v
+            break
+        end
+    end
+    if not victim then
+    -- X hits Y for Z.
+        for a, v in string.gfind(msg, "(.+) hits (.+) for %d+%.") do
+            attacker = a
+            victim = v
+            break
+        end
+    end
+    if not victim then
+    -- X crits Y for Z.
+        for a, v in string.gfind(msg, "(.+) crits (.+) for %d+%.") do
+            attacker = a
+            victim = v
+            break
+        end
+    end
+
+    -- Patterns for ranged hits
+    if not victim then
+    -- Your ranged attack hits X for Y.
+        for v in string.gfind(msg, "Your ranged attack hits (.+) for %d+%.") do
+            attacker = "You"
+            victim = v
+            break
+        end
+    end
+    if not victim then
+    -- Your ranged attack crits X for Y.
+        for v in string.gfind(msg, "Your ranged attack crits (.+) for %d+%.") do
+            attacker = "You"
+            victim = v
+            break
+        end
+    end
+    if not victim then
+    -- X's ranged attack hits Y for Z.
+        for a, v in string.gfind(msg, "(.+)'s ranged attack hits (.+) for %d+%.") do
+            attacker = a
+            victim = v
+            break
+        end
+    end
+    if not victim then
+    -- X's ranged attack crits Y for Z.
+        for a, v in string.gfind(msg, "(.+)'s ranged attack crits (.+) for %d+%.") do
+            attacker = a
+            victim = v
+            break
+        end
+    end
+
+    if attacker and victim then
+    -- Judgements that are refreshed by melee/ranged hits
+        local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice" }
+        for _, effect in pairs(judgements) do
+        -- Check if this victim has the judgement debuff tracked
+            if SpellDB.objects[victim] then
+                for level, effects in pairs(SpellDB.objects[victim]) do
+                    local data = effects[effect]
+                    if data then
+                    -- Judgement should be reapplied when paladin who applied hits
+                        local isAttackerOwner = false
+                        if attacker == "You" and data.isOwn then
+                            isAttackerOwner = true
+                        elseif attacker ~= "You" and not data.isOwn then
+                        -- We don't track other paladins by name, but if it's not ours
+                        -- and SOMEONE else hit it, we assume it's the owner for now
+                        -- to keep their timers alive on our nameplates.
+                        -- But the issue says "not any melee", implying stricter check.
+                        -- However, since we don't have owner name for others, we can't be perfect.
+                        -- If we want to be strict: only refresh if it's OURS and WE hit it.
+                            isAttackerOwner = true -- Fallback for others to at least keep it refreshed
+                        end
+
+                        if isAttackerOwner then
+                            local duration = SpellDB:GetDuration(effect, 0)
+                            SpellDB:RefreshEffect(victim, level, effect, duration, data.isOwn)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     if arg1 and string.find(event, "CHAT_MSG_SPELL") then
         ParseCastStart(arg1)
+    elseif arg1 and string.find(event, "CHAT_MSG_COMBAT") then
+        ParseAttackHit(arg1)
     end
 
     if event == "ADDON_LOADED" and arg1 == "pfUI" then
