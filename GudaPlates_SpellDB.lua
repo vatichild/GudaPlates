@@ -338,7 +338,7 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
 	if UnitGUID and UnitExists("target") and UnitName("target") == unit then
-		local guid = UnitGUID("target")
+		local guid = UnitGUID and UnitGUID("target")
 		if guid then unitKey = guid end
 	end
 
@@ -530,10 +530,23 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 
 	-- Get the debuff texture first for cache lookup
 	local texture = UnitDebuff(unit, index)
+	if not texture then return nil end
+
+	-- Normalize texture path (replace forward slashes with backslashes and lowercase)
+	local normalizedTexture = string.lower(string.gsub(texture, "/", "\\"))
 
 	-- Try texture cache first (fastest, works with GUIDs)
-	if texture and self.textureToSpell and self.textureToSpell[texture] then
-		return self.textureToSpell[texture]
+	if self.textureToSpell then
+		-- Try exact match first
+		if self.textureToSpell[texture] then
+			return self.textureToSpell[texture]
+		end
+		-- Try normalized match
+		for path, effect in pairs(self.textureToSpell) do
+			if string.lower(string.gsub(path, "/", "\\")) == normalizedTexture then
+				return effect
+			end
+		end
 	end
 
 	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs

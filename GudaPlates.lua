@@ -1866,11 +1866,12 @@ local function UpdateNamePlate(frame)
     local now = GetTime()
     local claimedMyDebuffs = {} -- Track which player debuffs are already shown on this nameplate
     if superwow_active and hasValidGUID then
+        local effectiveUnit = (isTarget) and "target" or unitstr
         for i = 1, 40 do
             if debuffIndex > MAX_DEBUFFS then break end
 
             -- Get debuff info from the game
-            local texture, stacks = UnitDebuff(unitstr, i)
+            local texture, stacks = UnitDebuff(effectiveUnit, i)
             if not texture then break end
 
             -- Try to get effect name and tracked data from SpellDB
@@ -1878,11 +1879,11 @@ local function UpdateNamePlate(frame)
             local isMyDebuff = false
             if SpellDB then
                 -- Try tooltip scanning (may fail with GUID, will fallback to "target" if GUID matches)
-                effect = SpellDB:ScanDebuff(unitstr, i)
+                effect = SpellDB:ScanDebuff(effectiveUnit, i)
 
                 -- If GUID scanning failed, try "target" ONLY if this exact GUID is the target
                 -- (not just same name - could be different mob with same name)
-                if (not effect or effect == "") then
+                if (not effect or effect == "") and not isTarget then
                     local targetGUID = UnitGUID and UnitGUID("target")
                     if targetGUID and targetGUID == unitstr then
                         effect = SpellDB:ScanDebuff("target", i)
@@ -2512,6 +2513,77 @@ GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     if arg1 and string.find(event, "CHAT_MSG_SPELL") then
         ParseCastStart(arg1)
+        -- Also check for spell damage that might refresh debuffs (like Thunderfury)
+        if SpellDB and (string.find(event, "_DAMAGE") or string.find(event, "_MISS")) then
+            -- Patterns for player and others
+            local spell, victim, attacker = nil, nil, nil
+            
+            -- Your [Spell] hits [Target] for [Amount] [Type] damage.
+            for s, v in string.gfind(arg1, "Your (.+) hits (.+) for %d+.") do 
+                spell, victim, attacker = s, v, "You" 
+            end
+            if not spell then
+                -- Your [Spell] crits [Target] for [Amount] [Type] damage.
+                for s, v in string.gfind(arg1, "Your (.+) crits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, "You" 
+                end
+            end
+            if not spell then
+                -- Your [Spell] was resisted by [Target].
+                for s, v in string.gfind(arg1, "Your (.+) was resisted by (.+)%.") do 
+                    spell, victim, attacker = s, v, "You" 
+                end
+            end
+            
+            -- Others' procs
+            if not spell then
+                -- [Attacker]'s [Spell] hits [Target] for [Amount] [Type] damage.
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) hits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+            if not spell then
+                -- [Attacker]'s [Spell] crits [Target] for [Amount] [Type] damage.
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) crits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+            if not spell then
+                -- [Attacker]'s [Spell] was resisted by [Target].
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) was resisted by (.+)%.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+
+            if spell and victim and (spell == "Thunderfury" or spell == "Thunderfury's Blessing") then
+                local unitlevel = UnitName("target") == victim and UnitLevel("target") or 0
+                local duration = SpellDB:GetDuration("Thunderfury", 0)
+                local isOwn = (attacker == "You")
+                
+                -- Refresh BOTH "Thunderfury" and "Thunderfury's Blessing" as they are usually applied together
+                SpellDB:RefreshEffect(victim, unitlevel, "Thunderfury", duration, isOwn)
+                SpellDB:RefreshEffect(victim, unitlevel, "Thunderfury's Blessing", duration, isOwn)
+                
+                -- Clear fallback timers to force refresh on nameplates
+                if debuffTimers then
+                    debuffTimers[victim .. "_" .. "Thunderfury"] = nil
+                    debuffTimers[victim .. "_" .. "Thunderfury's Blessing"] = nil
+                end
+
+                -- Also refresh by GUID if victim is current target (SuperWoW)
+                if superwow_active and UnitExists("target") and UnitName("target") == victim then
+                    local guid = UnitGUID and UnitGUID("target")
+                    if guid then
+                        SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury", duration, isOwn)
+                        SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury's Blessing", duration, isOwn)
+                        if debuffTimers then
+                            debuffTimers[guid .. "_" .. "Thunderfury"] = nil
+                            debuffTimers[guid .. "_" .. "Thunderfury's Blessing"] = nil
+                        end
+                    end
+                end
+            end
+        end
     elseif arg1 and string.find(event, "CHAT_MSG_COMBAT") then
         ParseAttackHit(arg1)
     end
@@ -2561,6 +2633,27 @@ GudaPlates:SetScript("OnEvent", function()
             -- Fallback values
             spell = spell or "Casting"
             icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+
+            -- Update SpellDB with debuff info if it's a known debuff
+            if SpellDB and eventType == "CAST" and target and target ~= "" then
+                local duration = SpellDB:GetDuration(spell, 0)
+                if duration and duration > 0 then
+                    local isOwn = (guid == (UnitGUID and UnitGUID("player")))
+                    SpellDB:RefreshEffect(target, 0, spell, duration, isOwn)
+                    
+                    -- Also handle Thunderfury double-refresh if one of them procs
+                    if spell == "Thunderfury" or spell == "Thunderfury's Blessing" then
+                        SpellDB:RefreshEffect(target, 0, "Thunderfury", duration, isOwn)
+                        SpellDB:RefreshEffect(target, 0, "Thunderfury's Blessing", duration, isOwn)
+                        if debuffTimers then
+                            debuffTimers[target .. "_" .. "Thunderfury"] = nil
+                            debuffTimers[target .. "_" .. "Thunderfury's Blessing"] = nil
+                        end
+                    elseif debuffTimers then
+                        debuffTimers[target .. "_" .. spell] = nil
+                    end
+                end
+            end
 
             -- Skip buff procs during cast (same logic as ShaguPlates)
             if eventType == "CAST" then
@@ -2678,11 +2771,9 @@ GudaPlates:SetScript("OnEvent", function()
                     -- Recent cast - refresh the timer (player reapplied the debuff)
                     SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration, true)
                 else
-                    -- Not our spell, only add if not already tracked
-                    if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
-                        local dbDuration = SpellDB:GetDuration(effect, 0)
-                        SpellDB:AddEffect(unit, unitlevel, effect, dbDuration, false)
-                    end
+                    -- Not our spell, refresh or add the timer
+                    local dbDuration = SpellDB:GetDuration(effect, 0)
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, false)
                 end
             end
         end
