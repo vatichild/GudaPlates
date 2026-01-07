@@ -6,6 +6,8 @@ GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
+	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest"
@@ -36,6 +38,8 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Challenging Shout"] = {[0]=6},
 	["Demoralizing Roar"] = {[0]=30},
 	["Dazed"] = {[0]=4},
+	["Thunderfury"] = {[0]=12},
+	["Thunderfury's Blessing"] = {[0]=12},
 
 	-- ROGUE
 	["Cheap Shot"] = {[0]=4},
@@ -154,7 +158,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Repentance"] = {[0]=6},
 	["Judgement of the Crusader"] = {[0]=10},
 	["Judgement of Light"] = {[0]=10},
-	["Judgement of Wisdom"] = {[0]=10},
+	["Judgement of Wisdom"] = {[0]=12},
 	["Judgement of Justice"] = {[0]=10},
 
 	-- SHAMAN
@@ -190,6 +194,8 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	-- Warrior
 	["Thunder Clap"] = "WARRIOR",
+	["Thunderfury"] = true,
+	["Thunderfury's Blessing"] = true,
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
 	-- Druid
@@ -412,7 +418,13 @@ function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isO
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
-	self.objects[unit][unitlevel][effect].isOwn = isOwn ~= false -- default to true for backwards compatibility
+	
+	-- If isOwn is nil, we keep existing value if it exists, otherwise default to true for backward compatibility
+	if isOwn ~= nil then
+		self.objects[unit][unitlevel][effect].isOwn = isOwn
+	elseif self.objects[unit][unitlevel][effect].isOwn == nil then
+		self.objects[unit][unitlevel][effect].isOwn = true
+	end
 
 	-- Clear recentCasts entry so we don't refresh again until next cast
 	if self.recentCasts[effect] then
