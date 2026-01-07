@@ -158,7 +158,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Repentance"] = {[0]=6},
 	["Judgement of the Crusader"] = {[0]=10},
 	["Judgement of Light"] = {[0]=10},
-	["Judgement of Wisdom"] = {[0]=12},
+	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
 
 	-- SHAMAN
