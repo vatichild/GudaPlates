@@ -1349,7 +1349,7 @@ local function UpdateNamePlate(frame)
                     if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
                         isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
                     end
-                    
+
                     if not isMobTargetingGroupMate then
                         isTappedByOthers = true
                     end
@@ -1366,23 +1366,23 @@ local function UpdateNamePlate(frame)
                 if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
                     isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
                 end
-                
+
                 -- If it's targeting us, we don't set isMobTargetingGroupMate to true here.
-                -- This means if it was already tapped (but color detection failed), 
+                -- This means if it was already tapped (but color detection failed),
                 -- it will stay tapped even if attacking us, unless UnitIsTappedByPlayer says otherwise (handled by API check above).
-                
+
                 -- However, if it's NOT targeting a group mate AND it's not our tap, it's tapped by others.
                 -- But wait, if it's targeting US, isMobTargetingGroupMate is false.
                 -- If we are the one who tapped it, it shouldn't be here (ideally).
                 -- But Block 3 is a fallback for non-target plates where we don't have UnitIsTapped.
                 -- For non-target plates, if it's attacking us, we usually assume it's ours.
-                -- This is tricky. But if color detection (Block 1) didn't catch it as gray, 
+                -- This is tricky. But if color detection (Block 1) didn't catch it as gray,
                 -- it's probably NOT tapped by someone else, or the color hasn't updated.
-                
+
                 -- Let's stick to the user request: "shouldn't change any color if I aggro it".
                 -- If it was gray, Block 1 should catch it.
                 -- If Block 1 caught it, isTappedByOthers is true, and Block 2 & 3 don't run.
-                
+
                 -- If it's attacking us, we'll keep the existing logic for now but be careful.
                 local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
                 isTappedByOthers = not isMobTargetingGroup
@@ -1403,7 +1403,11 @@ local function UpdateNamePlate(frame)
         -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
             if playerRole == "TANK" then
                 if isTanking then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                    if threatPct > 80 then
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.HIGH_THREAT))
+                    else
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                    end
                 elseif threatPct > 80 then
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 elseif isAttackingPlayer then
@@ -4266,9 +4270,10 @@ tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -50)
 tankHeader:SetText("|cff00ff00Tank Colors:|r")
 
 CreateColorSwatch(colorsTab, 320, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(colorsTab, 320, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
-CreateColorSwatch(colorsTab, 320, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(colorsTab, 320, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+CreateColorSwatch(colorsTab, 320, -100, "High Threat (Warning)", THREAT_COLORS.TANK, "HIGH_THREAT")
+CreateColorSwatch(colorsTab, 320, -125, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 320, -150, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 320, -175, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
 
 -- Misc Colors Section
 local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -4489,6 +4494,7 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.DPS.HIGH_THREAT = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.DPS.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TANK.AGGRO = {0.41, 0.35, 0.76, 1}
+    THREAT_COLORS.TANK.HIGH_THREAT = {0.85, 0.9, 0.45, 1}
     THREAT_COLORS.TANK.OTHER_TANK = {0.6, 0.8, 1.0, 1}
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}

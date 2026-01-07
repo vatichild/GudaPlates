@@ -75,6 +75,7 @@ GudaPlates.THREAT_COLORS = {
     -- Tank colors
     TANK = {
         AGGRO = {0.41, 0.35, 0.76, 1},       -- Blue (matching DPS AGGRO)
+        HIGH_THREAT = {0.85, 0.9, 0.45, 1}, -- Lemon Yellow: holding aggro but someone is close (WARNING)
         LOSING_AGGRO = {1.0, 0.6, 0.0, 1}, -- Orange (matching DPS LOSING_AGGRO)
         NO_AGGRO = {0.85, 0.2, 0.2, 1},  -- Red (matching DPS NO_AGGRO)
         OTHER_TANK = {0.6, 0.8, 1.0, 1},   -- Light Blue: another tank has it
