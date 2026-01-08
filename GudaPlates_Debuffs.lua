@@ -19,13 +19,13 @@ function GudaPlates_Debuffs:FormatTime(remaining)
     elseif remaining > 99 then
         return round(remaining / 60) .. "m", 0.2, 1, 1, 1
     elseif remaining > 10 then
-        -- White: more than 10 seconds
+    -- White: more than 10 seconds
         return round(remaining) .. "", 1, 1, 1, 1
     elseif remaining > 5 then
-        -- Yellow: 5-10 seconds
+    -- Yellow: 5-10 seconds
         return round(remaining) .. "", 1, 1, 0, 1
     elseif remaining > 0 then
-        -- Red: less than 5 seconds
+    -- Red: less than 5 seconds
         return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
     end
     return "", 1, 1, 1, 1
@@ -95,9 +95,9 @@ function GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
             if (this.tick or 0) > now then return else this.tick = now + 0.1 end
 
             if not this:IsShown() then return end
-            if not this.expirationTime or this.expirationTime <= 0 then 
+            if not this.expirationTime or this.expirationTime <= 0 then
                 if this.cd then this.cd:SetText("") end
-                return 
+                return
             end
 
             local timeLeft = this.expirationTime - now
@@ -123,7 +123,7 @@ function GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
 end
 
 function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarget, hasValidGUID, superwow_active)
-    -- Reset all debuff icons
+-- Reset all debuff icons
     for i = 1, MAX_DEBUFFS do
         nameplate.debuffs[i]:Hide()
         nameplate.debuffs[i].count:SetText("")
@@ -161,35 +161,46 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if effect and effect ~= "" then
                     local unitlevel = UnitLevel(unitstr) or 0
                     local data = nil
-
+                    local dataGUID = nil
                     if SpellDB.objects[unitstr] then
                         if SpellDB.objects[unitstr][unitlevel] and SpellDB.objects[unitstr][unitlevel][effect] then
-                            data = SpellDB.objects[unitstr][unitlevel][effect]
+                            dataGUID = SpellDB.objects[unitstr][unitlevel][effect]
                         elseif SpellDB.objects[unitstr][0] and SpellDB.objects[unitstr][0][effect] then
-                            data = SpellDB.objects[unitstr][0][effect]
+                            dataGUID = SpellDB.objects[unitstr][0][effect]
                         else
                             for lvl, effects in pairs(SpellDB.objects[unitstr]) do
                                 if effects[effect] then
-                                    data = effects[effect]
+                                    dataGUID = effects[effect]
                                     break
                                 end
                             end
                         end
                     end
 
-                    if not data and plateName and SpellDB.objects[plateName] then
+                    local dataName = nil
+                    if plateName and SpellDB.objects[plateName] then
                         if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
-                            data = SpellDB.objects[plateName][unitlevel][effect]
+                            dataName = SpellDB.objects[plateName][unitlevel][effect]
                         elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
-                            data = SpellDB.objects[plateName][0][effect]
+                            dataName = SpellDB.objects[plateName][0][effect]
                         else
                             for lvl, effects in pairs(SpellDB.objects[plateName]) do
                                 if effects[effect] then
-                                    data = effects[effect]
+                                    dataName = effects[effect]
                                     break
                                 end
                             end
                         end
+                    end
+
+                    if dataGUID and dataName then
+                        if (dataGUID.start or 0) >= (dataName.start or 0) then
+                            data = dataGUID
+                        else
+                            data = dataName
+                        end
+                    else
+                        data = dataGUID or dataName
                     end
 
                     if data and data.start and data.duration then
@@ -208,14 +219,14 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     duration = SpellDB:GetDuration(effect, 0)
                 end
             end
-            
+
             local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
             local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
-            
+
             -- Redundancy filter: Hide "Thunderfury's Blessing" if "Thunderfury" is also present
             local isRedundant = false
             if effect == "Thunderfury's Blessing" then
-                -- Check if "Thunderfury" is also present on this unit
+            -- Check if "Thunderfury" is also present on this unit
                 for j = 1, 40 do
                     local t = UnitDebuff(effectiveUnit, j)
                     if not t then break end
@@ -228,7 +239,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
 
             if (Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique) or isRedundant then
-                -- Skip this debuff
+            -- Skip this debuff
             else
                 local debuff = nameplate.debuffs[debuffIndex]
                 debuff.icon:SetTexture(texture)
@@ -256,22 +267,25 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     if not fallbackDuration and effect and effect ~= "" and SpellDB then
                         fallbackDuration = SpellDB:GetDuration(effect)
                     end
-                    
+
                     fallbackDuration = (fallbackDuration and fallbackDuration > 0) and fallbackDuration or 1
 
                     if not debuffTimers[debuffKey] then
                         debuffTimers[debuffKey] = {
                             startTime = now,
-                            duration = fallbackDuration
+                            duration = fallbackDuration,
+                            lastStacks = stacks or 0
                         }
                     end
                     local cached = debuffTimers[debuffKey]
                     cached.lastSeen = now
 
-                    if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration) then
+                    local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
+                    if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
                         cached.duration = fallbackDuration
                         cached.startTime = now
                     end
+                    cached.lastStacks = stacks or 0
 
                     displayTimeLeft = cached.duration - (now - cached.startTime)
                 end
@@ -318,14 +332,14 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
                 end
-                
+
                 local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
                 local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
-                
+
                 -- Redundancy filter: Hide "Thunderfury's Blessing" if "Thunderfury" is also present
                 local isRedundant = false
                 if effect == "Thunderfury's Blessing" then
-                    -- Check if "Thunderfury" is also present on this unit
+                -- Check if "Thunderfury" is also present on this unit
                     for j = 1, 40 do
                         local t = UnitDebuff("target", j)
                         if not t then break end
@@ -338,7 +352,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 end
 
                 if (Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique) or isRedundant then
-                    -- Skip this debuff
+                -- Skip this debuff
                 else
                     local debuff = nameplate.debuffs[debuffIndex]
                     debuff.icon:SetTexture(texture)
@@ -365,23 +379,26 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                         if not fallbackDuration and effect and effect ~= "" and SpellDB then
                             fallbackDuration = SpellDB:GetDuration(effect)
                         end
-                        
+
                         fallbackDuration = (fallbackDuration and fallbackDuration > 0) and fallbackDuration or 1
                         local debuffKey = plateName .. "_" .. (effect or texture)
 
                         if not debuffTimers[debuffKey] then
                             debuffTimers[debuffKey] = {
                                 startTime = now,
-                                duration = fallbackDuration
+                                duration = fallbackDuration,
+                                lastStacks = stacks or 0
                             }
                         end
                         local cached = debuffTimers[debuffKey]
                         cached.lastSeen = now
 
-                        if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration) then
+                        local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
+                        if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
                             cached.duration = fallbackDuration
                             cached.startTime = now
                         end
+                        cached.lastStacks = stacks or 0
 
                         displayTimeLeft = cached.duration - (now - cached.startTime)
                     end
@@ -422,7 +439,7 @@ function GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
             debuff:ClearAllPoints()
 
             if i == 1 then
-                -- Anchor the first debuff to the left
+            -- Anchor the first debuff to the left
                 if Settings.swapNameDebuff then
                     if nameplate.mana and nameplate.mana:IsShown() then
                         debuff:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
@@ -437,7 +454,7 @@ function GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
                     end
                 end
             else
-                -- Anchor subsequent debuffs to the previous one
+            -- Anchor subsequent debuffs to the previous one
                 debuff:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
@@ -446,8 +463,8 @@ end
 
 local lastDebuffCleanup = 0
 function GudaPlates_Debuffs:CleanupTimers()
-    -- Cleanup stale debuff timers every 1 second
-    -- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
+-- Cleanup stale debuff timers every 1 second
+-- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
     local now = GetTime()
     if now - lastDebuffCleanup > 1 then
         lastDebuffCleanup = now

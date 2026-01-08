@@ -20,7 +20,7 @@ GudaPlates_SpellDB.textureToSpell = {
 }  -- Cache: texture path -> spell name
 
 if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: Initial textureToSpell[Spell_Holy_HealingAura]="..(GudaPlates_SpellDB.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
+	DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: Initial textureToSpell[Spell_Holy_HealingAura]="..(GudaPlates_SpellDB.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
 end
 
 -- ============================================
@@ -284,7 +284,7 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 		if type(rank) == "number" then
 			rankNum = rank
 		elseif type(rank) == "string" then
-			-- Extract number from "Rank X" format
+		-- Extract number from "Rank X" format
 			for num in string.gfind(rank, "(%d+)") do
 				rankNum = tonumber(num) or 0
 				break
@@ -301,37 +301,37 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 
 	-- Handle dynamic duration adjustments
 	if effect == self.DYN_DEBUFFS["Rupture"] then
-		-- Rupture: +2 sec per combo point
+	-- Rupture: +2 sec per combo point
 		duration = duration + (GetComboPoints("player", "target") or 0) * 2
 	elseif effect == self.DYN_DEBUFFS["Kidney Shot"] then
-		-- Kidney Shot: +1 sec per combo point
+	-- Kidney Shot: +1 sec per combo point
 		duration = duration + (GetComboPoints("player", "target") or 0) * 1
 	elseif effect == self.DYN_DEBUFFS["Demoralizing Shout"] then
-		-- Booming Voice: 10% per talent
+	-- Booming Voice: 10% per talent
 		local _,_,_,_,count = GetTalentInfo(2, 1)
 		if count and count > 0 then
 			duration = duration + (duration / 100 * (count * 10))
 		end
 	elseif effect == self.DYN_DEBUFFS["Shadow Word: Pain"] then
-		-- Improved Shadow Word: Pain: +3s per talent
+	-- Improved Shadow Word: Pain: +3s per talent
 		local _,_,_,_,count = GetTalentInfo(3, 4)
 		if count and count > 0 then
 			duration = duration + count * 3
 		end
 	elseif effect == self.DYN_DEBUFFS["Frostbolt"] then
-		-- Permafrost: +1s per talent
+	-- Permafrost: +1s per talent
 		local _,_,_,_,count = GetTalentInfo(3, 7)
 		if count and count > 0 then
 			duration = duration + count
 		end
 	elseif effect == self.DYN_DEBUFFS["Gouge"] then
-		-- Improved Gouge: +.5s per talent
+	-- Improved Gouge: +.5s per talent
 		local _,_,_,_,count = GetTalentInfo(2, 1)
 		if count and count > 0 then
 			duration = duration + (count * 0.5)
 		end
 	elseif effect == self.DYN_DEBUFFS["Rend"] then
-		-- Improved Rend: +3s per talent
+	-- Improved Rend: +3s per talent
 		local _,_,_,_,count = GetTalentInfo(1, 2)
 		if count and count > 0 then
 			duration = duration + (count * 3)
@@ -352,13 +352,13 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	if not unit or not effect then return end
 	if not self.DEBUFFS[effect] then return end
 	if duration <= 0 then return end
-	
+
 	-- Always store recent cast keyed by spell name (for combat log fallback)
 	self.recentCasts[effect] = {
 		duration = duration,
 		time = GetTime()
 	}
-	
+
 	-- Always overwrite pending for tracked debuff spells
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
@@ -386,8 +386,8 @@ function GudaPlates_SpellDB:PersistPending(effect)
 	if not self.pending[3] then return end
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
-		-- Store by GUID (pending[1]) for accurate per-mob tracking
-		-- Mark as isOwn = true since this is the player's own debuff
+	-- Store by GUID (pending[1]) for accurate per-mob tracking
+	-- Mark as isOwn = true since this is the player's own debuff
 		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4], true)
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
@@ -478,8 +478,8 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	local isOwn = false
 
 	if texture then
-		-- Get spell name via tooltip scanning
-		-- Try the unit first, but if it's a GUID and that fails, try "target" if it matches
+	-- Get spell name via tooltip scanning
+	-- Try the unit first, but if it's a GUID and that fails, try "target" if it matches
 		effect = self:ScanDebuff(unit, id)
 
 		-- If scanning failed and this unit is the target, try scanning "target" instead
@@ -491,29 +491,42 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	end
 
 	-- Check tracked debuffs with level
-	if effect and effect ~= "" and self.objects[unitname] then
+	if effect and effect ~= "" and (self.objects[unitname] or (UnitGUID and UnitGUID(unit) and self.objects[UnitGUID(unit)])) then
 		local data = nil
+		local unitguid = UnitGUID and UnitGUID(unit)
 
-		-- Try exact level first
-		if self.objects[unitname][unitlevel] and self.objects[unitname][unitlevel][effect] then
-			data = self.objects[unitname][unitlevel][effect]
-		-- Fallback: check level 0
-		elseif self.objects[unitname][0] and self.objects[unitname][0][effect] then
-			data = self.objects[unitname][0][effect]
-		-- Fallback: check any level for this unit
-		else
-			for lvl, effects in pairs(self.objects[unitname]) do
-				if effects[effect] then
-					data = effects[effect]
-					break
+		-- Search function to avoid duplication
+		local function FindEffectData(u, lvl, eff)
+			if not self.objects[u] then return nil end
+			if self.objects[u][lvl] and self.objects[u][lvl][eff] then
+				return self.objects[u][lvl][eff]
+			elseif self.objects[u][0] and self.objects[u][0][eff] then
+				return self.objects[u][0][eff]
+			else
+				for l, effects in pairs(self.objects[u]) do
+					if effects[eff] then return effects[eff] end
 				end
 			end
+			return nil
+		end
+
+		local dataName = FindEffectData(unitname, unitlevel, effect)
+		local dataGUID = unitguid and FindEffectData(unitguid, unitlevel, effect)
+
+		if dataName and dataGUID then
+			if (dataName.start or 0) >= (dataGUID.start or 0) then
+				data = dataName
+			else
+				data = dataGUID
+			end
+		else
+			data = dataName or dataGUID
 		end
 
 		if data and data.start and data.duration then
-			-- Clean up expired
+		-- Clean up expired
 			if data.duration + data.start < GetTime() then
-				-- Don't remove here, let it be cleaned up elsewhere
+			-- Don't remove here, let it be cleaned up elsewhere
 				data = nil
 			else
 				duration = data.duration
@@ -529,7 +542,7 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 		local dbDuration = self:GetDuration(effect, 0)
 		if dbDuration and dbDuration > 0 then
 			duration = dbDuration
-			-- timeleft stays at -1, signaling caller to use their own timer cache
+		-- timeleft stays at -1, signaling caller to use their own timer cache
 		end
 	end
 
@@ -556,19 +569,19 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	local texture = UnitDebuff(unit, index)
 	if not texture then return nil end
 
-    if DEFAULT_CHAT_FRAME then
-        if string.find(texture, "Spell_Holy") then
-            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: ScanDebuff texture="..(texture or "nil").." len="..string.len(texture))
-            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: direct_cache_lookup="..(self.textureToSpell[texture] or "nil"))
-            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: explicit_healingaura_lookup="..(self.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
-        end
-    end
+	if DEFAULT_CHAT_FRAME then
+		if string.find(texture, "Spell_Holy") then
+			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: ScanDebuff texture="..(texture or "nil").." len="..string.len(texture))
+			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: direct_cache_lookup="..(self.textureToSpell[texture] or "nil"))
+			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: explicit_healingaura_lookup="..(self.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
+		end
+	end
 
 	-- 1. Prioritize hardcoded textureToSpell mappings (most reliable)
 	if self.textureToSpell[texture] then
-        return self.textureToSpell[texture]
-    end
-    
+		return self.textureToSpell[texture]
+	end
+
 	-- 2. If not found in hardcoded cache, resort to tooltip scanning
 	local scanUnit = unit
 	if IsGUID(unit) then
@@ -591,8 +604,8 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if textLeft then
 		local effect = textLeft:GetText()
 		-- Cache the tooltip-scanned effect *only if it's new*.
-        -- This prevents tooltip's potentially incorrect name from overwriting known good names.
-        -- It also populates the cache for future faster lookups of unknown spells.
+		-- This prevents tooltip's potentially incorrect name from overwriting known good names.
+		-- It also populates the cache for future faster lookups of unknown spells.
 		if effect and effect ~= "" and texture and not self.textureToSpell[texture] then
 			self.textureToSpell[texture] = effect
 		end
