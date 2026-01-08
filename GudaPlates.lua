@@ -2026,7 +2026,10 @@ local function ParseAttackHit(msg)
 
     if attacker and victim then
     -- Judgements that are refreshed by melee/ranged hits
-        local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement" }
+        local judgements = { 
+            "Seal of Wisdom", "Seal of Light", "Seal of the Crusader", "Seal of Justice",
+            "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice"
+        }
         for _, effect in pairs(judgements) do
             -- Optimization: Only refresh if it's likely to be on the target (to avoid spamming objects table)
             -- But Judgements are unique and important, so we refresh if we have ANY record of them or if it's our target
@@ -2036,7 +2039,7 @@ local function ParseAttackHit(msg)
             if hasRecord or isTarget then
                 local duration = SpellDB:GetDuration(effect, 0)
                 local isOwn = (attacker == "You")
-                
+
                 -- Refresh Name record
                 SpellDB:RefreshEffect(victim, 0, effect, duration, isOwn)
                 
@@ -2051,10 +2054,27 @@ local function ParseAttackHit(msg)
                 -- Clear nameplate cache to force refresh
                 if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
                     GudaPlates_Debuffs.timers[victim .. "_" .. effect] = nil
+                    
+                    -- Also clear common Paladin debuff variations just in case of naming mismatch
+                    if effect == "Seal of Light" or effect == "Judgement of Light" then
+                        GudaPlates_Debuffs.timers[victim .. "_Seal of Light"] = nil
+                        GudaPlates_Debuffs.timers[victim .. "_Judgement of Light"] = nil
+                    elseif effect == "Seal of Wisdom" or effect == "Judgement of Wisdom" then
+                        GudaPlates_Debuffs.timers[victim .. "_Seal of Wisdom"] = nil
+                        GudaPlates_Debuffs.timers[victim .. "_Judgement of Wisdom"] = nil
+                    end
+
                     if superwow_active and isTarget then
                         local guid = UnitGUID and UnitGUID("target")
                         if guid then
                             GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil
+                            if effect == "Seal of Light" or effect == "Judgement of Light" then
+                                GudaPlates_Debuffs.timers[guid .. "_Seal of Light"] = nil
+                                GudaPlates_Debuffs.timers[guid .. "_Judgement of Light"] = nil
+                            elseif effect == "Seal of Wisdom" or effect == "Judgement of Wisdom" then
+                                GudaPlates_Debuffs.timers[guid .. "_Seal of Wisdom"] = nil
+                                GudaPlates_Debuffs.timers[guid .. "_Judgement of Wisdom"] = nil
+                            end
                         end
                     end
                 end
@@ -2119,16 +2139,16 @@ GudaPlates:SetScript("OnEvent", function()
                 SpellDB:RefreshEffect(victim, unitlevel, "Thunderfury's Blessing", duration, isOwn)
                 
                 -- Clear fallback timers to force refresh on nameplates
-                if debuffTimers then
-                    debuffTimers[victim .. "_" .. "Thunderfury"] = nil
-                    debuffTimers[victim .. "_" .. "Thunderfury's Blessing"] = nil
+                if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                    GudaPlates_Debuffs.timers[victim .. "_" .. "Thunderfury"] = nil
+                    GudaPlates_Debuffs.timers[victim .. "_" .. "Thunderfury's Blessing"] = nil
                     
                     -- Also clear by GUID if we can find it
                     if superwow_active and UnitExists("target") and UnitName("target") == victim then
                         local guid = UnitGUID and UnitGUID("target")
                         if guid then
-                            debuffTimers[guid .. "_" .. "Thunderfury"] = nil
-                            debuffTimers[guid .. "_" .. "Thunderfury's Blessing"] = nil
+                            GudaPlates_Debuffs.timers[guid .. "_" .. "Thunderfury"] = nil
+                            GudaPlates_Debuffs.timers[guid .. "_" .. "Thunderfury's Blessing"] = nil
                         end
                     end
                 end
@@ -2143,14 +2163,16 @@ GudaPlates:SetScript("OnEvent", function()
                 end
             elseif spell and victim then
                 -- Check for Judgement refreshes from spells (e.g. Paladin Seal procs)
-                local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement" }
+                local judgements = { 
+                    "Seal of Light", "Seal of Wisdom", "Seal of the Crusader", "Seal of Justice",
+                    "Judgement of Light", "Judgement of Wisdom", "Judgement of the Crusader", "Judgement of Justice"
+                }
                 for _, effect in pairs(judgements) do
                     -- Refresh if it's the target or we have a record
                     local isTarget = (UnitExists("target") and UnitName("target") == victim)
                     if isTarget or (SpellDB and SpellDB.objects[victim]) then
                         local duration = SpellDB:GetDuration(effect, 0)
                         local isOwn = (attacker == "You")
-                        
                         SpellDB:RefreshEffect(victim, 0, effect, duration, isOwn)
                         if superwow_active and isTarget then
                             local guid = UnitGUID and UnitGUID("target")
@@ -2160,12 +2182,29 @@ GudaPlates:SetScript("OnEvent", function()
                         end
                         
                         -- Clear nameplate cache
-                        if debuffTimers then
-                            debuffTimers[victim .. "_" .. effect] = nil
+                        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                            GudaPlates_Debuffs.timers[victim .. "_" .. effect] = nil
+                            
+                            -- Also clear common Paladin debuff variations just in case of naming mismatch
+                            if effect == "Seal of Light" or effect == "Judgement of Light" then
+                                GudaPlates_Debuffs.timers[victim .. "_Seal of Light"] = nil
+                                GudaPlates_Debuffs.timers[victim .. "_Judgement of Light"] = nil
+                            elseif effect == "Seal of Wisdom" or effect == "Judgement of Wisdom" then
+                                GudaPlates_Debuffs.timers[victim .. "_Seal of Wisdom"] = nil
+                                GudaPlates_Debuffs.timers[victim .. "_Judgement of Wisdom"] = nil
+                            end
+
                             if superwow_active and isTarget then
                                 local guid = UnitGUID and UnitGUID("target")
                                 if guid then
-                                    debuffTimers[guid .. "_" .. effect] = nil
+                                    GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil
+                                    if effect == "Seal of Light" or effect == "Judgement of Light" then
+                                        GudaPlates_Debuffs.timers[guid .. "_Seal of Light"] = nil
+                                        GudaPlates_Debuffs.timers[guid .. "_Judgement of Light"] = nil
+                                    elseif effect == "Seal of Wisdom" or effect == "Judgement of Wisdom" then
+                                        GudaPlates_Debuffs.timers[guid .. "_Seal of Wisdom"] = nil
+                                        GudaPlates_Debuffs.timers[guid .. "_Judgement of Wisdom"] = nil
+                                    end
                                 end
                             end
                         end
@@ -2234,19 +2273,19 @@ GudaPlates:SetScript("OnEvent", function()
                     if spell == "Thunderfury" or spell == "Thunderfury's Blessing" then
                         SpellDB:RefreshEffect(target, 0, "Thunderfury", duration, isOwn)
                         SpellDB:RefreshEffect(target, 0, "Thunderfury's Blessing", duration, isOwn)
-                        if debuffTimers then
-                            debuffTimers[target .. "_" .. "Thunderfury"] = nil
-                            debuffTimers[target .. "_" .. "Thunderfury's Blessing"] = nil
+                        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury"] = nil
+                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury's Blessing"] = nil
                             
                             -- Also clear by name if we can find it
                             local targetName = UnitName("target")
                             if targetName and (UnitGUID and UnitGUID("target") == target) then
-                                debuffTimers[targetName .. "_" .. "Thunderfury"] = nil
-                                debuffTimers[targetName .. "_" .. "Thunderfury's Blessing"] = nil
+                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury"] = nil
+                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury's Blessing"] = nil
                             end
                         end
-                    elseif debuffTimers then
-                        debuffTimers[target .. "_" .. spell] = nil
+                    elseif GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                        GudaPlates_Debuffs.timers[target .. "_" .. spell] = nil
                     end
                 end
             end

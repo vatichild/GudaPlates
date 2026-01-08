@@ -10,7 +10,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
 	-- Paladin
-	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Sea; of Light",
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Seal of Light",
 	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Seal of Wisdom",
 	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Seal of the Crusader",
 	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Seal of Justice",
@@ -161,10 +161,10 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Turn Undead"] = {[0]=20},
 	["Repentance"] = {[0]=6},
 	["Crusader Strike"] = {[0]=30},
-	--["Judgement of the Crusader"] = {[0]=10},
-	--["Judgement of Light"] = {[0]=10},
-	--["Judgement of Wisdom"] = {[0]=10},
-	--["Judgement of Justice"] = {[0]=10},
+	["Judgement of the Crusader"] = {[0]=10},
+	["Judgement of Light"] = {[0]=10},
+	["Judgement of Wisdom"] = {[0]=10},
+	["Judgement of Justice"] = {[0]=10},
 	["Judgement"] = {[0]=10},
 	["Seal of Light"] = {[0]=10},
 	["Seal of Wisdom"] = {[0]=10},
@@ -230,11 +230,11 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
-	--["Judgement of the Crusader"] = true,
-	--["Judgement of Light"] = true,
-	--["Judgement of Wisdom"] = true,
-	--["Judgement of Justice"] = true,
-	--["Judgement"] = true,
+	["Judgement of the Crusader"] = true,
+	["Judgement of Light"] = true,
+	["Judgement of Wisdom"] = true,
+	["Judgement of Justice"] = true,
+	["Judgement"] = true,
 	["Seal of Light"] = true,
 	["Seal of Wisdom"] = true,
 	["Seal of the Crusader"] = true,
@@ -255,6 +255,21 @@ local lastspell = nil
 -- ============================================
 -- DURATION LOOKUP FUNCTIONS
 -- ============================================
+
+-- Search function to avoid duplication
+function GudaPlates_SpellDB:FindEffectData(u, lvl, eff)
+	if not self.objects[u] then return nil end
+	if self.objects[u][lvl] and self.objects[u][lvl][eff] then
+		return self.objects[u][lvl][eff]
+	elseif self.objects[u][0] and self.objects[u][0][eff] then
+		return self.objects[u][0][eff]
+	else
+		for l, effects in pairs(self.objects[u]) do
+			if effects[eff] then return effects[eff] end
+		end
+	end
+	return nil
+end
 
 -- Get max rank for a spell
 function GudaPlates_SpellDB:GetMaxRank(effect)
@@ -434,13 +449,11 @@ end
 function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isOwn)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
-
-	-- Initialize tables if needed
+	-- Always refresh start time and duration
 	if not self.objects[unit] then self.objects[unit] = {} end
 	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
-	-- Always refresh start time and duration
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
@@ -492,23 +505,8 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 		local data = nil
 		local unitguid = UnitGUID and UnitGUID(unit)
 
-		-- Search function to avoid duplication
-		local function FindEffectData(u, lvl, eff)
-			if not self.objects[u] then return nil end
-			if self.objects[u][lvl] and self.objects[u][lvl][eff] then
-				return self.objects[u][lvl][eff]
-			elseif self.objects[u][0] and self.objects[u][0][eff] then
-				return self.objects[u][0][eff]
-			else
-				for l, effects in pairs(self.objects[u]) do
-					if effects[eff] then return effects[eff] end
-				end
-			end
-			return nil
-		end
-
-		local dataName = FindEffectData(unitname, unitlevel, effect)
-		local dataGUID = unitguid and FindEffectData(unitguid, unitlevel, effect)
+		local dataName = self:FindEffectData(unitname, unitlevel, effect)
+		local dataGUID = unitguid and self:FindEffectData(unitguid, unitlevel, effect)
 
 		if dataName and dataGUID then
 			if (dataName.start or 0) >= (dataGUID.start or 0) then

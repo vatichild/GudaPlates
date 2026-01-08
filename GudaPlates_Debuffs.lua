@@ -141,7 +141,6 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
 
             local texture, stacks = UnitDebuff(effectiveUnit, i)
             if not texture then break end
-
             local effect, duration, timeleft = nil, nil, nil
             local isMyDebuff = false
             if SpellDB then
@@ -204,16 +203,32 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     end
 
                     if data and data.start and data.duration then
+
                         if data.start + data.duration > now then
                             duration = data.duration
                             timeleft = data.duration + data.start - now
                             if data.isOwn == true and not claimedMyDebuffs[effect] then
                                 isMyDebuff = true
                                 claimedMyDebuffs[effect] = true
+                            elseif playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
+                                effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                                isMyDebuff = true
+                                claimedMyDebuffs[effect] = true
+                                -- Aggressive refresh: if we see the debuff on the plate and we are a paladin,
+                                -- and there is no tracked start time yet, or it's old, sync it.
+                                -- This bridges the gap between the frame-by-frame scanner and combat log events.
+                                local dbDataGUID = unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
+                                local dbDataName = plateName and SpellDB:FindEffectData(plateName, 0, effect)
+                                local dbData = (dbDataGUID and dbDataName and (dbDataGUID.start or 0) > (dbDataName.start or 0)) and dbDataGUID or (dbDataGUID or dbDataName)
+                                
+                                if dbData and dbData.start then
+                                    duration = dbData.duration
+                                    timeleft = dbData.duration + dbData.start - now
+                                end
                             end
                         end
                     end
-                    
+
                     -- If effect found but not tracked in SpellDB.objects, add it
                     -- This allows combat log refreshes to work on debuffs seen on nameplates
                     if effect and effect ~= "" and not timeleft then
@@ -293,6 +308,26 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     local cached = debuffTimers[debuffKey]
                     cached.lastSeen = now
 
+                    -- Sync with SpellDB for Paladin debuffs if SpellDB has a newer start time
+                    if playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
+                        effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                        -- Check both GUID and Name records in SpellDB
+                        local dbDataGUID = unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
+                        local dbDataName = plateName and SpellDB:FindEffectData(plateName, 0, effect)
+                        
+                        local dbData = nil
+                        if dbDataGUID and dbDataName then
+                            dbData = (dbDataGUID.start or 0) > (dbDataName.start or 0) and dbDataGUID or dbDataName
+                        else
+                            dbData = dbDataGUID or dbDataName
+                        end
+
+                        if dbData and dbData.start and dbData.start > (cached.startTime or 0) then
+                            cached.startTime = dbData.start
+                            cached.duration = dbData.duration or fallbackDuration
+                        end
+                    end
+
                     local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
                     if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
                         cached.duration = fallbackDuration
@@ -344,6 +379,20 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if isOwn == true and not claimedMyDebuffs[effect] then
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
+                elseif playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
+                    effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                    isMyDebuff = true
+                    claimedMyDebuffs[effect] = true
+                    
+                    -- Sync with SpellDB for Paladin debuffs if SpellDB has a newer start time
+                    local dbDataGUID = SpellDB and SpellDB.objects and unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
+                    local dbDataName = SpellDB and SpellDB.objects and plateName and SpellDB:FindEffectData(plateName, 0, effect)
+                    local dbData = (dbDataGUID and dbDataName and (dbDataGUID.start or 0) > (dbDataName.start or 0)) and dbDataGUID or (dbDataGUID or dbDataName)
+
+                    if dbData and dbData.start then
+                        duration = dbData.duration
+                        timeleft = dbData.duration + dbData.start - now
+                    end
                 end
 
                 local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
@@ -405,6 +454,26 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                         end
                         local cached = debuffTimers[debuffKey]
                         cached.lastSeen = now
+
+                        -- Sync with SpellDB for Paladin debuffs if SpellDB has a newer start time
+                        if playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
+                            effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                            -- Check both GUID and Name records in SpellDB
+                            local dbDataGUID = unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
+                            local dbDataName = plateName and SpellDB:FindEffectData(plateName, 0, effect)
+                            
+                            local dbData = nil
+                            if dbDataGUID and dbDataName then
+                                dbData = (dbDataGUID.start or 0) > (dbDataName.start or 0) and dbDataGUID or dbDataName
+                            else
+                                dbData = dbDataGUID or dbDataName
+                            end
+
+                            if dbData and dbData.start and dbData.start > (cached.startTime or 0) then
+                                cached.startTime = dbData.start
+                                cached.duration = dbData.duration or fallbackDuration
+                            end
+                        end
 
                         local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
                         if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
@@ -477,14 +546,25 @@ function GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
 end
 
 local lastDebuffCleanup = 0
+local lastFullCacheRefresh = 0
+
 function GudaPlates_Debuffs:CleanupTimers()
--- Cleanup stale debuff timers every 1 second
--- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
     local now = GetTime()
-    if now - lastDebuffCleanup > 1 then
+    
+    -- Full cache refresh every 1 seconds to force re-sync with SpellDB
+    -- This ensures that any background database updates are reflected visually
+    if now - lastFullCacheRefresh > 1 then
+        lastFullCacheRefresh = now
+        for key in pairs(self.timers) do
+            self.timers[key] = nil
+        end
+    end
+
+    -- Cleanup stale debuff timers every 0.5 seconds
+    if now - lastDebuffCleanup > 0.5 then
         lastDebuffCleanup = now
         for key, data in pairs(self.timers) do
-            if data.lastSeen and (now - data.lastSeen > 2) then
+            if data.lastSeen and (now - data.lastSeen > 1) then
                 self.timers[key] = nil
             end
         end
