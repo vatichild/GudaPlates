@@ -6,11 +6,14 @@ GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	["Interface\\Icons\\Ability_Warrior_WarCry"] = "Demoralizing Shout",
+	["Interface\\Icons\\Ability_Warrior_Sunder"] = "Sunder Armor",
+	["Interface\\Icons\\Ability_BullRush"] = "Challenging Shout",
+	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunder Clap",
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
 	-- Other
-	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
@@ -26,7 +29,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Druid_DemoralizingRoar"] = "Demoralizing Roar",
 	["Interface\\Icons\\Ability_Hunter_Pet_Bear"] = "Feral Charge Effect",
 	["Interface\\Icons\\Ability_Druid_Mangle"] = "Mangle",
-	["Interface\\Icons\\Ability_Physical_Taunt"] = "Growl",
+	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
 }
 
 -- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
@@ -228,7 +231,8 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Thunder Clap"] = "WARRIOR",
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
-	["Taunt"] = "WARRIOR",
+	["Challenging Shout"] = "WARRIOR",
+	["Taunt"] = true,
 	-- Druid
 	["Faerie Fire"] = "DRUID",
 	["Faerie Fire (Feral)"] = "DRUID",
@@ -245,7 +249,7 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Challenging Roar"] = "DRUID",
 	["Feral Charge Effect"] = "DRUID",
 	["Mangle"] = "DRUID",
-	["Growl"] = "DRUID",
+	["Growl"] = true,
 	-- Priest
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
 	["Shadow Word: Pain"] = "PRIEST",
