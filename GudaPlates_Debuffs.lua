@@ -21,8 +21,10 @@ function GudaPlates_Debuffs:FormatTime(remaining)
         return math.floor(remaining / 3600 + 0.5) .. "h", 0.5, 0.5, 0.5, 1
     elseif remaining > 60 then
         return math.floor(remaining / 60 + 0.5) .. "m", 0.5, 0.5, 0.5, 1
-    elseif remaining > 5 then
+    elseif remaining > 10 then
         return math.floor(remaining + 0.5) .. "", 0.7, 0.7, 0.7, 1
+    elseif remaining > 5 then
+        return math.floor(remaining + 0.5) .. "", 1, 1, 0, 1
     elseif remaining > 0 then
         return string.format("%.1f", remaining), 1, 0, 0, 1
     end
