@@ -5,6 +5,9 @@ GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
+	["Interface\\Icons\\Ability_Gouge"] = "Rend",
+	["Interface\\Icons\\Ability_Rend"] = "Rend",
+	["Interface\\Icons\\Ability_BackStab"] = "Deep Wounds",
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
 	["Interface\\Icons\\Ability_Warrior_WarCry"] = "Demoralizing Shout",
 	["Interface\\Icons\\Ability_Warrior_Sunder"] = "Sunder Armor",
@@ -58,6 +61,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Piercing Howl"] = {[0]=6},
 	["Mortal Strike"] = {[0]=10},
 	["Deep Wounds"] = {[0]=12},
+	["Deep Wound"] = {[0]=12},
 	["Charge"] = {[0]=1},
 	["Charge Stun"] = {[0]=1},
 	["Intercept"] = {[0]=3},
@@ -232,6 +236,10 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
 	["Challenging Shout"] = "WARRIOR",
+	["Rend"] = "WARRIOR",
+	["Deep Wounds"] = "WARRIOR",
+	["Deep Wound"] = "WARRIOR",
+	["Hamstring"] = "WARRIOR",
 	["Taunt"] = true,
 	-- Druid
 	["Faerie Fire"] = "DRUID",
@@ -379,11 +387,11 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 			duration = duration + (count * 0.5)
 		end
 	elseif effect == self.DYN_DEBUFFS["Rend"] then
-	-- Improved Rend: +3s per talent
-		local _,_,_,_,count = GetTalentInfo(1, 2)
-		if count and count > 0 then
-			duration = duration + (count * 3)
-		end
+	-- Improved Rend: +15/30/45% damage in Vanilla, no duration increase. 
+	-- Turtle WoW Rend duration is fixed per rank.
+	-- We remove the dynamic +3s per talent which was likely causing the incorrect duration (e.g. 21 + 9 = 30, or adding to a wrong base).
+	-- If it showed 35s, it might have been Rank 7 (21s) + something else or misidentified.
+		return duration
 	end
 
 	return duration
