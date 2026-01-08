@@ -13,17 +13,17 @@ end
 function GudaPlates_Debuffs:FormatTime(remaining)
     if not remaining or remaining < 0 then return "", 1, 1, 1, 1 end
     if remaining > 356400 then -- 99 hours
-        return round(remaining / 86400) .. "d", 0.2, 0.2, 1, 1
+        return math.floor(remaining / 86400 + 0.5) .. "d", 0.2, 0.2, 1, 1
     elseif remaining > 5940 then -- 99 minutes
-        return round(remaining / 3600) .. "h", 0.2, 0.5, 1, 1
+        return math.floor(remaining / 3600 + 0.5) .. "h", 0.2, 0.5, 1, 1
     elseif remaining > 99 then
-        return round(remaining / 60) .. "m", 0.2, 1, 1, 1
+        return math.floor(remaining / 60 + 0.5) .. "m", 0.2, 1, 1, 1
     elseif remaining > 10 then
     -- White: more than 10 seconds
-        return round(remaining) .. "", 1, 1, 1, 1
+        return math.floor(remaining + 0.5) .. "", 1, 1, 1, 1
     elseif remaining > 5 then
     -- Yellow: 5-10 seconds
-        return round(remaining) .. "", 1, 1, 0, 1
+        return math.floor(remaining + 0.5) .. "", 1, 1, 0, 1
     elseif remaining > 0 then
     -- Red: less than 5 seconds
         return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
@@ -210,6 +210,19 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                             if data.isOwn == true and not claimedMyDebuffs[effect] then
                                 isMyDebuff = true
                                 claimedMyDebuffs[effect] = true
+                            end
+                        end
+                    end
+                    
+                    -- If effect found but not tracked in SpellDB.objects, add it
+                    -- This allows combat log refreshes to work on debuffs seen on nameplates
+                    if effect and effect ~= "" and not timeleft then
+                        local dbDuration = SpellDB:GetDuration(effect, 0)
+                        if dbDuration > 0 then
+                            -- Only track important/unique debuffs or our own to avoid table bloat
+                            local isUnique = SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+                            if isUnique or isMyDebuff then
+                                SpellDB:AddEffect(unitstr or plateName, unitlevel, effect, dbDuration, isMyDebuff)
                             end
                         end
                     end
@@ -436,26 +449,28 @@ function GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
     if numDebuffs > 0 then
         for i = 1, numDebuffs do
             local debuff = nameplate.debuffs[i]
-            debuff:ClearAllPoints()
+            if debuff then
+                debuff:ClearAllPoints()
 
-            if i == 1 then
-            -- Anchor the first debuff to the left
-                if Settings.swapNameDebuff then
-                    if nameplate.mana and nameplate.mana:IsShown() then
-                        debuff:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
+                if i == 1 then
+                -- Anchor the first debuff to the left
+                    if Settings.swapNameDebuff then
+                        if nameplate.mana and nameplate.mana:IsShown() then
+                            debuff:SetPoint("TOPLEFT", nameplate.mana, "BOTTOMLEFT", 0, -1)
+                        else
+                            debuff:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                        end
                     else
-                        debuff:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -1)
+                        if nameplate.mana and nameplate.mana:IsShown() then
+                            debuff:SetPoint("BOTTOMLEFT", nameplate.mana, "TOPLEFT", 0, 1)
+                        else
+                            debuff:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
+                        end
                     end
                 else
-                    if nameplate.mana and nameplate.mana:IsShown() then
-                        debuff:SetPoint("BOTTOMLEFT", nameplate.mana, "TOPLEFT", 0, 1)
-                    else
-                        debuff:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 1)
-                    end
+                -- Anchor subsequent debuffs to the previous one
+                    debuff:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
                 end
-            else
-            -- Anchor subsequent debuffs to the previous one
-                debuff:SetPoint("LEFT", nameplate.debuffs[i-1], "RIGHT", 1, 0)
             end
         end
     end

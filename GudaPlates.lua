@@ -1869,8 +1869,8 @@ end)
 local function cmatch(str, pattern)
     if not str or not pattern then return nil end
     -- Convert WoW format strings to Lua patterns
-    local pat = gsub(pattern, "%%%d?%$?s", "(.+)")
-    pat = gsub(pat, "%%%d?%$?d", "(%d+)")
+    local pat = string.gsub(pattern, "%%%d?%$?s", "(.+)")
+    pat = string.gsub(pat, "%%%d?%$?d", "(%d+)")
     for a, b, c, d in string.gfind(str, pat) do
         return a, b, c, d
     end
@@ -2028,28 +2028,33 @@ local function ParseAttackHit(msg)
     -- Judgements that are refreshed by melee/ranged hits
         local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement" }
         for _, effect in pairs(judgements) do
-        -- Check if this victim has the judgement debuff tracked
-            local victimData = SpellDB.objects[victim]
-            if victimData then
-                for level, effects in pairs(victimData) do
-                    local data = effects[effect]
-                    if data then
-                    -- Judgements are refreshed by any melee/ranged hit from anyone
-                        local duration = SpellDB:GetDuration(effect, 0)
-                        SpellDB:RefreshEffect(victim, level, effect, duration, data.isOwn)
+            -- Optimization: Only refresh if it's likely to be on the target (to avoid spamming objects table)
+            -- But Judgements are unique and important, so we refresh if we have ANY record of them or if it's our target
+            local isTarget = (UnitExists("target") and UnitName("target") == victim)
+            local hasRecord = SpellDB.objects[victim]
+            
+            if hasRecord or isTarget then
+                local duration = SpellDB:GetDuration(effect, 0)
+                local isOwn = (attacker == "You")
+                
+                -- Refresh Name record
+                SpellDB:RefreshEffect(victim, 0, effect, duration, isOwn)
+                
+                -- Refresh GUID record if target (SuperWoW)
+                if superwow_active and isTarget then
+                    local guid = UnitGUID and UnitGUID("target")
+                    if guid then
+                        SpellDB:RefreshEffect(guid, 0, effect, duration, isOwn)
                     end
                 end
-            end
-            
-            -- Also refresh by GUID if victim is current target (SuperWoW)
-            if superwow_active and UnitExists("target") and UnitName("target") == victim then
-                local guid = UnitGUID and UnitGUID("target")
-                if guid and SpellDB.objects[guid] then
-                    for level, effects in pairs(SpellDB.objects[guid]) do
-                        local data = effects[effect]
-                        if data then
-                            local duration = SpellDB:GetDuration(effect, 0)
-                            SpellDB:RefreshEffect(guid, level, effect, duration, data.isOwn)
+                
+                -- Clear nameplate cache to force refresh
+                if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                    GudaPlates_Debuffs.timers[victim .. "_" .. effect] = nil
+                    if superwow_active and isTarget then
+                        local guid = UnitGUID and UnitGUID("target")
+                        if guid then
+                            GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil
                         end
                     end
                 end
@@ -2134,6 +2139,36 @@ GudaPlates:SetScript("OnEvent", function()
                     if guid then
                         SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury", duration, isOwn)
                         SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury's Blessing", duration, isOwn)
+                    end
+                end
+            elseif spell and victim then
+                -- Check for Judgement refreshes from spells (e.g. Paladin Seal procs)
+                local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement" }
+                for _, effect in pairs(judgements) do
+                    -- Refresh if it's the target or we have a record
+                    local isTarget = (UnitExists("target") and UnitName("target") == victim)
+                    if isTarget or (SpellDB and SpellDB.objects[victim]) then
+                        local duration = SpellDB:GetDuration(effect, 0)
+                        local isOwn = (attacker == "You")
+                        
+                        SpellDB:RefreshEffect(victim, 0, effect, duration, isOwn)
+                        if superwow_active and isTarget then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:RefreshEffect(guid, 0, effect, duration, isOwn)
+                            end
+                        end
+                        
+                        -- Clear nameplate cache
+                        if debuffTimers then
+                            debuffTimers[victim .. "_" .. effect] = nil
+                            if superwow_active and isTarget then
+                                local guid = UnitGUID and UnitGUID("target")
+                                if guid then
+                                    debuffTimers[guid .. "_" .. effect] = nil
+                                end
+                            end
+                        end
                     end
                 end
             end

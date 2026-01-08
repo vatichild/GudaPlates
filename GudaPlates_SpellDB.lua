@@ -10,18 +10,14 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
 	-- Paladin
-	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Judgement of Light",
-	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
-	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
-	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Sea; of Light",
+	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Seal of Wisdom",
+	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Seal of the Crusader",
+	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Seal of Justice",
 	-- Other
 	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }  -- Cache: texture path -> spell name
-
-if DEFAULT_CHAT_FRAME then
-	DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: Initial textureToSpell[Spell_Holy_HealingAura]="..(GudaPlates_SpellDB.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
-end
 
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
@@ -164,10 +160,11 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Hammer of Justice"] = {[1]=3, [2]=4, [3]=5, [4]=6, [0]=6},
 	["Turn Undead"] = {[0]=20},
 	["Repentance"] = {[0]=6},
-	["Judgement of the Crusader"] = {[0]=10},
-	["Judgement of Light"] = {[0]=10},
-	["Judgement of Wisdom"] = {[0]=10},
-	["Judgement of Justice"] = {[0]=10},
+	["Crusader Strike"] = {[0]=30},
+	--["Judgement of the Crusader"] = {[0]=10},
+	--["Judgement of Light"] = {[0]=10},
+	--["Judgement of Wisdom"] = {[0]=10},
+	--["Judgement of Justice"] = {[0]=10},
 	["Judgement"] = {[0]=10},
 	["Seal of Light"] = {[0]=10},
 	["Seal of Wisdom"] = {[0]=10},
@@ -233,11 +230,11 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
-	["Judgement of the Crusader"] = true,
-	["Judgement of Light"] = true,
-	["Judgement of Wisdom"] = true,
-	["Judgement of Justice"] = true,
-	["Judgement"] = true,
+	--["Judgement of the Crusader"] = true,
+	--["Judgement of Light"] = true,
+	--["Judgement of Wisdom"] = true,
+	--["Judgement of Justice"] = true,
+	--["Judgement"] = true,
 	["Seal of Light"] = true,
 	["Seal of Wisdom"] = true,
 	["Seal of the Crusader"] = true,
@@ -568,14 +565,6 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 
 	local texture = UnitDebuff(unit, index)
 	if not texture then return nil end
-
-	if DEFAULT_CHAT_FRAME then
-		if string.find(texture, "Spell_Holy") then
-			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: ScanDebuff texture="..(texture or "nil").." len="..string.len(texture))
-			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: direct_cache_lookup="..(self.textureToSpell[texture] or "nil"))
-			DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: explicit_healingaura_lookup="..(self.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
-		end
-	end
 
 	-- 1. Prioritize hardcoded textureToSpell mappings (most reliable)
 	if self.textureToSpell[texture] then
