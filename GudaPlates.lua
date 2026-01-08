@@ -2304,6 +2304,7 @@ GudaPlates:SetScript("OnEvent", function()
             -- If we matched with Cursive's format (Debuff (1)), the stack-unaware pattern will capture "(1)" as part of the effect name
             -- Strip any stack counts from the effect name
             if effect then
+                effect = StripSpellRank(effect)
                 for e, s in string.gfind(effect, "(.+) %((%d+)%)$") do
                     effect = e
                     break

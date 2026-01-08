@@ -12,6 +12,21 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Other
 	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
+	-- Druid
+	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
+	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
+	["Interface\\Icons\\Ability_Druid_Rip"] = "Rip",
+	["Interface\\Icons\\Ability_Druid_Bash"] = "Bash",
+	["Interface\\Icons\\Ability_Druid_SupriseAttack"] = "Pounce Bleed",
+	["Interface\\Icons\\Ability_Druid_ChallangingRoar"] = "Challenging Roar",
+	["Interface\\Icons\\Spell_Nature_StarFall"] = "Moonfire",
+	["Interface\\Icons\\Spell_Nature_StrangleVines"] = "Entangling Roots",
+	["Interface\\Icons\\Spell_Nature_Sleep"] = "Hibernate",
+	["Interface\\Icons\\Spell_Nature_InsectSwarm"] = "Insect Swarm",
+	["Interface\\Icons\\Ability_Druid_DemoralizingRoar"] = "Demoralizing Roar",
+	["Interface\\Icons\\Ability_Hunter_Pet_Bear"] = "Feral Charge Effect",
+	["Interface\\Icons\\Ability_Druid_Mangle"] = "Mangle",
+	["Interface\\Icons\\Ability_Physical_Taunt"] = "Growl",
 }
 
 -- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
@@ -47,6 +62,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Challenging Shout"] = {[0]=6},
 	["Demoralizing Roar"] = {[0]=30},
 	["Dazed"] = {[0]=4},
+	["Taunt"] = {[0]=3},
 
 	-- ROGUE
 	["Cheap Shot"] = {[0]=4},
@@ -158,6 +174,9 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Insect Swarm"] = {[0]=12},
 	["Hibernate"] = {[1]=20, [2]=30, [3]=40, [0]=40},
 	["Feral Charge Effect"] = {[0]=4},
+	["Challenging Roar"] = {[0]=6},
+	["Mangle"] = {[0]=12},
+	["Growl"] = {[0]=3},
 
 	-- PALADIN
 	["Hammer of Justice"] = {[1]=3, [2]=4, [3]=5, [4]=6, [0]=6},
@@ -209,13 +228,28 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Thunder Clap"] = "WARRIOR",
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
+	["Taunt"] = "WARRIOR",
 	-- Druid
 	["Faerie Fire"] = "DRUID",
 	["Faerie Fire (Feral)"] = "DRUID",
 	["Demoralizing Roar"] = "DRUID",
 	["Insect Swarm"] = "DRUID",
+	["Moonfire"] = "DRUID",
+	["Entangling Roots"] = "DRUID",
+	["Hibernate"] = "DRUID",
+	["Rip"] = "DRUID",
+	["Rake"] = "DRUID",
+	["Bash"] = "DRUID",
+	["Pounce"] = "DRUID",
+	["Pounce Bleed"] = "DRUID",
+	["Challenging Roar"] = "DRUID",
+	["Feral Charge Effect"] = "DRUID",
+	["Mangle"] = "DRUID",
+	["Growl"] = "DRUID",
 	-- Priest
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
+	["Shadow Word: Pain"] = "PRIEST",
+	["Silence"] = "PRIEST",
 	-- Warlock
 	["Curse of Agony"] = "WARLOCK",
 	["Curse of Weakness"] = "WARLOCK",
