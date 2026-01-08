@@ -9,15 +9,18 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
-	-- Paladin
-	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Seal of Light",
-	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Seal of Wisdom",
-	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Seal of the Crusader",
-	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Seal of Justice",
 	-- Other
 	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
-}  -- Cache: texture path -> spell name
+}
+
+-- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
+GudaPlates_SpellDB.debuffPriority = {
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Judgement of Light",
+	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
+	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
+	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
+}
 
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
@@ -166,10 +169,6 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
 	["Judgement"] = {[0]=10},
-	["Seal of Light"] = {[0]=10},
-	["Seal of Wisdom"] = {[0]=10},
-	["Seal of the Crusader"] = {[0]=10},
-	["Seal of Justice"] = {[0]=10},
 
 	-- SHAMAN
 	["Frost Shock"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -235,10 +234,6 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Judgement of Wisdom"] = true,
 	["Judgement of Justice"] = true,
 	["Judgement"] = true,
-	["Seal of Light"] = true,
-	["Seal of Wisdom"] = true,
-	["Seal of the Crusader"] = true,
-	["Seal of Justice"] = true,
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
@@ -458,11 +453,6 @@ function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isO
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
 	self.objects[unit][unitlevel][effect].isOwn = isOwn ~= false -- default to true for backwards compatibility
-
-	-- Clear recentCasts entry so we don't refresh again until next cast
-	if self.recentCasts[effect] then
-		self.recentCasts[effect] = nil
-	end
 end
 
 function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
@@ -564,12 +554,17 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	local texture = UnitDebuff(unit, index)
 	if not texture then return nil end
 
-	-- 1. Prioritize hardcoded textureToSpell mappings (most reliable)
+	-- 1. Prioritize debuff-specific mappings (ShaguPlates-style mature priority)
+	if self.debuffPriority and self.debuffPriority[texture] then
+		return self.debuffPriority[texture]
+	end
+
+	-- 2. Fallback to general textureToSpell mappings
 	if self.textureToSpell[texture] then
 		return self.textureToSpell[texture]
 	end
 
-	-- 2. If not found in hardcoded cache, resort to tooltip scanning
+	-- 3. If not found in hardcoded cache, resort to tooltip scanning
 	local scanUnit = unit
 	if IsGUID(unit) then
 		if UnitExists("target") then

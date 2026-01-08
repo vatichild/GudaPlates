@@ -210,16 +210,11 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                             if data.isOwn == true and not claimedMyDebuffs[effect] then
                                 isMyDebuff = true
                                 claimedMyDebuffs[effect] = true
-                            elseif playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
-                                effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                            elseif playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ")) then
                                 isMyDebuff = true
                                 claimedMyDebuffs[effect] = true
-                                -- Aggressive refresh: if we see the debuff on the plate and we are a paladin,
-                                -- and there is no tracked start time yet, or it's old, sync it.
-                                -- This bridges the gap between the frame-by-frame scanner and combat log events.
-                                local dbDataGUID = unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
-                                local dbDataName = plateName and SpellDB:FindEffectData(plateName, 0, effect)
-                                local dbData = (dbDataGUID and dbDataName and (dbDataGUID.start or 0) > (dbDataName.start or 0)) and dbDataGUID or (dbDataGUID or dbDataName)
+                                -- Simple sync with SpellDB for Paladin debuffs
+                                local dbData = SpellDB:FindEffectData(unitstr, 0, effect) or SpellDB:FindEffectData(plateName, 0, effect)
                                 
                                 if dbData and dbData.start then
                                     duration = dbData.duration
@@ -309,20 +304,15 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     cached.lastSeen = now
 
                     -- Sync with SpellDB for Paladin debuffs if SpellDB has a newer start time
-                    if playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
-                        effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
-                        -- Check both GUID and Name records in SpellDB
-                        local dbDataGUID = unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
-                        local dbDataName = plateName and SpellDB:FindEffectData(plateName, 0, effect)
-                        
-                        local dbData = nil
-                        if dbDataGUID and dbDataName then
-                            dbData = (dbDataGUID.start or 0) > (dbDataName.start or 0) and dbDataGUID or dbDataName
-                        else
-                            dbData = dbDataGUID or dbDataName
-                        end
+                    if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ")) then
+                        local dbData = SpellDB:FindEffectData(unitstr, 0, effect) or SpellDB:FindEffectData(plateName, 0, effect)
 
                         if dbData and dbData.start and dbData.start > (cached.startTime or 0) then
+                            cached.startTime = dbData.start
+                            cached.duration = dbData.duration or fallbackDuration
+                        elseif dbData and dbData.start then
+                            -- Aggressive fallback: if SpellDB has data, use it for Paladin debuffs
+                            -- to prevent timers from getting stuck at 0.
                             cached.startTime = dbData.start
                             cached.duration = dbData.duration or fallbackDuration
                         end
@@ -379,15 +369,12 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if isOwn == true and not claimedMyDebuffs[effect] then
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
-                elseif playerClass == "PALADIN" and (effect == "Seal of Wisdom" or effect == "Seal of Light" or effect == "Seal of the Crusader" or effect == "Seal of Justice" or
-                    effect == "Judgement of Wisdom" or effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement") then
+                elseif playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ")) then
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
                     
-                    -- Sync with SpellDB for Paladin debuffs if SpellDB has a newer start time
-                    local dbDataGUID = SpellDB and SpellDB.objects and unitstr and SpellDB:FindEffectData(unitstr, 0, effect)
-                    local dbDataName = SpellDB and SpellDB.objects and plateName and SpellDB:FindEffectData(plateName, 0, effect)
-                    local dbData = (dbDataGUID and dbDataName and (dbDataGUID.start or 0) > (dbDataName.start or 0)) and dbDataGUID or (dbDataGUID or dbDataName)
+                    -- Simple sync with SpellDB for Paladin debuffs
+                    local dbData = SpellDB and SpellDB.objects and (SpellDB:FindEffectData(unitstr, 0, effect) or SpellDB:FindEffectData(plateName, 0, effect))
 
                     if dbData and dbData.start then
                         duration = dbData.duration
