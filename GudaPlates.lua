@@ -1285,10 +1285,26 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Apply color based on state (priority order: TAPPED -> NEUTRAL -> THREAT COLORS)
+        -- Apply color based on state (priority order: TAPPED -> STUNNED -> NEUTRAL -> THREAT COLORS)
+        local isStunned = false
+        if hasValidGUID and GudaPlates_Debuffs then
+            -- We can check our own timers for this unit
+            -- Stun types in WoW: Stun, Incapacitate, Fear? User specifically asked for "Stun color"
+            local stuns = { "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice", "Charge Stun", "Intercept Stun", "Concussion Blow", "Gouge", "Sap", "Pounce" }
+            for _, stunName in ipairs(stuns) do
+                if GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName] or GudaPlates_Debuffs.timers[plateName .. "_" .. stunName] then
+                    isStunned = true
+                    break
+                end
+            end
+        end
+
         if isTappedByOthers and hp < hpmax then
         -- TAPPED: Mob is tapped by others and took damage - no other colors applied
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
+        elseif isStunned then
+        -- STUNNED: Unit is stunned
+            nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.STUN))
         elseif isNeutral and not isAttackingPlayer then
         -- Neutral and not attacking - yellow
             nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
@@ -2621,6 +2637,9 @@ local function LoadSettings()
         if GudaPlatesDB.THREAT_COLORS.TAPPED then
             THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
         end
+        if GudaPlatesDB.THREAT_COLORS.STUN then
+            THREAT_COLORS.STUN = GudaPlatesDB.THREAT_COLORS.STUN
+        end
         if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
             THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
         end
@@ -2897,6 +2916,19 @@ local function CreateOptionsFrame()
 
     -- Color picker helper
     local function ShowColorPicker(r, g, b, callback)
+        ColorPickerFrame:SetFrameStrata("TOOLTIP")
+        local level = optionsFrame:GetFrameLevel() + 20
+        ColorPickerFrame:SetFrameLevel(level)
+
+        -- Ensure buttons and other elements are above the frame itself
+        local children = {ColorPickerFrame:GetChildren()}
+        for _, child in ipairs(children) do
+            if child and child.SetFrameStrata then
+                child:SetFrameStrata("TOOLTIP")
+                child:SetFrameLevel(level + 1)
+            end
+        end
+
         ColorPickerFrame.func = function()
             local r, g, b = ColorPickerFrame:GetColorRGB()
             callback(r, g, b)
@@ -4050,11 +4082,12 @@ miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -200)
 miscHeader:SetText("|cff00ff00Other Colors:|r")
 
 CreateColorSwatch(colorsTab, 5, -225, "Unit Tapped", THREAT_COLORS, "TAPPED")
-CreateColorSwatch(colorsTab, 5, -250, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+CreateColorSwatch(colorsTab, 5, -250, "Stun", THREAT_COLORS, "STUN")
+CreateColorSwatch(colorsTab, 5, -275, "Mana Bar", THREAT_COLORS, "MANA_BAR")
 
 -- Target Glow Color Swatch (uses Settings table directly)
 local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -275)
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -305)
 targetGlowSwatchLabel:SetText("Target Glow")
 
 local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4106,7 +4139,7 @@ end)
 
 -- Castbar Color Swatch
 local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -300)
+castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -330)
 castbarSwatchLabel:SetText("Castbar")
 
 local castbarSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4267,6 +4300,7 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
+    THREAT_COLORS.STUN = {0.6, 0.4, 1.0, 1}
     THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
     Settings.optionsBgAlpha = 0.9
     Settings.hideOptionsBorder = false

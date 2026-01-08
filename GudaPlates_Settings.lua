@@ -81,6 +81,7 @@ GudaPlates.THREAT_COLORS = {
     },
     -- Misc colors
     TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
+    STUN = {0.6, 0.4, 1.0, 1},    -- Purple: unit is stunned
     MANA_BAR = {0.07, 0.58, 1.0, 1},  -- Cyan: mana bar color
 }
 
