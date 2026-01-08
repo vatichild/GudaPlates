@@ -9,6 +9,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Rend"] = "Rend",
 	["Interface\\Icons\\Ability_BackStab"] = "Deep Wounds",
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	["Interface\\Icons\\Ability_Warrior_Decimate"] = "Improved Hamstring",
 	["Interface\\Icons\\Ability_Warrior_WarCry"] = "Demoralizing Shout",
 	["Interface\\Icons\\Ability_Warrior_Sunder"] = "Sunder Armor",
 	["Interface\\Icons\\Ability_BullRush"] = "Challenging Shout",
@@ -54,6 +55,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Sunder Armor"] = {[0]=30},
 	["Disarm"] = {[0]=10},
 	["Hamstring"] = {[0]=15},
+	["Improved Hamstring"] = {[0]=5},
 	["Demoralizing Shout"] = {[0]=30},
 	["Intimidating Shout"] = {[0]=8},
 	["Concussion Blow"] = {[0]=5},
@@ -229,16 +231,13 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 	["Gouge"] = "Gouge",
 }
 
--- Unique debuffs that can only exist once on a target (shared across all players of the same class)
-GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
+-- Shared debuffs that can only exist once on a target (shared across all players of the same class)
+GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	-- Warrior
 	["Thunder Clap"] = "WARRIOR",
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
 	["Challenging Shout"] = "WARRIOR",
-	["Rend"] = "WARRIOR",
-	["Deep Wounds"] = "WARRIOR",
-	["Deep Wound"] = "WARRIOR",
 	["Hamstring"] = "WARRIOR",
 	["Taunt"] = true,
 	-- Druid
@@ -286,6 +285,19 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
+}
+
+-- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
+GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
+	["Rend"] = true,
+	["Deep Wounds"] = true,
+	["Deep Wound"] = true,
+	["Immolate"] = true,
+	["Corruption"] = true,
+	["Shadow Word: Pain"] = true,
+	["Rip"] = true,
+	["Rake"] = true,
+	["Pounce Bleed"] = true,
 }
 
 -- ============================================

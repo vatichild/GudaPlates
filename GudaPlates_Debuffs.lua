@@ -240,7 +240,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if not timeleft then
                     local dbDuration = SpellDB:GetDuration(effect, 0)
                     if dbDuration > 0 then
-                        local isUnique = SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+                        local isUnique = SpellDB.SHARED_DEBUFFS and SpellDB.SHARED_DEBUFFS[effect]
                         if isUnique or isMyDebuff then
                             SpellDB:AddEffect(unitstr or plateName, unitlevel, effect, dbDuration, isMyDebuff)
                         end
@@ -253,11 +253,12 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
 
             -- Filters
-            local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
+            local uniqueClass = effect and SpellDB and SpellDB.SHARED_DEBUFFS and SpellDB.SHARED_DEBUFFS[effect]
             local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
+            local isOwnerBound = effect and SpellDB and SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect]
             local isRedundant = self:IsDebuffRedundant(scanUnit, effect, i)
 
-            if (Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique) or isRedundant then
+            if (Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique and not isOwnerBound) or isRedundant then
                 -- Skip
             else
                 local debuff = nameplate.debuffs[debuffIndex]
