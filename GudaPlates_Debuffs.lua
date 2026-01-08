@@ -225,7 +225,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 end
 
                 -- Paladin special handling
-                if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ") or effect == "Crusader Strike") then
+                if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ") or effect == "Crusader Strike" or effect == "Hammer of Justice") then
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
                     -- Sync with SpellDB

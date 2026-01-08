@@ -229,6 +229,7 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
+	["Hammer of Justice"] = "PALADIN",
 	["Crusader Strike"] = "PALADIN",
 	["Judgement of the Crusader"] = true,
 	["Judgement of Light"] = true,
