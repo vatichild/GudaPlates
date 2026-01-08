@@ -9,6 +9,11 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
+	-- Paladin
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Judgement of Light",
+	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
+	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
+	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
 	-- Other
 	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
@@ -159,6 +164,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Judgement of Light"] = {[0]=10},
 	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
+	["Judgement"] = {[0]=10},
 
 	-- SHAMAN
 	["Frost Shock"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -219,10 +225,11 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
-	["Judgement of the Crusader"] = "PALADIN",
-	["Judgement of Light"] = "PALADIN",
-	["Judgement of Wisdom"] = "PALADIN",
-	["Judgement of Justice"] = "PALADIN",
+	["Judgement of the Crusader"] = true,
+	["Judgement of Light"] = true,
+	["Judgement of Wisdom"] = true,
+	["Judgement of Justice"] = true,
+	["Judgement"] = true,
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
@@ -310,6 +317,12 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 		local _,_,_,_,count = GetTalentInfo(2, 1)
 		if count and count > 0 then
 			duration = duration + (count * 0.5)
+		end
+	elseif effect == self.DYN_DEBUFFS["Rend"] then
+		-- Improved Rend: +3s per talent
+		local _,_,_,_,count = GetTalentInfo(1, 2)
+		if count and count > 0 then
+			duration = duration + (count * 3)
 		end
 	end
 
