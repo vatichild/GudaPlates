@@ -65,7 +65,7 @@ function GudaPlates_Debuffs:SealHandler(attacker, victim)
     local isOwn = (attacker == "You" or attacker == UnitName("player"))
     if not isOwn then return end
 
-    local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement" }
+    local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement", "Crusader Strike" }
     local guid = isTarget and UnitGUID and UnitGUID("target")
 
     for _, effect in pairs(judgements) do
@@ -225,7 +225,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 end
 
                 -- Paladin special handling
-                if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ")) then
+                if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ") or effect == "Crusader Strike") then
                     isMyDebuff = true
                     claimedMyDebuffs[effect] = true
                     -- Sync with SpellDB
