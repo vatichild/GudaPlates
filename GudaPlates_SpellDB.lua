@@ -169,6 +169,10 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
 	["Judgement"] = {[0]=10},
+	["Seal of Light"] = {[0]=10},
+	["Seal of Wisdom"] = {[0]=10},
+	["Seal of the Crusader"] = {[0]=10},
+	["Seal of Justice"] = {[0]=10},
 
 	-- SHAMAN
 	["Frost Shock"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -234,6 +238,10 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Judgement of Wisdom"] = true,
 	["Judgement of Justice"] = true,
 	["Judgement"] = true,
+	["Seal of Light"] = true,
+	["Seal of Wisdom"] = true,
+	["Seal of the Crusader"] = true,
+	["Seal of Justice"] = true,
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
