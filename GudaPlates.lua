@@ -503,7 +503,7 @@ local function UpdateNamePlateDimensions(frame)
     end
     -- Update debuff fonts
     if nameplate.debuffs then
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             if nameplate.debuffs[i] then
                 nameplate.debuffs[i].cd:SetFont(Settings.textFont, 10, "OUTLINE")
                 nameplate.debuffs[i].count:SetFont(Settings.textFont, 9, "OUTLINE")
@@ -560,7 +560,7 @@ local function UpdateNamePlateDimensions(frame)
         end
         
         -- Debuffs below mana bar (or healthbar if no mana)
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
                 if nameplate.mana and nameplate.mana:IsShown() then
@@ -606,7 +606,7 @@ local function UpdateNamePlateDimensions(frame)
         end
         
         -- Debuffs above mana bar (or healthbar if no mana)
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
                 if nameplate.mana and nameplate.mana:IsShown() then

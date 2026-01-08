@@ -19,6 +19,10 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }  -- Cache: texture path -> spell name
 
+if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: Initial textureToSpell[Spell_Holy_HealingAura]="..(GudaPlates_SpellDB.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
+end
+
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
 -- Format: ["Spell Name"] = { [rank] = duration, [0] = default/max }
@@ -541,29 +545,23 @@ end
 function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if not self.scanner then self:InitScanner() end
 
-	-- Get the debuff texture first for cache lookup
 	local texture = UnitDebuff(unit, index)
 	if not texture then return nil end
 
-	-- Normalize texture path (replace forward slashes with backslashes and lowercase)
-	local normalizedTexture = string.lower(string.gsub(texture, "/", "\\"))
+    if DEFAULT_CHAT_FRAME then
+        if string.find(texture, "Spell_Holy") then
+            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: ScanDebuff texture="..(texture or "nil").." len="..string.len(texture))
+            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: direct_cache_lookup="..(self.textureToSpell[texture] or "nil"))
+            DEFAULT_CHAT_FRAME:AddMessage("SpellDB DEBUG: explicit_healingaura_lookup="..(self.textureToSpell["Interface\\Icons\\Spell_Holy_HealingAura"] or "nil"))
+        end
+    end
 
-	-- Try texture cache first (fastest, works with GUIDs)
-	if self.textureToSpell then
-		-- Try exact match first
-		if self.textureToSpell[texture] then
-			return self.textureToSpell[texture]
-		end
-		-- Try normalized match
-		for path, effect in pairs(self.textureToSpell) do
-			if string.lower(string.gsub(path, "/", "\\")) == normalizedTexture then
-				return effect
-			end
-		end
-	end
-
-	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
-	-- Convert GUID to "target" if it matches the current target
+	-- 1. Prioritize hardcoded textureToSpell mappings (most reliable)
+	if self.textureToSpell[texture] then
+        return self.textureToSpell[texture]
+    end
+    
+	-- 2. If not found in hardcoded cache, resort to tooltip scanning
 	local scanUnit = unit
 	if IsGUID(unit) then
 		if UnitExists("target") then
@@ -571,10 +569,10 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 			if targetGUID and targetGUID == unit then
 				scanUnit = "target"
 			else
-				return nil
+				return nil -- Cannot scan tooltip for non-target GUID
 			end
 		else
-			return nil
+			return nil -- Cannot scan tooltip without a target
 		end
 	end
 
@@ -584,8 +582,10 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
 	if textLeft then
 		local effect = textLeft:GetText()
-		-- Cache texture -> spell mapping for future lookups
-		if effect and effect ~= "" and texture then
+		-- Cache the tooltip-scanned effect *only if it's new*.
+        -- This prevents tooltip's potentially incorrect name from overwriting known good names.
+        -- It also populates the cache for future faster lookups of unknown spells.
+		if effect and effect ~= "" and texture and not self.textureToSpell[texture] then
 			self.textureToSpell[texture] = effect
 		end
 		return effect
