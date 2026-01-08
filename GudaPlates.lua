@@ -40,6 +40,7 @@ end
 
 -- Debug flag for duration tracking
 local DEBUG_DURATION = false
+GudaPlates.lua_DEBUG_DURATION = DEBUG_DURATION
 
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
@@ -1953,71 +1954,6 @@ local function ParseCastStart(msg)
     end
 end
 
--- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
-local function SealHandler(attacker, victim)
-    if not attacker or not victim or not SpellDB then return end
-    
-    -- Judgements that are refreshed by melee/ranged hits
-    local judgements = { 
-        "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement"
-    }
-    
-    local isTarget = (UnitExists("target") and UnitName("target") == victim)
-    local isOwn = (attacker == "You" or attacker == UnitName("player"))
-    local guid = isTarget and UnitGUID and UnitGUID("target")
-
-    for _, effect in pairs(judgements) do
-        -- ShaguPlates approach: Only refresh if the effect already exists on the target in SpellDB.objects
-        local hasEffect = false
-        if SpellDB.objects[victim] then
-            if SpellDB.objects[victim][0] and SpellDB.objects[victim][0][effect] then
-                hasEffect = true
-            else
-                for lvl, effects in pairs(SpellDB.objects[victim]) do
-                    if effects[effect] then hasEffect = true break end
-                end
-            end
-        end
-
-        if not hasEffect and guid and SpellDB.objects[guid] then
-            if SpellDB.objects[guid][0] and SpellDB.objects[guid][0][effect] then
-                hasEffect = true
-            else
-                for lvl, effects in pairs(SpellDB.objects[guid]) do
-                    if effects[effect] then hasEffect = true break end
-                end
-            end
-        end
-
-        if hasEffect then
-            local duration = SpellDB:GetDuration(effect, 0)
-
-            -- Refresh Database
-            SpellDB:RefreshEffect(victim, 0, effect, duration, isOwn)
-            if guid then
-                SpellDB:RefreshEffect(guid, 0, effect, duration, isOwn)
-            end
-            
-            -- Clear nameplate cache
-            if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
-                GudaPlates_Debuffs.timers[victim .. "_" .. effect] = nil
-                if guid then
-                    GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil
-                end
-                
-                -- Also clear common Paladin debuff variations just in case of naming mismatch
-                if effect == "Judgement of Light" then
-                    GudaPlates_Debuffs.timers[victim .. "_Seal of Light"] = nil
-                    if guid then GudaPlates_Debuffs.timers[guid .. "_Seal of Light"] = nil end
-                elseif effect == "Judgement of Wisdom" then
-                    GudaPlates_Debuffs.timers[victim .. "_Seal of Wisdom"] = nil
-                    if guid then GudaPlates_Debuffs.timers[guid .. "_Seal of Wisdom"] = nil end
-                end
-            end
-        end
-    end
-end
-
 local function ParseAttackHit(msg)
     if not msg or not SpellDB then return end
 
@@ -2088,8 +2024,8 @@ local function ParseAttackHit(msg)
         end
     end
 
-    if attacker and victim then
-        SealHandler(attacker, victim)
+    if attacker and victim and GudaPlates_Debuffs then
+        GudaPlates_Debuffs:SealHandler(attacker, victim)
     end
 end
 
@@ -2171,9 +2107,9 @@ GudaPlates:SetScript("OnEvent", function()
                         SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury's Blessing", duration, isOwn)
                     end
                 end
-            elseif spell and victim then
+            elseif spell and victim and GudaPlates_Debuffs then
                 -- Check for Judgement refreshes from spells (e.g. Paladin Seal procs)
-                SealHandler(attacker, victim)
+                GudaPlates_Debuffs:SealHandler(attacker, victim)
             end
         end
     elseif arg1 and string.find(event, "CHAT_MSG_COMBAT") then
