@@ -2402,7 +2402,7 @@ GudaPlates:SetScript("OnEvent", function()
                 else
                     -- Check for Deep Wound proc via melee crit heuristic
                     local isDeepWoundProc = false
-                    if effect == "Deep Wound" or effect == "Deep Wounds" then
+                    if effect == "Deep Wound" then
                         local now = GetTime()
                         local recentCritTime = recentMeleeCrits[unit]
 
@@ -2685,7 +2685,7 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             green = {0.0, 0.8, 0.0, 1},
             teal = {0.0, 0.5, 0.5, 1},
             purple = {0.6, 0.4, 0.8, 1},
-            pink = {1.0, 0.6, 0.8, 1},
+            pink = {0.376, 0.027, 0.431, 1},
             yellow = {1.0, 1.0, 0.0, 1},
             white = {1.0, 1.0, 1.0, 1},
             gray = {0.5, 0.5, 0.5, 1},
@@ -4492,7 +4492,7 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
-    THREAT_COLORS.STUN = {0.6, 0.4, 1.0, 1}
+    THREAT_COLORS.STUN = {0.376, 0.027, 0.431, 1}
     THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
     Settings.optionsBgAlpha = 0.9
     Settings.hideOptionsBorder = false

@@ -34,6 +34,8 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Hunter_Pet_Bear"] = "Feral Charge Effect",
 	["Interface\\Icons\\Ability_Druid_Mangle"] = "Mangle",
 	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
+	-- Paladin
+	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
 }
 
 -- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
@@ -196,6 +198,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
 	["Judgement"] = {[0]=10},
+	["Vindication"] = {[0]=10},
 
 	-- SHAMAN
 	["Frost Shock"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -328,6 +331,9 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Mage
 	["Ignite"] = true,
+
+	-- Paladin
+	["Vindication"] = true,
 }
 
 -- ============================================
