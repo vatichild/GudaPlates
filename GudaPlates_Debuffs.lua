@@ -95,7 +95,7 @@ function GudaPlates_Debuffs:GetMaxDebuffs()
 end
 
 function GudaPlates_Debuffs:GetDebuffSize()
-    return DEBUFF_SIZE
+    return Settings.debuffIconSize or 16
 end
 
 local function DebuffOnUpdate()
@@ -172,8 +172,19 @@ end
 
 function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarget, hasValidGUID, superwow_active)
     -- Reset all debuff icons
+    local size = self:GetDebuffSize()
     for i = 1, MAX_DEBUFFS do
         local debuff = nameplate.debuffs[i]
+        debuff:SetWidth(size)
+        debuff:SetHeight(size)
+        
+        -- Scale fonts proportionally
+        local cdFontSize = math.floor(size * 0.625 + 0.5) -- 10 for 16px
+        local countFontSize = math.floor(size * 0.5625 + 0.5) -- 9 for 16px
+        
+        debuff.cd:SetFont(Settings.textFont, cdFontSize, "OUTLINE")
+        debuff.count:SetFont(Settings.textFont, countFontSize, "OUTLINE")
+
         debuff:Hide()
         debuff.count:SetText("")
         debuff.count:SetTextColor(1, 1, 1, 1) -- Reset to white

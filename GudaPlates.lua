@@ -3282,6 +3282,25 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Debuff Icon Size Slider
+local debuffSizeSlider = CreateFrame("Slider", "GudaPlatesDebuffSizeSlider", generalTab, "OptionsSliderTemplate")
+debuffSizeSlider:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -35)
+debuffSizeSlider:SetWidth(580)
+debuffSizeSlider:SetMinMaxValues(8, 32)
+debuffSizeSlider:SetValueStep(1)
+local debuffSizeText = getglobal(debuffSizeSlider:GetName() .. "Text")
+debuffSizeText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(debuffSizeSlider:GetName() .. "Low"):SetText("8")
+getglobal(debuffSizeSlider:GetName() .. "High"):SetText("32")
+debuffSizeSlider:SetScript("OnValueChanged", function()
+    Settings.debuffIconSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Debuff Icon Size: " .. math.floor(this:GetValue()) .. " px")
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
 onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 200, 0)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
@@ -3313,7 +3332,7 @@ local separator2 = generalTab:CreateTexture(nil, "ARTWORK")
 separator2:SetTexture(1, 1, 1, 0.2)
 separator2:SetHeight(1)
 separator2:SetWidth(580)
-separator2:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -15)
+separator2:SetPoint("TOPLEFT", debuffSizeSlider, "BOTTOMLEFT", 0, -20)
 
 -- Font Section
 local fontHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -4390,6 +4409,8 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesSwapCheckbox"):SetChecked(Settings.swapNameDebuff)
     getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
     getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
+    getglobal("GudaPlatesDebuffSizeSlider"):SetValue(Settings.debuffIconSize)
+    getglobal("GudaPlatesDebuffSizeSliderText"):SetText("Debuff Icon Size: " .. Settings.debuffIconSize .. " px")
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
     -- Health/Mana tab
@@ -4485,6 +4506,7 @@ resetButton:SetScript("OnClick", function()
     Settings.friendHealthFontSize = 10
     Settings.friendHealthTextPosition = "CENTER"
     Settings.friendHealthTextFormat = 1
+    Settings.debuffIconSize = 16
     Settings.showManaBar = false
     Settings.manaTextFormat = 1
     Settings.manaTextPosition = "CENTER"

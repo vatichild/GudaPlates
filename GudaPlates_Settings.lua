@@ -54,6 +54,8 @@ GudaPlates.Settings = {
     -- Target Glow
     showTargetGlow = true,
     targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
+    -- Debuffs
+    debuffIconSize = 16,
     -- Text Colors
     nameColor = {1, 1, 1, 1},
     healthTextColor = {1, 1, 1, 1},
