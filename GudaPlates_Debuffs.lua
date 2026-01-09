@@ -292,7 +292,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
         -- OWNER_BOUND_DEBUFFS: Special display logic
         -- Show at most ONE icon per spell name when filtering is enabled
         -- ============================================
-        if isOwnerBound and Settings.showOnlyMyDebuffs then
+        if isOwnerBound then
             -- Skip if we've already displayed this OWNER_BOUND spell
             if displayedOwnerBound[effect] then
                 -- Skip duplicate - do not display
