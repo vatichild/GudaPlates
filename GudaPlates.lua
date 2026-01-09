@@ -181,6 +181,8 @@ end
 -- Melee crit tracker for Deep Wound heuristic
 -- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
 local recentMeleeCrits = {}
+-- Melee hit tracker for procs (Vindication)
+local recentMeleeHits = {}
 
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
@@ -2045,6 +2047,17 @@ local function ParseAttackHit(msg)
         end
     end
 
+    if attacker == "You" and victim then
+        recentMeleeHits[victim] = GetTime()
+        -- Also store by GUID if available
+        if superwow_active and UnitExists("target") and UnitName("target") == victim then
+            local guid = UnitGUID and UnitGUID("target")
+            if guid then
+                recentMeleeHits[guid] = GetTime()
+            end
+        end
+    end
+
     if attacker and victim and GudaPlates_Debuffs then
         GudaPlates_Debuffs:SealHandler(attacker, victim)
     end
@@ -2152,6 +2165,7 @@ GudaPlates:SetScript("OnEvent", function()
         castTracker = {}
         castDB = {}
         recentMeleeCrits = {}
+        recentMeleeHits = {}
         if SpellDB then SpellDB.objects = {} end
         if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
         Print("Initialized. Scanning...")
@@ -2400,24 +2414,34 @@ GudaPlates:SetScript("OnEvent", function()
                         end
                     end
                 else
-                    -- Check for Deep Wound proc via melee crit heuristic
-                    local isDeepWoundProc = false
-                    if effect == "Deep Wound" then
+                    -- Check for proc via melee heuristic
+                    local isProc = false
+                    if effect == "Deep Wound" or effect == "Vindication" then
                         local now = GetTime()
-                        local recentCritTime = recentMeleeCrits[unit]
+                        local recentTime = nil
+                        
+                        if effect == "Deep Wound" then
+                            recentTime = recentMeleeCrits[unit]
+                        else
+                            recentTime = recentMeleeHits[unit]
+                        end
 
                         -- Also check by GUID
-                        if not recentCritTime and superwow_active and UnitExists("target") and UnitName("target") == unit then
+                        if not recentTime and superwow_active and UnitExists("target") and UnitName("target") == unit then
                             local guid = UnitGUID and UnitGUID("target")
                             if guid then
-                                recentCritTime = recentMeleeCrits[guid]
+                                if effect == "Deep Wound" then
+                                    recentTime = recentMeleeCrits[guid]
+                                else
+                                    recentTime = recentMeleeHits[guid]
+                                end
                             end
                         end
 
-                        -- If we crit this target in the last 2 seconds, assume Deep Wound is ours
-                        if recentCritTime and (now - recentCritTime) < 2 then
-                            isDeepWoundProc = true
-                            local dbDuration = SpellDB:GetDuration(effect, 0) or 12
+                        -- If we hit/crit this target recently, assume it is ours
+                        if recentTime and (now - recentTime) < 2 then
+                            isProc = true
+                            local dbDuration = SpellDB:GetDuration(effect, 0) or (effect == "Deep Wound" and 12 or 10)
 
                             -- Track ownership
                             if SpellDB.TrackOwnerBoundDebuff then
@@ -2435,7 +2459,7 @@ GudaPlates:SetScript("OnEvent", function()
                         end
                     end
 
-                    if not isDeepWoundProc then
+                    if not isProc then
                         -- Not our spell, refresh or add the timer
                         local dbDuration = SpellDB:GetDuration(effect, 0)
                         SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, false)

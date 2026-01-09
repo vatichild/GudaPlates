@@ -334,6 +334,7 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Paladin
 	["Vindication"] = true,
+	["Deep Wound"] = true,
 }
 
 -- ============================================
