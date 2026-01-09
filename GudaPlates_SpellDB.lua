@@ -17,8 +17,6 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
-	-- Other
-	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
 	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
@@ -36,6 +34,10 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
 	-- Paladin
 	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
+	-- Hunter
+	["Interface\\Icons\\spell_lacerate_1C"] = "Lacerate",
+	-- Other
+	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }
 
 -- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
