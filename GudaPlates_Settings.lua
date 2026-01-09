@@ -91,3 +91,4 @@ GudaPlates.THREAT_COLORS = {
 GudaPlates.playerRole = "DPS"
 GudaPlates.minimapAngle = 220
 GudaPlates.nameplateOverlap = true
+GudaPlates.nameplateClickThrough = true  -- When true, clicks pass through nameplates

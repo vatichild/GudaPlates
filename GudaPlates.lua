@@ -73,6 +73,7 @@ local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
+local clickThrough = GudaPlates.nameplateClickThrough
 
 
 local fontOptions = {
@@ -1841,9 +1842,11 @@ GudaPlates:SetScript("OnUpdate", function()
                         plate:SetHeight(1)
                     end
                     -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                    nameplate:EnableMouse(true)
+                    -- If clickThrough, disable mouse on nameplate too
+                    nameplate:EnableMouse(not clickThrough)
                 else
-                    plate:EnableMouse(true)
+                    -- If NOT clickThrough, enable mouse on plate; otherwise disable
+                    plate:EnableMouse(not clickThrough)
                     nameplate:EnableMouse(false)
                 end
 
@@ -2786,13 +2789,15 @@ local function SaveSettings()
     GudaPlatesDB.playerRole = playerRole
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
+    GudaPlatesDB.nameplateClickThrough = clickThrough
     GudaPlatesDB.minimapAngle = minimapAngle
     GudaPlatesDB.Settings = Settings  -- Save entire Settings table
-    
+
     -- Sync back to GudaPlates global table for consistency
     GudaPlates.playerRole = playerRole
     GudaPlates.THREAT_COLORS = THREAT_COLORS
     GudaPlates.nameplateOverlap = nameplateOverlap
+    GudaPlates.nameplateClickThrough = clickThrough
     GudaPlates.minimapAngle = minimapAngle
     GudaPlates.Settings = Settings
 end
@@ -2803,6 +2808,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.nameplateOverlap ~= nil then
         nameplateOverlap = GudaPlatesDB.nameplateOverlap
+    end
+    if GudaPlatesDB.nameplateClickThrough ~= nil then
+        clickThrough = GudaPlatesDB.nameplateClickThrough
     end
     if GudaPlatesDB.minimapAngle then
         minimapAngle = GudaPlatesDB.minimapAngle
@@ -3272,8 +3280,26 @@ overlapCheckbox:SetScript("OnClick", function()
     SaveSettings()
 end)
 
+local clickThroughCheckbox = CreateFrame("CheckButton", "GudaPlatesClickThroughCheckbox", generalTab, "UICheckButtonTemplate")
+clickThroughCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 150, 0)
+local clickThroughLabel = getglobal(clickThroughCheckbox:GetName().."Text")
+clickThroughLabel:SetText("Click-Through")
+clickThroughLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+clickThroughCheckbox:SetScript("OnClick", function()
+    clickThrough = this:GetChecked() == 1
+    SaveSettings()
+end)
+clickThroughCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Enable this to let clicks pass through nameplates (default: checked)")
+    GameTooltip:Show()
+end)
+clickThroughCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 200, 0)
+raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 300, 0)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3290,7 +3316,7 @@ raidMarkCheckbox:SetScript("OnClick", function()
 end)
 
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 400, 0)
+swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 450, 0)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name/Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
