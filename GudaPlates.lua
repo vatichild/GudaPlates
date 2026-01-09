@@ -2237,12 +2237,23 @@ GudaPlates:SetScript("OnEvent", function()
             local duration = SpellDB.pending[4]
             local unitName = SpellDB.pending[5]
             local unitlevel = SpellDB.pending[2]
-            
+
             local hasObject = SpellDB.objects[unitName] and SpellDB.objects[unitName][unitlevel] and SpellDB.objects[unitName][unitlevel][effect]
-            
+
             -- Check if this debuff already exists on target (refresh case)
             if unitName and hasObject then
-                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration)
+                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration, true) -- Mark as own spell
+                -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                    SpellDB:TrackOwnerBoundDebuff(unitName, effect, duration)
+                    -- Also track by GUID if available
+                    if superwow_active and UnitExists("target") and UnitName("target") == unitName then
+                        local guid = UnitGUID and UnitGUID("target")
+                        if guid then
+                            SpellDB:TrackOwnerBoundDebuff(guid, effect, duration)
+                        end
+                    end
+                end
                 SpellDB:RemovePending()
             end
             -- If not existing, wait for combat log "afflicted" message
@@ -2350,13 +2361,37 @@ GudaPlates:SetScript("OnEvent", function()
 
                 local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
                 local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
-                
+
                 -- First try to persist pending spell (this has accurate rank/duration from cast hook)
                 if SpellDB.pending[3] == effect then
+                    -- Capture duration BEFORE PersistPending clears it
+                    local pendingDuration = SpellDB.pending[4] or SpellDB:GetDuration(effect, 0)
                     SpellDB:PersistPending(effect)
+                    -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                    if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, pendingDuration)
+                        -- Also track by GUID if available
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, pendingDuration)
+                            end
+                        end
+                    end
                 elseif isRecentCast then
                     -- Recent cast - refresh the timer (player reapplied the debuff)
                     SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration, true)
+                    -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                    if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, recent.duration)
+                        -- Also track by GUID if available
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, recent.duration)
+                            end
+                        end
+                    end
                 else
                     -- Not our spell, refresh or add the timer
                     local dbDuration = SpellDB:GetDuration(effect, 0)
@@ -2372,13 +2407,17 @@ GudaPlates:SetScript("OnEvent", function()
                 local spell = StripSpellRank(rawSpell)
                 -- Also strip stack count if present (Cursive/SuperWoW might add it)
                 for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
-                
+
                 debuffTracker[unit .. spell] = nil
                 -- Remove from SpellDB objects (all levels)
                 if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end
                     end
+                end
+                -- Remove from OWNER_BOUND_DEBUFFS cache
+                if SpellDB and SpellDB.RemoveOwnerBoundDebuff then
+                    SpellDB:RemoveOwnerBoundDebuff(unit, spell)
                 end
             end
             for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
@@ -2391,6 +2430,10 @@ GudaPlates:SetScript("OnEvent", function()
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end
                     end
+                end
+                -- Remove from OWNER_BOUND_DEBUFFS cache
+                if SpellDB and SpellDB.RemoveOwnerBoundDebuff then
+                    SpellDB:RemoveOwnerBoundDebuff(unit, spell)
                 end
             end
         end

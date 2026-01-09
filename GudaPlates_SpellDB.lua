@@ -298,7 +298,6 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Warrior
 	["Rend"] = true,
 	["Deep Wounds"] = true,
-	["Deep Wound"] = true,
 
 	-- Warlock
 	["Immolate"] = true,
@@ -335,6 +334,14 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 GudaPlates_SpellDB.objects = {}
 GudaPlates_SpellDB.pending = {}  -- Array: [1]=unit, [2]=unitlevel, [3]=effect, [4]=duration
 local lastspell = nil
+
+-- ============================================
+-- OWNER_BOUND_DEBUFFS OWNERSHIP CACHE
+-- Tracks player's own applications of OWNER_BOUND_DEBUFFS
+-- Format: ownerBoundCache[unit][effect] = {start, duration}
+-- Used to infer ownership when "Only My Debuffs" is enabled
+-- ============================================
+GudaPlates_SpellDB.ownerBoundCache = {}
 
 -- ============================================
 -- DURATION LOOKUP FUNCTIONS
@@ -550,6 +557,85 @@ function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
 
 	if self.objects[unit] and self.objects[unit][unitlevel] and self.objects[unit][unitlevel][effect] then
 		self.objects[unit][unitlevel][effect].duration = duration
+	end
+end
+
+-- ============================================
+-- OWNER_BOUND_DEBUFFS OWNERSHIP TRACKING
+-- ============================================
+
+-- Track player's application of an OWNER_BOUND_DEBUFF
+function GudaPlates_SpellDB:TrackOwnerBoundDebuff(unit, effect, duration)
+	if not unit or not effect then return end
+	if not self.OWNER_BOUND_DEBUFFS[effect] then return end
+
+	if not self.ownerBoundCache[unit] then
+		self.ownerBoundCache[unit] = {}
+	end
+
+	self.ownerBoundCache[unit][effect] = {
+		start = GetTime(),
+		duration = duration or self:GetDuration(effect, 0) or 30
+	}
+end
+
+-- Check if player owns an OWNER_BOUND_DEBUFF on a unit
+-- Returns true if player has a valid (non-expired) cached application
+function GudaPlates_SpellDB:IsOwnerBoundDebuffMine(unit, effect)
+	if not unit or not effect then return false end
+	if not self.OWNER_BOUND_DEBUFFS[effect] then return false end
+
+	local cache = self.ownerBoundCache[unit]
+	if not cache or not cache[effect] then return false end
+
+	local entry = cache[effect]
+	if not entry.start or not entry.duration then return false end
+
+	local now = GetTime()
+	local elapsed = now - entry.start
+
+	-- Allow 2 second grace period beyond expected duration
+	-- This handles slight timing variations
+	if elapsed > entry.duration + 2 then
+		-- Entry expired, clean it up
+		cache[effect] = nil
+		return false
+	end
+
+	return true
+end
+
+-- Clean up expired entries from ownerBoundCache
+function GudaPlates_SpellDB:CleanupOwnerBoundCache()
+	local now = GetTime()
+
+	for unit, effects in pairs(self.ownerBoundCache) do
+		local hasAny = false
+		for effect, entry in pairs(effects) do
+			if entry.start and entry.duration then
+				local elapsed = now - entry.start
+				if elapsed > entry.duration + 5 then
+					-- Grace period expired, remove
+					effects[effect] = nil
+				else
+					hasAny = true
+				end
+			else
+				effects[effect] = nil
+			end
+		end
+		-- Clean up empty unit tables
+		if not hasAny then
+			self.ownerBoundCache[unit] = nil
+		end
+	end
+end
+
+-- Remove a specific debuff tracking when it fades
+function GudaPlates_SpellDB:RemoveOwnerBoundDebuff(unit, effect)
+	if not unit or not effect then return end
+	if self.ownerBoundCache[unit] then
+		self.ownerBoundCache[unit][effect] = nil
 	end
 end
 
