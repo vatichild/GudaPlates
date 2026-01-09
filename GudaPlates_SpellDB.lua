@@ -5,14 +5,46 @@ GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
+	["Interface\\Icons\\Ability_Gouge"] = "Rend",
+	["Interface\\Icons\\Ability_Rend"] = "Rend",
+	["Interface\\Icons\\Ability_BackStab"] = "Deep Wound",
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
+	["Interface\\Icons\\Ability_Warrior_Decimate"] = "Improved Hamstring",
+	["Interface\\Icons\\Ability_Warrior_WarCry"] = "Demoralizing Shout",
+	["Interface\\Icons\\Ability_Warrior_Sunder"] = "Sunder Armor",
+	["Interface\\Icons\\Ability_BullRush"] = "Challenging Shout",
+	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunder Clap",
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
 	-- Other
-	["Interface\\Icons\\Spell_Nature_ThunderClap"] = "Thunderfury",
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
-}  -- Cache: texture path -> spell name
+	-- Druid
+	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
+	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
+	["Interface\\Icons\\Ability_Druid_Rip"] = "Rip",
+	["Interface\\Icons\\Ability_Druid_Bash"] = "Bash",
+	["Interface\\Icons\\Ability_Druid_SupriseAttack"] = "Pounce Bleed",
+	["Interface\\Icons\\Ability_Druid_ChallangingRoar"] = "Challenging Roar",
+	["Interface\\Icons\\Spell_Nature_StarFall"] = "Moonfire",
+	["Interface\\Icons\\Spell_Nature_StrangleVines"] = "Entangling Roots",
+	["Interface\\Icons\\Spell_Nature_Sleep"] = "Hibernate",
+	["Interface\\Icons\\Spell_Nature_InsectSwarm"] = "Insect Swarm",
+	["Interface\\Icons\\Ability_Druid_DemoralizingRoar"] = "Demoralizing Roar",
+	["Interface\\Icons\\Ability_Hunter_Pet_Bear"] = "Feral Charge Effect",
+	["Interface\\Icons\\Ability_Druid_Mangle"] = "Mangle",
+	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
+	-- Paladin
+	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
+}
+
+-- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
+GudaPlates_SpellDB.debuffPriority = {
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Judgement of Light",
+	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
+	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
+	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
+}
 
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
@@ -25,13 +57,14 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Sunder Armor"] = {[0]=30},
 	["Disarm"] = {[0]=10},
 	["Hamstring"] = {[0]=15},
+	["Improved Hamstring"] = {[0]=5},
 	["Demoralizing Shout"] = {[0]=30},
 	["Intimidating Shout"] = {[0]=8},
 	["Concussion Blow"] = {[0]=5},
 	["Mocking Blow"] = {[0]=6},
 	["Piercing Howl"] = {[0]=6},
 	["Mortal Strike"] = {[0]=10},
-	["Deep Wounds"] = {[0]=12},
+	["Deep Wound"] = {[0]=12},
 	["Charge"] = {[0]=1},
 	["Charge Stun"] = {[0]=1},
 	["Intercept"] = {[0]=3},
@@ -39,6 +72,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Challenging Shout"] = {[0]=6},
 	["Demoralizing Roar"] = {[0]=30},
 	["Dazed"] = {[0]=4},
+	["Taunt"] = {[0]=3},
 
 	-- ROGUE
 	["Cheap Shot"] = {[0]=4},
@@ -50,6 +84,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Garrote"] = {[1]=18, [2]=18, [3]=18, [4]=18, [5]=18, [0]=18},
 	["Expose Armor"] = {[0]=30},
 	["Crippling Poison"] = {[0]=12},
+	["Crippling Poison II"] = {[0]=12},
 	["Deadly Poison"] = {[0]=12},
 	["Deadly Poison II"] = {[0]=12},
 	["Deadly Poison III"] = {[0]=12},
@@ -62,12 +97,12 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Wound Poison II"] = {[0]=15},
 	["Wound Poison III"] = {[0]=15},
 	["Wound Poison IV"] = {[0]=15},
-	["Instant Poison"] = {[0]=3},
-	["Instant Poison II"] = {[0]=3},
-	["Instant Poison III"] = {[0]=3},
-	["Instant Poison IV"] = {[0]=3},
-	["Instant Poison V"] = {[0]=3},
-	["Instant Poison VI"] = {[0]=3},
+	["Instant Poison"] = {[0]=0},
+	["Instant Poison II"] = {[0]=0},
+	["Instant Poison III"] = {[0]=0},
+	["Instant Poison IV"] = {[0]=0},
+	["Instant Poison V"] = {[0]=0},
+	["Instant Poison VI"] = {[0]=0},
 
 	-- MAGE
 	["Frost Nova"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -150,15 +185,21 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Insect Swarm"] = {[0]=12},
 	["Hibernate"] = {[1]=20, [2]=30, [3]=40, [0]=40},
 	["Feral Charge Effect"] = {[0]=4},
+	["Challenging Roar"] = {[0]=6},
+	["Mangle"] = {[0]=12},
+	["Growl"] = {[0]=3},
 
 	-- PALADIN
 	["Hammer of Justice"] = {[1]=3, [2]=4, [3]=5, [4]=6, [0]=6},
 	["Turn Undead"] = {[0]=20},
 	["Repentance"] = {[0]=6},
+	["Crusader Strike"] = {[0]=30},
 	["Judgement of the Crusader"] = {[0]=10},
 	["Judgement of Light"] = {[0]=10},
 	["Judgement of Wisdom"] = {[0]=10},
 	["Judgement of Justice"] = {[0]=10},
+	["Judgement"] = {[0]=10},
+	["Vindication"] = {[0]=10},
 
 	-- SHAMAN
 	["Frost Shock"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -193,21 +234,40 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 	["Gouge"] = "Gouge",
 }
 
--- Unique debuffs that can only exist once on a target (shared across all players of the same class)
-GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
+-- Shared debuffs that can only exist once on a target (shared across all players of the same class)
+GudaPlates_SpellDB.SHARED_DEBUFFS = {
+	-- Rogue
+	["Expose Armor"] = "ROGUE",
+	-- Mage
+	["Winter's Chill"] = "MAGE",
+	["Fire Vulnerability"] = "MAGE",
+	["Frostbolt"] = "MAGE",
 	-- Warrior
 	["Thunder Clap"] = "WARRIOR",
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
+	["Challenging Shout"] = "WARRIOR",
+	["Hamstring"] = "WARRIOR",
+	["Mortal Strike"] = "WARRIOR",
+	["Piercing Howl"] = "WARRIOR",
+	["Disarm"] = "WARRIOR",
+	["Taunt"] = true,
 	-- Druid
 	["Faerie Fire"] = "DRUID",
 	["Faerie Fire (Feral)"] = "DRUID",
 	["Demoralizing Roar"] = "DRUID",
-	["Insect Swarm"] = "DRUID",
+	["Entangling Roots"] = "DRUID",
+	["Hibernate"] = "DRUID",
+	["Bash"] = "DRUID",
+	["Pounce"] = "DRUID",
+	["Challenging Roar"] = "DRUID",
+	["Feral Charge Effect"] = "DRUID",
+	["Mangle"] = "DRUID",
+	["Growl"] = true,
 	-- Priest
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
+	["Silence"] = "PRIEST",
 	-- Warlock
-	["Curse of Agony"] = "WARLOCK",
 	["Curse of Weakness"] = "WARLOCK",
 	["Curse of Recklessness"] = "WARLOCK",
 	["Curse of Tongues"] = "WARLOCK",
@@ -219,13 +279,102 @@ GudaPlates_SpellDB.UNIQUE_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	-- Paladin
-	["Judgement of the Crusader"] = "PALADIN",
-	["Judgement of Light"] = "PALADIN",
-	["Judgement of Wisdom"] = "PALADIN",
-	["Judgement of Justice"] = "PALADIN",
+	["Hammer of Justice"] = "PALADIN",
+	["Repentance"] = "PALADIN",
+	["Crusader Strike"] = "PALADIN",
+	["Vindication"] = "PALADIN",
+	["Judgement of the Crusader"] = true,
+	["Judgement of Light"] = true,
+	["Judgement of Wisdom"] = true,
+	["Judgement of Justice"] = true,
+	["Judgement"] = true,
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
+	["Gift of Arthas"] = true,
+	["Spell Vulnerability"] = true,
+	["Armor Shatter"] = true,
+}
+
+-- Rogue Poisons - always show for Rogue players with "Only My Debuffs" enabled
+-- Since only Rogues can apply these, they are always "mine" when present
+GudaPlates_SpellDB.ROGUE_POISONS = {
+	["Crippling Poison"] = true,
+	["Crippling Poison II"] = true,
+	["Deadly Poison"] = true,
+	["Deadly Poison II"] = true,
+	["Deadly Poison III"] = true,
+	["Deadly Poison IV"] = true,
+	["Deadly Poison V"] = true,
+	["Instant Poison"] = true,
+	["Instant Poison II"] = true,
+	["Instant Poison III"] = true,
+	["Instant Poison IV"] = true,
+	["Instant Poison V"] = true,
+	["Instant Poison VI"] = true,
+	["Mind-numbing Poison"] = true,
+	["Mind-numbing Poison II"] = true,
+	["Mind-numbing Poison III"] = true,
+	["Wound Poison"] = true,
+	["Wound Poison II"] = true,
+	["Wound Poison III"] = true,
+	["Wound Poison IV"] = true,
+}
+
+-- Rogue Poison TEXTURES - for icon-based detection when tooltip scanning fails
+-- This ensures poisons are detected even without spell name
+GudaPlates_SpellDB.ROGUE_POISON_TEXTURES = {
+	-- Crippling Poison
+	["Interface\\Icons\\Ability_PoisonSting"] = "Crippling Poison",
+	-- Deadly Poison
+	["Interface\\Icons\\Ability_Rogue_DualWeild"] = "Deadly Poison",
+	-- Instant Poison
+	["Interface\\Icons\\Ability_Poisons"] = "Instant Poison",
+	-- Mind-numbing Poison
+	["Interface\\Icons\\Spell_Nature_NullifyDisease"] = "Mind-numbing Poison",
+	-- Wound Poison
+	["Interface\\Icons\\INV_Misc_Herb_16"] = "Wound Poison",
+}
+
+-- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
+GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
+	-- Warrior
+	["Rend"] = true,
+	["Deep Wound"] = true,
+
+	-- Warlock
+	["Immolate"] = true,
+	["Corruption"] = true,
+	["Curse of Agony"] = true,
+	["Siphon Life"] = true,
+
+	-- Priest
+	["Shadow Word: Pain"] = true,
+	["Devouring Plague"] = true,
+
+	-- Druid
+	["Moonfire"] = true,
+	["Insect Swarm"] = true,
+	["Rip"] = true,
+	["Rake"] = true,
+	["Pounce Bleed"] = true,
+
+	-- Rogue (excluding poisons - those are handled via ROGUE_POISONS visibility exception)
+	["Sap"] = true,
+	["Kidney Shot"] = true,
+	["Blind"] = true,
+	["Garrote"] = true,
+	["Rupture"] = true,
+	["Gouge"] = true,
+
+	-- Hunter
+	["Serpent Sting"] = true,
+
+	-- Mage
+	["Ignite"] = true,
+
+	-- Paladin
+	["Vindication"] = true,
 }
 
 -- ============================================
@@ -237,8 +386,31 @@ GudaPlates_SpellDB.pending = {}  -- Array: [1]=unit, [2]=unitlevel, [3]=effect, 
 local lastspell = nil
 
 -- ============================================
+-- OWNER_BOUND_DEBUFFS OWNERSHIP CACHE
+-- Tracks player's own applications of OWNER_BOUND_DEBUFFS
+-- Format: ownerBoundCache[unit][effect] = {start, duration}
+-- Used to infer ownership when "Only My Debuffs" is enabled
+-- ============================================
+GudaPlates_SpellDB.ownerBoundCache = {}
+
+-- ============================================
 -- DURATION LOOKUP FUNCTIONS
 -- ============================================
+
+-- Search function to avoid duplication
+function GudaPlates_SpellDB:FindEffectData(u, lvl, eff)
+	if not self.objects[u] then return nil end
+	if self.objects[u][lvl] and self.objects[u][lvl][eff] then
+		return self.objects[u][lvl][eff]
+	elseif self.objects[u][0] and self.objects[u][0][eff] then
+		return self.objects[u][0][eff]
+	else
+		for l, effects in pairs(self.objects[u]) do
+			if effects[eff] then return effects[eff] end
+		end
+	end
+	return nil
+end
 
 -- Get max rank for a spell
 function GudaPlates_SpellDB:GetMaxRank(effect)
@@ -265,7 +437,7 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 		if type(rank) == "number" then
 			rankNum = rank
 		elseif type(rank) == "string" then
-			-- Extract number from "Rank X" format
+		-- Extract number from "Rank X" format
 			for num in string.gfind(rank, "(%d+)") do
 				rankNum = tonumber(num) or 0
 				break
@@ -282,35 +454,41 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 
 	-- Handle dynamic duration adjustments
 	if effect == self.DYN_DEBUFFS["Rupture"] then
-		-- Rupture: +2 sec per combo point
+	-- Rupture: +2 sec per combo point
 		duration = duration + (GetComboPoints("player", "target") or 0) * 2
 	elseif effect == self.DYN_DEBUFFS["Kidney Shot"] then
-		-- Kidney Shot: +1 sec per combo point
+	-- Kidney Shot: +1 sec per combo point
 		duration = duration + (GetComboPoints("player", "target") or 0) * 1
 	elseif effect == self.DYN_DEBUFFS["Demoralizing Shout"] then
-		-- Booming Voice: 10% per talent
+	-- Booming Voice: 10% per talent
 		local _,_,_,_,count = GetTalentInfo(2, 1)
 		if count and count > 0 then
 			duration = duration + (duration / 100 * (count * 10))
 		end
 	elseif effect == self.DYN_DEBUFFS["Shadow Word: Pain"] then
-		-- Improved Shadow Word: Pain: +3s per talent
+	-- Improved Shadow Word: Pain: +3s per talent
 		local _,_,_,_,count = GetTalentInfo(3, 4)
 		if count and count > 0 then
 			duration = duration + count * 3
 		end
 	elseif effect == self.DYN_DEBUFFS["Frostbolt"] then
-		-- Permafrost: +1s per talent
+	-- Permafrost: +1s per talent
 		local _,_,_,_,count = GetTalentInfo(3, 7)
 		if count and count > 0 then
 			duration = duration + count
 		end
 	elseif effect == self.DYN_DEBUFFS["Gouge"] then
-		-- Improved Gouge: +.5s per talent
+	-- Improved Gouge: +.5s per talent
 		local _,_,_,_,count = GetTalentInfo(2, 1)
 		if count and count > 0 then
 			duration = duration + (count * 0.5)
 		end
+	elseif effect == self.DYN_DEBUFFS["Rend"] then
+	-- Improved Rend: +15/30/45% damage in Vanilla, no duration increase. 
+	-- Turtle WoW Rend duration is fixed per rank.
+	-- We remove the dynamic +3s per talent which was likely causing the incorrect duration (e.g. 21 + 9 = 30, or adding to a wrong base).
+	-- If it showed 35s, it might have been Rank 7 (21s) + something else or misidentified.
+		return duration
 	end
 
 	return duration
@@ -327,18 +505,18 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	if not unit or not effect then return end
 	if not self.DEBUFFS[effect] then return end
 	if duration <= 0 then return end
-	
+
 	-- Always store recent cast keyed by spell name (for combat log fallback)
 	self.recentCasts[effect] = {
 		duration = duration,
 		time = GetTime()
 	}
-	
+
 	-- Always overwrite pending for tracked debuff spells
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
 	if UnitGUID and UnitExists("target") and UnitName("target") == unit then
-		local guid = UnitGUID("target")
+		local guid = UnitGUID and UnitGUID("target")
 		if guid then unitKey = guid end
 	end
 
@@ -361,8 +539,8 @@ function GudaPlates_SpellDB:PersistPending(effect)
 	if not self.pending[3] then return end
 
 	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
-		-- Store by GUID (pending[1]) for accurate per-mob tracking
-		-- Mark as isOwn = true since this is the player's own debuff
+	-- Store by GUID (pending[1]) for accurate per-mob tracking
+	-- Mark as isOwn = true since this is the player's own debuff
 		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4], true)
 		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
 		if self.pending[5] and self.pending[5] ~= self.pending[1] then
@@ -412,22 +590,15 @@ end
 function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isOwn)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
-
-	-- Initialize tables if needed
+	-- Always refresh start time and duration
 	if not self.objects[unit] then self.objects[unit] = {} end
 	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
-	-- Always refresh start time and duration
 	self.objects[unit][unitlevel][effect].effect = effect
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
 	self.objects[unit][unitlevel][effect].isOwn = isOwn ~= false -- default to true for backwards compatibility
-
-	-- Clear recentCasts entry so we don't refresh again until next cast
-	if self.recentCasts[effect] then
-		self.recentCasts[effect] = nil
-	end
 end
 
 function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
@@ -436,6 +607,85 @@ function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)
 
 	if self.objects[unit] and self.objects[unit][unitlevel] and self.objects[unit][unitlevel][effect] then
 		self.objects[unit][unitlevel][effect].duration = duration
+	end
+end
+
+-- ============================================
+-- OWNER_BOUND_DEBUFFS OWNERSHIP TRACKING
+-- ============================================
+
+-- Track player's application of an OWNER_BOUND_DEBUFF
+function GudaPlates_SpellDB:TrackOwnerBoundDebuff(unit, effect, duration)
+	if not unit or not effect then return end
+	if not self.OWNER_BOUND_DEBUFFS[effect] then return end
+
+	if not self.ownerBoundCache[unit] then
+		self.ownerBoundCache[unit] = {}
+	end
+
+	self.ownerBoundCache[unit][effect] = {
+		start = GetTime(),
+		duration = duration or self:GetDuration(effect, 0) or 30
+	}
+end
+
+-- Check if player owns an OWNER_BOUND_DEBUFF on a unit
+-- Returns true if player has a valid (non-expired) cached application
+function GudaPlates_SpellDB:IsOwnerBoundDebuffMine(unit, effect)
+	if not unit or not effect then return false end
+	if not self.OWNER_BOUND_DEBUFFS[effect] then return false end
+
+	local cache = self.ownerBoundCache[unit]
+	if not cache or not cache[effect] then return false end
+
+	local entry = cache[effect]
+	if not entry.start or not entry.duration then return false end
+
+	local now = GetTime()
+	local elapsed = now - entry.start
+
+	-- Allow 2 second grace period beyond expected duration
+	-- This handles slight timing variations
+	if elapsed > entry.duration + 2 then
+		-- Entry expired, clean it up
+		cache[effect] = nil
+		return false
+	end
+
+	return true
+end
+
+-- Clean up expired entries from ownerBoundCache
+function GudaPlates_SpellDB:CleanupOwnerBoundCache()
+	local now = GetTime()
+
+	for unit, effects in pairs(self.ownerBoundCache) do
+		local hasAny = false
+		for effect, entry in pairs(effects) do
+			if entry.start and entry.duration then
+				local elapsed = now - entry.start
+				if elapsed > entry.duration + 5 then
+					-- Grace period expired, remove
+					effects[effect] = nil
+				else
+					hasAny = true
+				end
+			else
+				effects[effect] = nil
+			end
+		end
+		-- Clean up empty unit tables
+		if not hasAny then
+			self.ownerBoundCache[unit] = nil
+		end
+	end
+end
+
+-- Remove a specific debuff tracking when it fades
+function GudaPlates_SpellDB:RemoveOwnerBoundDebuff(unit, effect)
+	if not unit or not effect then return end
+	if self.ownerBoundCache[unit] then
+		self.ownerBoundCache[unit][effect] = nil
 	end
 end
 
@@ -453,8 +703,8 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	local isOwn = false
 
 	if texture then
-		-- Get spell name via tooltip scanning
-		-- Try the unit first, but if it's a GUID and that fails, try "target" if it matches
+	-- Get spell name via tooltip scanning
+	-- Try the unit first, but if it's a GUID and that fails, try "target" if it matches
 		effect = self:ScanDebuff(unit, id)
 
 		-- If scanning failed and this unit is the target, try scanning "target" instead
@@ -466,29 +716,27 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 	end
 
 	-- Check tracked debuffs with level
-	if effect and effect ~= "" and self.objects[unitname] then
+	if effect and effect ~= "" and (self.objects[unitname] or (UnitGUID and UnitGUID(unit) and self.objects[UnitGUID(unit)])) then
 		local data = nil
+		local unitguid = UnitGUID and UnitGUID(unit)
 
-		-- Try exact level first
-		if self.objects[unitname][unitlevel] and self.objects[unitname][unitlevel][effect] then
-			data = self.objects[unitname][unitlevel][effect]
-		-- Fallback: check level 0
-		elseif self.objects[unitname][0] and self.objects[unitname][0][effect] then
-			data = self.objects[unitname][0][effect]
-		-- Fallback: check any level for this unit
-		else
-			for lvl, effects in pairs(self.objects[unitname]) do
-				if effects[effect] then
-					data = effects[effect]
-					break
-				end
+		local dataName = self:FindEffectData(unitname, unitlevel, effect)
+		local dataGUID = unitguid and self:FindEffectData(unitguid, unitlevel, effect)
+
+		if dataName and dataGUID then
+			if (dataName.start or 0) >= (dataGUID.start or 0) then
+				data = dataName
+			else
+				data = dataGUID
 			end
+		else
+			data = dataName or dataGUID
 		end
 
 		if data and data.start and data.duration then
-			-- Clean up expired
+		-- Clean up expired
 			if data.duration + data.start < GetTime() then
-				-- Don't remove here, let it be cleaned up elsewhere
+			-- Don't remove here, let it be cleaned up elsewhere
 				data = nil
 			else
 				duration = data.duration
@@ -504,7 +752,7 @@ function GudaPlates_SpellDB:UnitDebuff(unit, id)
 		local dbDuration = self:GetDuration(effect, 0)
 		if dbDuration and dbDuration > 0 then
 			duration = dbDuration
-			-- timeleft stays at -1, signaling caller to use their own timer cache
+		-- timeleft stays at -1, signaling caller to use their own timer cache
 		end
 	end
 
@@ -528,16 +776,20 @@ end
 function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	if not self.scanner then self:InitScanner() end
 
-	-- Get the debuff texture first for cache lookup
 	local texture = UnitDebuff(unit, index)
+	if not texture then return nil end
 
-	-- Try texture cache first (fastest, works with GUIDs)
-	if texture and self.textureToSpell and self.textureToSpell[texture] then
+	-- 1. Prioritize debuff-specific mappings (ShaguPlates-style mature priority)
+	if self.debuffPriority and self.debuffPriority[texture] then
+		return self.debuffPriority[texture]
+	end
+
+	-- 2. Fallback to general textureToSpell mappings
+	if self.textureToSpell[texture] then
 		return self.textureToSpell[texture]
 	end
 
-	-- SetUnitDebuff doesn't work with GUID strings, only standard unit IDs
-	-- Convert GUID to "target" if it matches the current target
+	-- 3. If not found in hardcoded cache, resort to tooltip scanning
 	local scanUnit = unit
 	if IsGUID(unit) then
 		if UnitExists("target") then
@@ -545,10 +797,10 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 			if targetGUID and targetGUID == unit then
 				scanUnit = "target"
 			else
-				return nil
+				return nil -- Cannot scan tooltip for non-target GUID
 			end
 		else
-			return nil
+			return nil -- Cannot scan tooltip without a target
 		end
 	end
 
@@ -558,8 +810,10 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
 	if textLeft then
 		local effect = textLeft:GetText()
-		-- Cache texture -> spell mapping for future lookups
-		if effect and effect ~= "" and texture then
+		-- Cache the tooltip-scanned effect *only if it's new*.
+		-- This prevents tooltip's potentially incorrect name from overwriting known good names.
+		-- It also populates the cache for future faster lookups of unknown spells.
+		if effect and effect ~= "" and texture and not self.textureToSpell[texture] then
 			self.textureToSpell[texture] = effect
 		end
 		return effect

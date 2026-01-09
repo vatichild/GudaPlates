@@ -1,6 +1,8 @@
 -- GudaPlates for WoW 1.12.1
 -- Written for Lua 5.0 (Vanilla)
 
+GudaPlates = GudaPlates or {}
+
 -- Macro Texture Hover Only
 local macroFrame = CreateFrame("Frame")
 
@@ -38,6 +40,7 @@ end
 
 -- Debug flag for duration tracking
 local DEBUG_DURATION = false
+GudaPlates.lua_DEBUG_DURATION = DEBUG_DURATION
 
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
@@ -58,17 +61,6 @@ local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 local _, playerClass = UnitClass("player")
 playerClass = playerClass or ""
 
--- Debuff settings
-local MAX_DEBUFFS = 16
-local DEBUFF_SIZE = 16
-
--- Debuff tracking for non-SuperWoW
-local debuffTracker = {}
-
--- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
--- This prevents timer reset every frame
-local debuffTimers = {}
-
 -- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
 local castDB = {}
 
@@ -81,6 +73,7 @@ local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
+
 
 local fontOptions = {
     {value = "Fonts\\ARIALN.TTF", text = "Arial Narrow (Default)"},
@@ -185,6 +178,12 @@ if not SpellDB then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r ERROR: SpellDB failed to load!")
 end
 
+-- Melee crit tracker for Deep Wound heuristic
+-- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
+local recentMeleeCrits = {}
+-- Melee hit tracker for procs (Vindication)
+local recentMeleeHits = {}
+
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
 -- Detects when player casts spells to track debuff durations with correct rank
@@ -219,6 +218,7 @@ end
 
 -- Strip rank suffix from spell name (for combat log parsing)
 -- "Rend (Rank 2)" -> "Rend", rank 2
+-- "Deadly Poison II" -> "Deadly Poison", rank 2
 -- "Rend" -> "Rend", rank 0
 local function StripSpellRank(spellString)
 	if not spellString then return nil, 0 end
@@ -230,6 +230,14 @@ local function StripSpellRank(spellString)
 	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
+	
+	-- Match Roman numerals: II, III, IV, V, VI
+	for name, rank in string.gfind(spellString, "^(.+) (VI)$") do return name, 6 end
+	for name, rank in string.gfind(spellString, "^(.+) (V)$") do return name, 5 end
+	for name, rank in string.gfind(spellString, "^(.+) (IV)$") do return name, 4 end
+	for name, rank in string.gfind(spellString, "^(.+) (III)$") do return name, 3 end
+	for name, rank in string.gfind(spellString, "^(.+) (II)$") do return name, 2 end
+
 	return spellString, 0
 end
 
@@ -349,6 +357,7 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE") -- Player's DoTs ticking (Deep Wound, etc.)
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
@@ -511,7 +520,7 @@ local function UpdateNamePlateDimensions(frame)
     end
     -- Update debuff fonts
     if nameplate.debuffs then
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             if nameplate.debuffs[i] then
                 nameplate.debuffs[i].cd:SetFont(Settings.textFont, 10, "OUTLINE")
                 nameplate.debuffs[i].count:SetFont(Settings.textFont, 9, "OUTLINE")
@@ -568,7 +577,7 @@ local function UpdateNamePlateDimensions(frame)
         end
         
         -- Debuffs below mana bar (or healthbar if no mana)
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
                 if nameplate.mana and nameplate.mana:IsShown() then
@@ -614,7 +623,7 @@ local function UpdateNamePlateDimensions(frame)
         end
         
         -- Debuffs above mana bar (or healthbar if no mana)
-        for i = 1, MAX_DEBUFFS do
+        for i = 1, GudaPlates_Debuffs:GetMaxDebuffs() do
             nameplate.debuffs[i]:ClearAllPoints()
             if i == 1 then
                 if nameplate.mana and nameplate.mana:IsShown() then
@@ -657,36 +666,6 @@ local function UpdateNamePlateDimensions(frame)
     end
 end
 
-
-local function round(input, places)
-    if not places then places = 0 end
-    if type(input) == "number" and type(places) == "number" then
-        local pow = 1
-        for i = 1, places do pow = pow * 10 end
-        return math.floor(input * pow + 0.5) / pow
-    end
-end
-
-local function FormatTime(remaining)
-    if not remaining or remaining < 0 then return "", 1, 1, 1, 1 end
-    if remaining > 356400 then -- 99 hours
-        return round(remaining / 86400) .. "d", 0.2, 0.2, 1, 1
-    elseif remaining > 5940 then -- 99 minutes
-        return round(remaining / 3600) .. "h", 0.2, 0.5, 1, 1
-    elseif remaining > 99 then
-        return round(remaining / 60) .. "m", 0.2, 1, 1, 1
-    elseif remaining > 10 then
-        -- White: more than 10 seconds
-        return round(remaining) .. "", 1, 1, 1, 1
-    elseif remaining > 5 then
-        -- Yellow: 5-10 seconds
-        return round(remaining) .. "", 1, 1, 0, 1
-    elseif remaining > 0 then
-        -- Red: less than 5 seconds
-        return string.format("%.1f", remaining), 1, 0.2, 0.2, 1
-    end
-    return "", 1, 1, 1, 1
-end
 
 local function HandleNamePlate(frame)
     if not frame then return end
@@ -945,81 +924,8 @@ local function HandleNamePlate(frame)
     nameplate.castbar.icon.border:SetPoint("BOTTOMRIGHT", nameplate.castbar.icon, "BOTTOMRIGHT", 1, -1)
 
     -- Debuff icons
-    nameplate.debuffs = {}
-    for i = 1, MAX_DEBUFFS do
-        local debuff = CreateFrame("Frame", nil, nameplate)
-        debuff:SetWidth(DEBUFF_SIZE)
-        debuff:SetHeight(DEBUFF_SIZE)
-        debuff:SetFrameLevel(nameplate.health:GetFrameLevel() + 5)
-
-        debuff.icon = debuff:CreateTexture(nil, "ARTWORK")
-        debuff.icon:SetAllPoints()
-        debuff.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        debuff.icon:SetDrawLayer("ARTWORK")
-        debuff.icon:SetAlpha(1)
-
-        debuff.border = debuff:CreateTexture(nil, "BACKGROUND")
-        debuff.border:SetTexture(0, 0, 0, 1)
-        debuff.border:SetPoint("TOPLEFT", debuff, "TOPLEFT", -1, 1)
-        debuff.border:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, -1)
-        debuff.border:SetDrawLayer("BACKGROUND")
-
-        -- Create a container frame for countdown text (ensure proper layering)
-        debuff.cdframe = CreateFrame("Frame", nil, debuff)
-        debuff.cdframe:SetAllPoints(debuff)
-        debuff.cdframe:SetFrameLevel(debuff:GetFrameLevel() + 2)
-
-        -- Text on top of the icon
-        debuff.cd = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.cd:SetFont(Settings.textFont, 10, "OUTLINE")
-        debuff.cd:SetPoint("CENTER", debuff.cdframe, "CENTER", 0, 0)
-        debuff.cd:SetTextColor(1, 1, 1, 1)
-        debuff.cd:SetText("")
-        debuff.cd:SetDrawLayer("OVERLAY", 7)
-
-        debuff.count = debuff.cdframe:CreateFontString(nil, "OVERLAY")
-        debuff.count:SetFont(Settings.textFont, 9, "OUTLINE")
-        debuff.count:SetPoint("BOTTOMRIGHT", debuff, "BOTTOMRIGHT", 1, 0)
-        debuff.count:SetTextColor(1, 1, 1, 1)
-        debuff.count:SetText("")
-        debuff.count:SetDrawLayer("OVERLAY", 7)
-
-        debuff:SetScript("OnUpdate", function()
-            local now = GetTime()
-            if (this.tick or 0) > now then return else this.tick = now + 0.1 end
-
-            if not this.expirationTime or this.expirationTime == 0 then
-                if this.cd and this.cd:GetAlpha() > 0 then
-                    this.cd:SetText("")
-                    this.cd:SetAlpha(0)
-                end
-                return
-            end
-
-            local timeLeft = this.expirationTime - now
-
-            if timeLeft > 0 then
-                local text, r, g, b, a = FormatTime(timeLeft)
-                if this.cd and text and text ~= "" then
-                    this.cd:SetText(text)
-                    if r then
-                        this.cd:SetTextColor(r, g, b, a or 1)
-                    end
-                    if this.cd:GetAlpha() < 1 then
-                        this.cd:SetAlpha(1)
-                    end
-                end
-            else
-                if this.cd then
-                    this.cd:SetText("")
-                    this.cd:SetAlpha(0)
-                end
-                this.expirationTime = 0
-            end
-        end)
-
-        debuff:Hide()
-        nameplate.debuffs[i] = debuff
+    if GudaPlates_Debuffs then
+        GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
     end
 
     UpdateNamePlateDimensions(frame)
@@ -1395,10 +1301,26 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Apply color based on state (priority order: TAPPED -> NEUTRAL -> THREAT COLORS)
+        -- Apply color based on state (priority order: TAPPED -> STUNNED -> NEUTRAL -> THREAT COLORS)
+        local isStunned = false
+        if hasValidGUID and GudaPlates_Debuffs then
+            -- We can check our own timers for this unit
+            -- Stun types in WoW: Stun, Incapacitate, Fear? User specifically asked for "Stun color"
+            local stuns = { "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice", "Charge Stun", "Intercept Stun", "Concussion Blow", "Gouge", "Sap", "Pounce" }
+            for _, stunName in ipairs(stuns) do
+                if GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName] or GudaPlates_Debuffs.timers[plateName .. "_" .. stunName] then
+                    isStunned = true
+                    break
+                end
+            end
+        end
+
         if isTappedByOthers and hp < hpmax then
         -- TAPPED: Mob is tapped by others and took damage - no other colors applied
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TAPPED))
+        elseif isStunned then
+        -- STUNNED: Unit is stunned
+            nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.STUN))
         elseif isNeutral and not isAttackingPlayer then
         -- Neutral and not attacking - yellow
             nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
@@ -1855,334 +1777,10 @@ local function UpdateNamePlate(frame)
         nameplate.castbar:Hide()
     end
 
-    -- Update Debuffs
-    for i = 1, MAX_DEBUFFS do
-        nameplate.debuffs[i]:Hide()
-        nameplate.debuffs[i].count:SetText("")
-        nameplate.debuffs[i].expirationTime = 0
-    end
-
-    local debuffIndex = 1
-    local now = GetTime()
-    local claimedMyDebuffs = {} -- Track which player debuffs are already shown on this nameplate
-    if superwow_active and hasValidGUID then
-        for i = 1, 40 do
-            if debuffIndex > MAX_DEBUFFS then break end
-
-            -- Get debuff info from the game
-            local texture, stacks = UnitDebuff(unitstr, i)
-            if not texture then break end
-
-            -- Try to get effect name and tracked data from SpellDB
-            local effect, duration, timeleft = nil, nil, nil
-            local isMyDebuff = false
-            if SpellDB then
-                -- Try tooltip scanning (may fail with GUID, will fallback to "target" if GUID matches)
-                effect = SpellDB:ScanDebuff(unitstr, i)
-
-                -- If GUID scanning failed, try "target" ONLY if this exact GUID is the target
-                -- (not just same name - could be different mob with same name)
-                if (not effect or effect == "") then
-                    local targetGUID = UnitGUID and UnitGUID("target")
-                    if targetGUID and targetGUID == unitstr then
-                        effect = SpellDB:ScanDebuff("target", i)
-                    end
-                end
-
-                -- Last resort: try texture-to-spell cache directly
-                if (not effect or effect == "") and SpellDB.textureToSpell and SpellDB.textureToSpell[texture] then
-                    effect = SpellDB.textureToSpell[texture]
-                end
-
-                -- Try to get tracked data from SpellDB.objects
-                -- First try by GUID (unitstr), then by name (plateName)
-                if effect and effect ~= "" then
-                    local unitlevel = UnitLevel(unitstr) or 0
-                    local data = nil
-
-                    -- Try GUID lookup first (most accurate for multiple mobs with same name)
-                    if SpellDB.objects[unitstr] then
-                        if SpellDB.objects[unitstr][unitlevel] and SpellDB.objects[unitstr][unitlevel][effect] then
-                            data = SpellDB.objects[unitstr][unitlevel][effect]
-                        elseif SpellDB.objects[unitstr][0] and SpellDB.objects[unitstr][0][effect] then
-                            data = SpellDB.objects[unitstr][0][effect]
-                        else
-                            for lvl, effects in pairs(SpellDB.objects[unitstr]) do
-                                if effects[effect] then
-                                    data = effects[effect]
-                                    break
-                                end
-                            end
-                        end
-                    end
-
-                    -- Fallback to name lookup
-                    if not data and plateName and SpellDB.objects[plateName] then
-                        if SpellDB.objects[plateName][unitlevel] and SpellDB.objects[plateName][unitlevel][effect] then
-                            data = SpellDB.objects[plateName][unitlevel][effect]
-                        elseif SpellDB.objects[plateName][0] and SpellDB.objects[plateName][0][effect] then
-                            data = SpellDB.objects[plateName][0][effect]
-                        else
-                            for lvl, effects in pairs(SpellDB.objects[plateName]) do
-                                if effects[effect] then
-                                    data = effects[effect]
-                                    break
-                                end
-                            end
-                        end
-                    end
-
-                    if data and data.start and data.duration then
-                        if data.start + data.duration > now then
-                            duration = data.duration
-                            timeleft = data.duration + data.start - now
-                            -- Only count as player's debuff if not already claimed by another icon on this nameplate
-                            if data.isOwn == true and not claimedMyDebuffs[effect] then
-                                isMyDebuff = true
-                                claimedMyDebuffs[effect] = true
-                            end
-                        end
-                    end
-                end
-
-                -- Get duration from database if we don't have tracked data
-                if effect and effect ~= "" and not duration then
-                    duration = SpellDB:GetDuration(effect, 0)
-                end
-            end
-            
-            -- Filter: show only own debuffs if enabled
-            local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
-            local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
-            if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
-                -- Skip this debuff - not tracked as player's and not an allowed unique global debuff
-            else
-            local debuff = nameplate.debuffs[debuffIndex]
-            debuff.icon:SetTexture(texture)
-
-            -- Set stacks
-            if stacks and stacks > 1 then
-                debuff.count:SetText(stacks)
-                debuff.count:SetAlpha(1)
-            else
-                debuff.count:SetText("")
-                debuff.count:SetAlpha(0)
-            end
-
-            -- Calculate time left for display
-            local displayTimeLeft = nil
-            -- Use GUID (unitstr) for unique cache key, not plateName (multiple mobs can have same name)
-            local debuffKey = unitstr .. "_" .. (effect or texture)
-
-            if timeleft and timeleft > 0 then
-                -- Use accurate tracked data from SpellDB
-                displayTimeLeft = timeleft
-                -- Update cache with correct data so fallback stays in sync
-                debuffTimers[debuffKey] = {
-                    startTime = now - (duration - timeleft),
-                    duration = duration,
-                    lastSeen = now
-                }
-            else
-                -- Fallback: use debuffTimers cache
-                local fallbackDuration = duration or 1  -- Default 1s if unknown
-
-                if not debuffTimers[debuffKey] then
-                    debuffTimers[debuffKey] = {
-                        startTime = now,
-                        duration = fallbackDuration
-                    }
-                end
-                local cached = debuffTimers[debuffKey]
-                cached.lastSeen = now
-                displayTimeLeft = cached.duration - (now - cached.startTime)
-            end
-
-            -- Display timer
-            if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
-                debuff.expirationTime = now + displayTimeLeft
-
-                local text, r, g, b, a = FormatTime(displayTimeLeft)
-                if debuff.cd and text and text ~= "" then
-                    debuff.cd:SetText(text)
-                    if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                    debuff.cd:SetAlpha(1)
-                    debuff.cd:Show()
-                end
-                if debuff.cdframe then
-                    debuff.cdframe:Show()
-                end
-            else
-                debuff.expirationTime = 0
-                if debuff.cd then
-                    debuff.cd:SetText("")
-                    debuff.cd:SetAlpha(0)
-                end
-            end
-
-            debuff:Show()
-            debuff.icon:SetAlpha(1)
-            debuffIndex = debuffIndex + 1
-            end -- end of Settings.showOnlyMyDebuffs filter else block
-        end
-    elseif plateName then
-    -- Fallback for non-SuperWoW: use UnitDebuff if it's the target
-        if isTarget then
-            for i = 1, 16 do
-                if debuffIndex > MAX_DEBUFFS then break end
-
-                -- Use ShaguPlates-style UnitDebuff wrapper
-                local effect, rank, texture, stacks, dtype, duration, timeleft, isOwn
-                if SpellDB then
-                    effect, rank, texture, stacks, dtype, duration, timeleft, isOwn = SpellDB:UnitDebuff("target", i)
-                else
-                    texture, stacks = UnitDebuff("target", i)
-                end
-
-                if not texture then break end
-
-                -- Filter: show only own debuffs if enabled
-                -- isOwn flag from SpellDB indicates if this is the player's debuff
-                local isMyDebuff = false
-                if isOwn == true and not claimedMyDebuffs[effect] then
-                    isMyDebuff = true
-                    claimedMyDebuffs[effect] = true
-                end
-                local uniqueClass = effect and SpellDB and SpellDB.UNIQUE_DEBUFFS and SpellDB.UNIQUE_DEBUFFS[effect]
-                local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
-                if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique then
-                    -- Skip this debuff - not tracked as player's and not an allowed unique global debuff
-                else
-
-                local debuff = nameplate.debuffs[debuffIndex]
-                debuff.icon:SetTexture(texture)
-
-                -- Set stacks
-                if stacks and stacks > 1 then
-                    debuff.count:SetText(stacks)
-                    debuff.count:SetAlpha(1)
-                else
-                    debuff.count:SetText("")
-                    debuff.count:SetAlpha(0)
-                end
-
-                -- Calculate time left for display
-                local displayTimeLeft = nil
-
-                -- If we have valid timeleft from SpellDB (from tracked data), use it directly
-                if timeleft and timeleft > 0 then
-                    displayTimeLeft = timeleft
-                elseif effect and effect ~= "" and duration and duration > 0 then
-                    -- Fallback: use debuffTimers cache to track when we first saw this debuff
-                    local debuffKey = plateName .. "_" .. effect
-                    if not debuffTimers[debuffKey] then
-                        debuffTimers[debuffKey] = {
-                            startTime = now,
-                            duration = duration
-                        }
-                    end
-                    local cached = debuffTimers[debuffKey]
-                    cached.lastSeen = now
-                    displayTimeLeft = cached.duration - (now - cached.startTime)
-                end
-
-                -- Display timer
-                if Settings.showDebuffTimers and displayTimeLeft and displayTimeLeft > 0 then
-                    debuff.expirationTime = now + displayTimeLeft
-
-                    local text, r, g, b, a = FormatTime(displayTimeLeft)
-                    if debuff.cd and text and text ~= "" then
-                        debuff.cd:SetText(text)
-                        if r then debuff.cd:SetTextColor(r, g, b, a or 1) end
-                        debuff.cd:SetAlpha(1)
-                        debuff.cd:Show()
-                    end
-                    if debuff.cdframe then
-                        debuff.cdframe:Show()
-                    end
-                else
-                    debuff.expirationTime = 0
-                    if debuff.cd then
-                        debuff.cd:SetText("")
-                        debuff.cd:SetAlpha(0)
-                    end
-                end
-
-                debuff:Show()
-                debuff.icon:SetAlpha(1)
-                debuffIndex = debuffIndex + 1
-                end -- end of Settings.showOnlyMyDebuffs filter else block
-            end
-        end
-    end
-
-    -- Centering logic
-    local numDebuffs = debuffIndex - 1
-    if numDebuffs > 0 then
-        local totalWidth = (numDebuffs * DEBUFF_SIZE) + (numDebuffs - 1) * 1
-        local startOffset = -totalWidth / 2
-
-        for i = 1, numDebuffs do
-            local debuff = nameplate.debuffs[i]
-            debuff:ClearAllPoints()
-            local x = startOffset + (i - 1) * (DEBUFF_SIZE + 1) + (DEBUFF_SIZE / 2)
-            if Settings.swapNameDebuff then
-                -- Debuffs below mana bar (or healthbar if no mana)
-                if nameplate.mana and nameplate.mana:IsShown() then
-                    debuff:SetPoint("TOP", nameplate.mana, "BOTTOM", x, 0)
-                else
-                    debuff:SetPoint("TOP", nameplate.health, "BOTTOM", x, 0)
-                end
-
-                -- Adjust name (above castbar which is above healthbar)
-                nameplate.name:ClearAllPoints()
-                nameplate.name:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 14)
-            else
-                -- Debuffs above mana bar (or healthbar if no mana)
-                if nameplate.mana and nameplate.mana:IsShown() then
-                    debuff:SetPoint("BOTTOM", nameplate.mana, "TOP", x, 1)
-                else
-                    debuff:SetPoint("BOTTOM", nameplate.health, "TOP", x, 1)
-                end
-
-                -- Adjust name
-                nameplate.name:ClearAllPoints()
-                nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -6)
-            end
-        end
-    else
-    -- Reset positions if no debuffs
-        UpdateNamePlateDimensions(frame)
-    end
-
-    -- Dynamic castbar positioning based on debuffs (only when castbar is visible)
-    if nameplate.castbar:IsShown() then
-        nameplate.castbar:ClearAllPoints()
-        if Settings.swapNameDebuff then
-            -- Swapped mode: castbar above healthbar (2px gap for border), align based on raid icon when wider
-            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
-                if Settings.raidIconPosition == "RIGHT" then
-                    nameplate.castbar:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
-                else
-                    nameplate.castbar:SetPoint("BOTTOMLEFT", nameplate.health, "TOPLEFT", 0, 2)
-                end
-            else
-                nameplate.castbar:SetPoint("BOTTOM", nameplate.health, "TOP", 0, 2)
-            end
-        else
-            -- Default mode: castbar below healthbar (2px gap for border), align based on raid icon when wider, move name down
-            if Settings.castbarIndependent and Settings.castbarWidth > Settings.healthbarWidth then
-                if Settings.raidIconPosition == "RIGHT" then
-                    nameplate.castbar:SetPoint("TOPRIGHT", nameplate.health, "BOTTOMRIGHT", 0, -2)
-                else
-                    nameplate.castbar:SetPoint("TOPLEFT", nameplate.health, "BOTTOMLEFT", 0, -2)
-                end
-            else
-                nameplate.castbar:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -2)
-            end
-            nameplate.name:ClearAllPoints()
-            nameplate.name:SetPoint("TOP", nameplate.health, "BOTTOM", 0, -16)
-        end
+    -- Debuff logic is now handled by GudaPlates_Debuffs module
+    if GudaPlates_Debuffs then
+        local numDebuffs = GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarget, hasValidGUID, superwow_active)
+        GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
     end
 end
 
@@ -2220,23 +1818,8 @@ local lastChildCount = 0
 local lastDebuffCleanup = 0
 
 GudaPlates:SetScript("OnUpdate", function()
--- Reset tracking flags for non-SuperWoW timers once per frame
-    if not superwow_active then
-        for _, data in pairs(debuffTracker) do
-            data.usedThisFrame = nil
-        end
-    end
-
-    -- Cleanup stale debuff timers every 1 second
-    -- Remove entries that haven't been seen in 2+ seconds (debuff removed or target despawned)
-    local now = GetTime()
-    if now - lastDebuffCleanup > 1 then
-        lastDebuffCleanup = now
-        for key, data in pairs(debuffTimers) do
-            if data.lastSeen and (now - data.lastSeen > 2) then
-                debuffTimers[key] = nil
-            end
-        end
+    if GudaPlates_Debuffs then
+        GudaPlates_Debuffs:CleanupTimers()
     end
 
     -- Try to hook ShaguTweaks once
@@ -2319,8 +1902,8 @@ end)
 local function cmatch(str, pattern)
     if not str or not pattern then return nil end
     -- Convert WoW format strings to Lua patterns
-    local pat = gsub(pattern, "%%%d?%$?s", "(.+)")
-    pat = gsub(pat, "%%%d?%$?d", "(%d+)")
+    local pat = string.gsub(pattern, "%%%d?%$?s", "(.+)")
+    pat = string.gsub(pat, "%%%d?%$?d", "(%d+)")
     for a, b, c, d in string.gfind(str, pat) do
         return a, b, c, d
     end
@@ -2403,21 +1986,20 @@ local function ParseCastStart(msg)
     end
 end
 
--- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
 local function ParseAttackHit(msg)
     if not msg or not SpellDB then return end
 
     local attacker, victim = nil, nil
     -- Patterns for melee hits (English)
     -- You hit X for Y.
-    for v in string.gfind(msg, "You hit (.+) for %d+%.") do
+    for v in string.gfind(msg, "You hit (.-) for %d+%.") do
         attacker = "You"
         victim = v
         break
     end
     if not victim then
     -- You crit X for Y.
-        for v in string.gfind(msg, "You crit (.+) for %d+%.") do
+        for v in string.gfind(msg, "You crit (.-) for %d+%.") do
             attacker = "You"
             victim = v
             break
@@ -2425,7 +2007,7 @@ local function ParseAttackHit(msg)
     end
     if not victim then
     -- X hits Y for Z.
-        for a, v in string.gfind(msg, "(.+) hits (.+) for %d+%.") do
+        for a, v in string.gfind(msg, "(.+) hits (.-) for %d+%.") do
             attacker = a
             victim = v
             break
@@ -2433,7 +2015,7 @@ local function ParseAttackHit(msg)
     end
     if not victim then
     -- X crits Y for Z.
-        for a, v in string.gfind(msg, "(.+) crits (.+) for %d+%.") do
+        for a, v in string.gfind(msg, "(.+) crits (.-) for %d+%.") do
             attacker = a
             victim = v
             break
@@ -2443,7 +2025,7 @@ local function ParseAttackHit(msg)
     -- Patterns for ranged hits
     if not victim then
     -- Your ranged attack hits X for Y.
-        for v in string.gfind(msg, "Your ranged attack hits (.+) for %d+%.") do
+        for v in string.gfind(msg, "Your ranged attack hits (.-) for %d+%.") do
             attacker = "You"
             victim = v
             break
@@ -2451,7 +2033,7 @@ local function ParseAttackHit(msg)
     end
     if not victim then
     -- Your ranged attack crits X for Y.
-        for v in string.gfind(msg, "Your ranged attack crits (.+) for %d+%.") do
+        for v in string.gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
             attacker = "You"
             victim = v
             break
@@ -2459,7 +2041,7 @@ local function ParseAttackHit(msg)
     end
     if not victim then
     -- X's ranged attack hits Y for Z.
-        for a, v in string.gfind(msg, "(.+)'s ranged attack hits (.+) for %d+%.") do
+        for a, v in string.gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
             attacker = a
             victim = v
             break
@@ -2467,44 +2049,26 @@ local function ParseAttackHit(msg)
     end
     if not victim then
     -- X's ranged attack crits Y for Z.
-        for a, v in string.gfind(msg, "(.+)'s ranged attack crits (.+) for %d+%.") do
+        for a, v in string.gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
             attacker = a
             victim = v
             break
         end
     end
 
-    if attacker and victim then
-    -- Judgements that are refreshed by melee/ranged hits
-        local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice" }
-        for _, effect in pairs(judgements) do
-        -- Check if this victim has the judgement debuff tracked
-            if SpellDB.objects[victim] then
-                for level, effects in pairs(SpellDB.objects[victim]) do
-                    local data = effects[effect]
-                    if data then
-                    -- Judgement should be reapplied when paladin who applied hits
-                        local isAttackerOwner = false
-                        if attacker == "You" and data.isOwn then
-                            isAttackerOwner = true
-                        elseif attacker ~= "You" and not data.isOwn then
-                        -- We don't track other paladins by name, but if it's not ours
-                        -- and SOMEONE else hit it, we assume it's the owner for now
-                        -- to keep their timers alive on our nameplates.
-                        -- But the issue says "not any melee", implying stricter check.
-                        -- However, since we don't have owner name for others, we can't be perfect.
-                        -- If we want to be strict: only refresh if it's OURS and WE hit it.
-                            isAttackerOwner = true -- Fallback for others to at least keep it refreshed
-                        end
-
-                        if isAttackerOwner then
-                            local duration = SpellDB:GetDuration(effect, 0)
-                            SpellDB:RefreshEffect(victim, level, effect, duration, data.isOwn)
-                        end
-                    end
-                end
+    if attacker == "You" and victim then
+        recentMeleeHits[victim] = GetTime()
+        -- Also store by GUID if available
+        if superwow_active and UnitExists("target") and UnitName("target") == victim then
+            local guid = UnitGUID and UnitGUID("target")
+            if guid then
+                recentMeleeHits[guid] = GetTime()
             end
         end
+    end
+
+    if attacker and victim and GudaPlates_Debuffs then
+        GudaPlates_Debuffs:SealHandler(attacker, victim)
     end
 end
 
@@ -2512,6 +2076,85 @@ GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     if arg1 and string.find(event, "CHAT_MSG_SPELL") then
         ParseCastStart(arg1)
+        -- Also check for spell damage that might refresh debuffs (like Thunderfury)
+        if SpellDB and (string.find(event, "_DAMAGE") or string.find(event, "_MISS")) then
+            -- Patterns for player and others
+            local spell, victim, attacker = nil, nil, nil
+            
+            -- Your [Spell] hits [Target] for [Amount] [Type] damage.
+            for s, v in string.gfind(arg1, "Your (.+) hits (.+) for %d+.") do 
+                spell, victim, attacker = s, v, "You" 
+            end
+            if not spell then
+                -- Your [Spell] crits [Target] for [Amount] [Type] damage.
+                for s, v in string.gfind(arg1, "Your (.+) crits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, "You" 
+                end
+            end
+            if not spell then
+                -- Your [Spell] was resisted by [Target].
+                for s, v in string.gfind(arg1, "Your (.+) was resisted by (.+)%.") do 
+                    spell, victim, attacker = s, v, "You" 
+                end
+            end
+            
+            -- Others' procs
+            if not spell then
+                -- [Attacker]'s [Spell] hits [Target] for [Amount] [Type] damage.
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) hits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+            if not spell then
+                -- [Attacker]'s [Spell] crits [Target] for [Amount] [Type] damage.
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) crits (.+) for %d+.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+            if not spell then
+                -- [Attacker]'s [Spell] was resisted by [Target].
+                for a, s, v in string.gfind(arg1, "(.+)'s (.+) was resisted by (.+)%.") do 
+                    spell, victim, attacker = s, v, a 
+                end
+            end
+
+            if spell and victim and (spell == "Thunderfury" or spell == "Thunderfury's Blessing") then
+                local unitlevel = UnitName("target") == victim and UnitLevel("target") or 0
+                local duration = SpellDB:GetDuration("Thunderfury", 0)
+                local isOwn = (attacker == "You")
+                
+                -- Refresh BOTH "Thunderfury" and "Thunderfury's Blessing" as they are usually applied together
+                SpellDB:RefreshEffect(victim, unitlevel, "Thunderfury", duration, isOwn)
+                SpellDB:RefreshEffect(victim, unitlevel, "Thunderfury's Blessing", duration, isOwn)
+                
+                -- Clear fallback timers to force refresh on nameplates
+                if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                    GudaPlates_Debuffs.timers[victim .. "_" .. "Thunderfury"] = nil
+                    GudaPlates_Debuffs.timers[victim .. "_" .. "Thunderfury's Blessing"] = nil
+                    
+                    -- Also clear by GUID if we can find it
+                    if superwow_active and UnitExists("target") and UnitName("target") == victim then
+                        local guid = UnitGUID and UnitGUID("target")
+                        if guid then
+                            GudaPlates_Debuffs.timers[guid .. "_" .. "Thunderfury"] = nil
+                            GudaPlates_Debuffs.timers[guid .. "_" .. "Thunderfury's Blessing"] = nil
+                        end
+                    end
+                end
+
+                -- Also refresh by GUID if victim is current target (SuperWoW)
+                if superwow_active and UnitExists("target") and UnitName("target") == victim then
+                    local guid = UnitGUID and UnitGUID("target")
+                    if guid then
+                        SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury", duration, isOwn)
+                        SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury's Blessing", duration, isOwn)
+                    end
+                end
+            elseif spell and victim and GudaPlates_Debuffs then
+                -- Check for Judgement refreshes from spells (e.g. Paladin Seal procs)
+                GudaPlates_Debuffs:SealHandler(attacker, victim)
+            end
+        end
     elseif arg1 and string.find(event, "CHAT_MSG_COMBAT") then
         ParseAttackHit(arg1)
     end
@@ -2530,7 +2173,10 @@ GudaPlates:SetScript("OnEvent", function()
         debuffTracker = {}
         castTracker = {}
         castDB = {}
+        recentMeleeCrits = {}
+        recentMeleeHits = {}
         if SpellDB then SpellDB.objects = {} end
+        if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
         Print("Initialized. Scanning...")
         if twthreat_active then
             Print("TWThreat detected - full threat colors enabled")
@@ -2561,6 +2207,34 @@ GudaPlates:SetScript("OnEvent", function()
             -- Fallback values
             spell = spell or "Casting"
             icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+
+            -- Update SpellDB with debuff info if it's a known debuff
+            if SpellDB and eventType == "CAST" and target and target ~= "" then
+                local duration = SpellDB:GetDuration(spell, 0)
+                if duration and duration > 0 then
+                    local isOwn = (guid == (UnitGUID and UnitGUID("player")))
+                    SpellDB:RefreshEffect(target, 0, spell, duration, isOwn)
+                    
+                    -- Also handle Thunderfury double-refresh if one of them procs
+                    if spell == "Thunderfury" or spell == "Thunderfury's Blessing" then
+                        SpellDB:RefreshEffect(target, 0, "Thunderfury", duration, isOwn)
+                        SpellDB:RefreshEffect(target, 0, "Thunderfury's Blessing", duration, isOwn)
+                        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury"] = nil
+                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury's Blessing"] = nil
+                            
+                            -- Also clear by name if we can find it
+                            local targetName = UnitName("target")
+                            if targetName and (UnitGUID and UnitGUID("target") == target) then
+                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury"] = nil
+                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury's Blessing"] = nil
+                            end
+                        end
+                    elseif GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+                        GudaPlates_Debuffs.timers[target .. "_" .. spell] = nil
+                    end
+                end
+            end
 
             -- Skip buff procs during cast (same logic as ShaguPlates)
             if eventType == "CAST" then
@@ -2593,12 +2267,23 @@ GudaPlates:SetScript("OnEvent", function()
             local duration = SpellDB.pending[4]
             local unitName = SpellDB.pending[5]
             local unitlevel = SpellDB.pending[2]
-            
+
             local hasObject = SpellDB.objects[unitName] and SpellDB.objects[unitName][unitlevel] and SpellDB.objects[unitName][unitlevel][effect]
-            
+
             -- Check if this debuff already exists on target (refresh case)
             if unitName and hasObject then
-                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration)
+                SpellDB:RefreshEffect(unitName, unitlevel, effect, duration, true) -- Mark as own spell
+                -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                    SpellDB:TrackOwnerBoundDebuff(unitName, effect, duration)
+                    -- Also track by GUID if available
+                    if superwow_active and UnitExists("target") and UnitName("target") == unitName then
+                        local guid = UnitGUID and UnitGUID("target")
+                        if guid then
+                            SpellDB:TrackOwnerBoundDebuff(guid, effect, duration)
+                        end
+                    end
+                end
                 SpellDB:RemovePending()
             end
             -- If not existing, wait for combat log "afflicted" message
@@ -2660,6 +2345,7 @@ GudaPlates:SetScript("OnEvent", function()
             -- If we matched with Cursive's format (Debuff (1)), the stack-unaware pattern will capture "(1)" as part of the effect name
             -- Strip any stack counts from the effect name
             if effect then
+                effect = StripSpellRank(effect)
                 for e, s in string.gfind(effect, "(.+) %((%d+)%)$") do
                     effect = e
                     break
@@ -2668,20 +2354,208 @@ GudaPlates:SetScript("OnEvent", function()
 
             if unit and effect then
                 local unitlevel = UnitName("target") == unit and UnitLevel("target") or 0
+                
+                -- Support for various Paladin Judgements which might be reported as just "Judgement" in combat log
+                -- or differently than their spell names. Wisdom seems to work, others might not.
+                if effect == "Judgement of Light" or effect == "Judgement of the Crusader" or effect == "Judgement of Justice" or effect == "Judgement of Wisdom" or effect == "Judgement" then
+                    -- If it's just "Judgement", we can't be 100% sure which one it is without target scanning,
+                    -- but we can try to refresh all known judgements if they already exist on this unit.
+                    local judgementsToRefresh = (effect == "Judgement") and { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice" } or { effect }
+                    
+                    for _, effectName in pairs(judgementsToRefresh) do
+                        local dbDuration = SpellDB:GetDuration(effectName, 0)
+                        if effect == "Judgement" then
+                            -- Only refresh if it already exists
+                            if SpellDB.objects[unit] and SpellDB.objects[unit][unitlevel] and SpellDB.objects[unit][unitlevel][effectName] then
+                                SpellDB:RefreshEffect(unit, unitlevel, effectName, dbDuration, false)
+                            end
+                        else
+                            SpellDB:RefreshEffect(unit, unitlevel, effectName, dbDuration, false)
+                        end
+                        
+                        -- Also refresh by GUID if victim is current target
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                if effect == "Judgement" then
+                                    if SpellDB.objects[guid] and SpellDB.objects[guid][unitlevel] and SpellDB.objects[guid][unitlevel][effectName] then
+                                        SpellDB:RefreshEffect(guid, unitlevel, effectName, dbDuration, false)
+                                    end
+                                else
+                                    SpellDB:RefreshEffect(guid, unitlevel, effectName, dbDuration, false)
+                                end
+                            end
+                        end
+                    end
+                end
+
                 local recent = SpellDB.recentCasts and SpellDB.recentCasts[effect]
                 local isRecentCast = recent and recent.time and (GetTime() - recent.time) < 3
-                
+
                 -- First try to persist pending spell (this has accurate rank/duration from cast hook)
                 if SpellDB.pending[3] == effect then
+                    -- Capture duration BEFORE PersistPending clears it
+                    local pendingDuration = SpellDB.pending[4] or SpellDB:GetDuration(effect, 0)
                     SpellDB:PersistPending(effect)
+                    -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                    if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, pendingDuration)
+                        -- Also track by GUID if available
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, pendingDuration)
+                            end
+                        end
+                    end
                 elseif isRecentCast then
                     -- Recent cast - refresh the timer (player reapplied the debuff)
                     SpellDB:RefreshEffect(unit, unitlevel, effect, recent.duration, true)
+                    -- Track OWNER_BOUND_DEBUFFS for ownership inference
+                    if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] and SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, recent.duration)
+                        -- Also track by GUID if available
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, recent.duration)
+                            end
+                        end
+                    end
                 else
-                    -- Not our spell, only add if not already tracked
-                    if not SpellDB.objects[unit] or not SpellDB.objects[unit][unitlevel] or not SpellDB.objects[unit][unitlevel][effect] then
+                    -- Check for proc via melee heuristic
+                    local isProc = false
+                    if effect == "Deep Wound" or effect == "Vindication" or
+                       string.find(effect, "Poison") then
+                        local now = GetTime()
+                        local recentTime = nil
+                        
+                        if effect == "Deep Wound" then
+                            recentTime = recentMeleeCrits[unit]
+                        else
+                            recentTime = recentMeleeHits[unit]
+                        end
+
+                        -- Also check by GUID
+                        if not recentTime and superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                if effect == "Deep Wound" then
+                                    recentTime = recentMeleeCrits[guid]
+                                else
+                                    recentTime = recentMeleeHits[guid]
+                                end
+                            end
+                        end
+
+                        -- If we hit/crit this target recently, assume it is ours
+                        if recentTime and (now - recentTime) < 2 then
+                            isProc = true
+                            local dbDuration = SpellDB:GetDuration(effect, 0) or (effect == "Deep Wound" and 12 or 10)
+
+                            -- Track ownership
+                            if SpellDB.TrackOwnerBoundDebuff then
+                                SpellDB:TrackOwnerBoundDebuff(unit, effect, dbDuration)
+                                if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                                    local guid = UnitGUID and UnitGUID("target")
+                                    if guid then
+                                        SpellDB:TrackOwnerBoundDebuff(guid, effect, dbDuration)
+                                    end
+                                end
+                            end
+
+                            -- Mark as owned in SpellDB
+                            SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, true)
+                        end
+                    end
+
+                    if not isProc then
+                        -- Not our spell, refresh or add the timer
                         local dbDuration = SpellDB:GetDuration(effect, 0)
-                        SpellDB:AddEffect(unit, unitlevel, effect, dbDuration, false)
+                        SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, false)
+                    end
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE" then
+        -- Track player's own periodic damage (Deep Wound, etc.) for ownership inference
+        -- This event fires when YOUR DoTs tick on enemies
+        -- Format: "Your Deep Wound hits Target for X damage." or "Target suffers X damage from your Deep Wound."
+        if arg1 and SpellDB then
+            local effect, unit, damage
+
+            -- Pattern 1: "Your Spell hits Target for X damage."
+            for e, u in string.gfind(arg1, "Your (.+) hits (.+) for %d+") do
+                effect, unit = e, u
+                break
+            end
+
+            -- Pattern 2: "Target suffers X damage from your Spell."
+            if not effect then
+                for u, e in string.gfind(arg1, "(.+) suffers %d+ .+ from your (.+)%.") do
+                    unit, effect = u, e
+                    break
+                end
+            end
+
+            -- Pattern 3: "Your Spell crits Target for X damage."
+            if not effect then
+                for e, u in string.gfind(arg1, "Your (.+) crits (.+) for %d+") do
+                    effect, unit = e, u
+                    break
+                end
+            end
+
+            if effect and unit then
+                -- Strip any rank info
+                effect = StripSpellRank(effect)
+
+                -- Check if this is an OWNER_BOUND_DEBUFF (like Deep Wound)
+                if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] then
+                    local duration = SpellDB:GetDuration(effect, 0) or 12
+
+                    -- Track ownership - the player owns this debuff on this target
+                    if SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, duration)
+
+                        -- Also track by GUID if target matches
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, duration)
+                            end
+                        end
+                    end
+
+                    -- Also update SpellDB for timer display
+                    local unitlevel = UnitExists("target") and UnitName("target") == unit and UnitLevel("target") or 0
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, duration, true)
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
+        -- Track melee crits for Deep Wound heuristic
+        -- Format: "You crit Target for X damage." or "You hit Target for X damage."
+        if arg1 then
+            local unit
+
+            -- Pattern: "You crit Target for X damage."
+            for u in string.gfind(arg1, "You crit (.+) for %d+") do
+                unit = u
+                break
+            end
+
+            if unit then
+                -- Record that we crit this target recently
+                recentMeleeCrits[unit] = GetTime()
+
+                -- Also store by GUID if available
+                if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                    local guid = UnitGUID and UnitGUID("target")
+                    if guid then
+                        recentMeleeCrits[guid] = GetTime()
                     end
                 end
             end
@@ -2694,13 +2568,17 @@ GudaPlates:SetScript("OnEvent", function()
                 local spell = StripSpellRank(rawSpell)
                 -- Also strip stack count if present (Cursive/SuperWoW might add it)
                 for s, c in string.gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
-                
+
                 debuffTracker[unit .. spell] = nil
                 -- Remove from SpellDB objects (all levels)
                 if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end
                     end
+                end
+                -- Remove from OWNER_BOUND_DEBUFFS cache
+                if SpellDB and SpellDB.RemoveOwnerBoundDebuff then
+                    SpellDB:RemoveOwnerBoundDebuff(unit, spell)
                 end
             end
             for rawSpell, unit in string.gfind(arg1, "(.+) is removed from (.+)%.") do
@@ -2713,6 +2591,10 @@ GudaPlates:SetScript("OnEvent", function()
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end
                     end
+                end
+                -- Remove from OWNER_BOUND_DEBUFFS cache
+                if SpellDB and SpellDB.RemoveOwnerBoundDebuff then
+                    SpellDB:RemoveOwnerBoundDebuff(unit, spell)
                 end
             end
         end
@@ -2837,7 +2719,7 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             green = {0.0, 0.8, 0.0, 1},
             teal = {0.0, 0.5, 0.5, 1},
             purple = {0.6, 0.4, 0.8, 1},
-            pink = {1.0, 0.6, 0.8, 1},
+            pink = {0.376, 0.027, 0.431, 1},
             yellow = {1.0, 1.0, 0.0, 1},
             white = {1.0, 1.0, 1.0, 1},
             gray = {0.5, 0.5, 0.5, 1},
@@ -2959,6 +2841,9 @@ local function LoadSettings()
         end
         if GudaPlatesDB.THREAT_COLORS.TAPPED then
             THREAT_COLORS.TAPPED = GudaPlatesDB.THREAT_COLORS.TAPPED
+        end
+        if GudaPlatesDB.THREAT_COLORS.STUN then
+            THREAT_COLORS.STUN = GudaPlatesDB.THREAT_COLORS.STUN
         end
         if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
             THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
@@ -3236,6 +3121,19 @@ local function CreateOptionsFrame()
 
     -- Color picker helper
     local function ShowColorPicker(r, g, b, callback)
+        ColorPickerFrame:SetFrameStrata("TOOLTIP")
+        local level = optionsFrame:GetFrameLevel() + 20
+        ColorPickerFrame:SetFrameLevel(level)
+
+        -- Ensure buttons and other elements are above the frame itself
+        local children = {ColorPickerFrame:GetChildren()}
+        for _, child in ipairs(children) do
+            if child and child.SetFrameStrata then
+                child:SetFrameStrata("TOOLTIP")
+                child:SetFrameLevel(level + 1)
+            end
+        end
+
         ColorPickerFrame.func = function()
             local r, g, b = ColorPickerFrame:GetColorRGB()
             callback(r, g, b)
@@ -3418,6 +3316,25 @@ debuffTimerCheckbox:SetScript("OnClick", function()
     end
 end)
 
+-- Debuff Icon Size Slider
+local debuffSizeSlider = CreateFrame("Slider", "GudaPlatesDebuffSizeSlider", generalTab, "OptionsSliderTemplate")
+debuffSizeSlider:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -35)
+debuffSizeSlider:SetWidth(580)
+debuffSizeSlider:SetMinMaxValues(8, 32)
+debuffSizeSlider:SetValueStep(1)
+local debuffSizeText = getglobal(debuffSizeSlider:GetName() .. "Text")
+debuffSizeText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(debuffSizeSlider:GetName() .. "Low"):SetText("8")
+getglobal(debuffSizeSlider:GetName() .. "High"):SetText("32")
+debuffSizeSlider:SetScript("OnValueChanged", function()
+    Settings.debuffIconSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Debuff Icon Size: " .. math.floor(this:GetValue()) .. " px")
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
 onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 200, 0)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
@@ -3449,7 +3366,7 @@ local separator2 = generalTab:CreateTexture(nil, "ARTWORK")
 separator2:SetTexture(1, 1, 1, 0.2)
 separator2:SetHeight(1)
 separator2:SetWidth(580)
-separator2:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -15)
+separator2:SetPoint("TOPLEFT", debuffSizeSlider, "BOTTOMLEFT", 0, -20)
 
 -- Font Section
 local fontHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -4389,11 +4306,12 @@ miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -200)
 miscHeader:SetText("|cff00ff00Other Colors:|r")
 
 CreateColorSwatch(colorsTab, 5, -225, "Unit Tapped", THREAT_COLORS, "TAPPED")
-CreateColorSwatch(colorsTab, 5, -250, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+CreateColorSwatch(colorsTab, 5, -250, "Stun", THREAT_COLORS, "STUN")
+CreateColorSwatch(colorsTab, 5, -275, "Mana Bar", THREAT_COLORS, "MANA_BAR")
 
 -- Target Glow Color Swatch (uses Settings table directly)
 local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -275)
+targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -305)
 targetGlowSwatchLabel:SetText("Target Glow")
 
 local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4445,7 +4363,7 @@ end)
 
 -- Castbar Color Swatch
 local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -300)
+castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -330)
 castbarSwatchLabel:SetText("Castbar")
 
 local castbarSwatch = CreateFrame("Button", nil, colorsTab)
@@ -4525,6 +4443,8 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesSwapCheckbox"):SetChecked(Settings.swapNameDebuff)
     getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
     getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
+    getglobal("GudaPlatesDebuffSizeSlider"):SetValue(Settings.debuffIconSize)
+    getglobal("GudaPlatesDebuffSizeSliderText"):SetText("Debuff Icon Size: " .. Settings.debuffIconSize .. " px")
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
     -- Health/Mana tab
@@ -4606,6 +4526,7 @@ resetButton:SetScript("OnClick", function()
     THREAT_COLORS.TANK.LOSING_AGGRO = {1.0, 0.6, 0.0, 1}
     THREAT_COLORS.TANK.NO_AGGRO = {0.85, 0.2, 0.2, 1}
     THREAT_COLORS.TAPPED = {0.5, 0.5, 0.5, 1}
+    THREAT_COLORS.STUN = {0.376, 0.027, 0.431, 1}
     THREAT_COLORS.MANA_BAR = {0.07, 0.58, 1.0, 1}
     Settings.optionsBgAlpha = 0.9
     Settings.hideOptionsBorder = false
@@ -4619,6 +4540,7 @@ resetButton:SetScript("OnClick", function()
     Settings.friendHealthFontSize = 10
     Settings.friendHealthTextPosition = "CENTER"
     Settings.friendHealthTextFormat = 1
+    Settings.debuffIconSize = 16
     Settings.showManaBar = false
     Settings.manaTextFormat = 1
     Settings.manaTextPosition = "CENTER"

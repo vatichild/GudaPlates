@@ -54,6 +54,8 @@ GudaPlates.Settings = {
     -- Target Glow
     showTargetGlow = true,
     targetGlowColor = {0.4, 0.8, 0.9, 0.4},  -- Dragonflight3-style cyan glow
+    -- Debuffs
+    debuffIconSize = 16,
     -- Text Colors
     nameColor = {1, 1, 1, 1},
     healthTextColor = {1, 1, 1, 1},
@@ -81,6 +83,7 @@ GudaPlates.THREAT_COLORS = {
     },
     -- Misc colors
     TAPPED = {0.5, 0.5, 0.5, 1},  -- Gray: unit tapped by others
+    STUN = {0.376, 0.027, 0.431, 1},    -- Pink: unit is stunned
     MANA_BAR = {0.07, 0.58, 1.0, 1},  -- Cyan: mana bar color
 }
 
