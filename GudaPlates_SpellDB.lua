@@ -295,15 +295,37 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
 GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
+	-- Warrior
 	["Rend"] = true,
 	["Deep Wounds"] = true,
 	["Deep Wound"] = true,
+
+	-- Warlock
 	["Immolate"] = true,
 	["Corruption"] = true,
+	["Curse of Agony"] = true,
+	["Siphon Life"] = true,
+
+	-- Priest
 	["Shadow Word: Pain"] = true,
+	["Devouring Plague"] = true,
+
+	-- Druid
+	["Moonfire"] = true,
+	["Insect Swarm"] = true,
 	["Rip"] = true,
 	["Rake"] = true,
 	["Pounce Bleed"] = true,
+
+	-- Rogue
+	["Garrote"] = true,
+	["Rupture"] = true,
+
+	-- Hunter
+	["Serpent Sting"] = true,
+
+	-- Mage
+	["Ignite"] = true,
 }
 
 -- ============================================
