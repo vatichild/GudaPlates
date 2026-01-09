@@ -7,7 +7,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
 	["Interface\\Icons\\Ability_Gouge"] = "Rend",
 	["Interface\\Icons\\Ability_Rend"] = "Rend",
-	["Interface\\Icons\\Ability_BackStab"] = "Deep Wounds",
+	["Interface\\Icons\\Ability_BackStab"] = "Deep Wound",
 	["Interface\\Icons\\Ability_ShockWave"] = "Hamstring",
 	["Interface\\Icons\\Ability_Warrior_Decimate"] = "Improved Hamstring",
 	["Interface\\Icons\\Ability_Warrior_WarCry"] = "Demoralizing Shout",
@@ -62,7 +62,6 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Mocking Blow"] = {[0]=6},
 	["Piercing Howl"] = {[0]=6},
 	["Mortal Strike"] = {[0]=10},
-	["Deep Wounds"] = {[0]=12},
 	["Deep Wound"] = {[0]=12},
 	["Charge"] = {[0]=1},
 	["Charge Stun"] = {[0]=1},
@@ -297,7 +296,7 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Warrior
 	["Rend"] = true,
-	["Deep Wounds"] = true,
+	["Deep Wound"] = true,
 
 	-- Warlock
 	["Immolate"] = true,
@@ -319,6 +318,10 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Rogue
 	["Garrote"] = true,
 	["Rupture"] = true,
+	["Crippling Poison"] = true,
+	["Deadly Poison"] = true,
+	["Instant Poison"] = true,
+	["Mind-numbing Poison"] = true,
 
 	-- Hunter
 	["Serpent Sting"] = true,

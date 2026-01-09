@@ -178,6 +178,10 @@ if not SpellDB then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[GudaPlates]|r ERROR: SpellDB failed to load!")
 end
 
+-- Melee crit tracker for Deep Wound heuristic
+-- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
+local recentMeleeCrits = {}
+
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
 -- Detects when player casts spells to track debuff durations with correct rank
@@ -342,6 +346,7 @@ GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE") -- Player's DoTs ticking (Deep Wound, etc.)
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
@@ -2146,7 +2151,9 @@ GudaPlates:SetScript("OnEvent", function()
         debuffTracker = {}
         castTracker = {}
         castDB = {}
+        recentMeleeCrits = {}
         if SpellDB then SpellDB.objects = {} end
+        if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
         Print("Initialized. Scanning...")
         if twthreat_active then
             Print("TWThreat detected - full threat colors enabled")
@@ -2393,9 +2400,129 @@ GudaPlates:SetScript("OnEvent", function()
                         end
                     end
                 else
-                    -- Not our spell, refresh or add the timer
-                    local dbDuration = SpellDB:GetDuration(effect, 0)
-                    SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, false)
+                    -- Check for Deep Wound proc via melee crit heuristic
+                    local isDeepWoundProc = false
+                    if effect == "Deep Wound" or effect == "Deep Wounds" then
+                        local now = GetTime()
+                        local recentCritTime = recentMeleeCrits[unit]
+
+                        -- Also check by GUID
+                        if not recentCritTime and superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                recentCritTime = recentMeleeCrits[guid]
+                            end
+                        end
+
+                        -- If we crit this target in the last 2 seconds, assume Deep Wound is ours
+                        if recentCritTime and (now - recentCritTime) < 2 then
+                            isDeepWoundProc = true
+                            local dbDuration = SpellDB:GetDuration(effect, 0) or 12
+
+                            -- Track ownership
+                            if SpellDB.TrackOwnerBoundDebuff then
+                                SpellDB:TrackOwnerBoundDebuff(unit, effect, dbDuration)
+                                if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                                    local guid = UnitGUID and UnitGUID("target")
+                                    if guid then
+                                        SpellDB:TrackOwnerBoundDebuff(guid, effect, dbDuration)
+                                    end
+                                end
+                            end
+
+                            -- Mark as owned in SpellDB
+                            SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, true)
+                        end
+                    end
+
+                    if not isDeepWoundProc then
+                        -- Not our spell, refresh or add the timer
+                        local dbDuration = SpellDB:GetDuration(effect, 0)
+                        SpellDB:RefreshEffect(unit, unitlevel, effect, dbDuration, false)
+                    end
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE" then
+        -- Track player's own periodic damage (Deep Wound, etc.) for ownership inference
+        -- This event fires when YOUR DoTs tick on enemies
+        -- Format: "Your Deep Wound hits Target for X damage." or "Target suffers X damage from your Deep Wound."
+        if arg1 and SpellDB then
+            local effect, unit, damage
+
+            -- Pattern 1: "Your Spell hits Target for X damage."
+            for e, u in string.gfind(arg1, "Your (.+) hits (.+) for %d+") do
+                effect, unit = e, u
+                break
+            end
+
+            -- Pattern 2: "Target suffers X damage from your Spell."
+            if not effect then
+                for u, e in string.gfind(arg1, "(.+) suffers %d+ .+ from your (.+)%.") do
+                    unit, effect = u, e
+                    break
+                end
+            end
+
+            -- Pattern 3: "Your Spell crits Target for X damage."
+            if not effect then
+                for e, u in string.gfind(arg1, "Your (.+) crits (.+) for %d+") do
+                    effect, unit = e, u
+                    break
+                end
+            end
+
+            if effect and unit then
+                -- Strip any rank info
+                effect = StripSpellRank(effect)
+
+                -- Check if this is an OWNER_BOUND_DEBUFF (like Deep Wound)
+                if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] then
+                    local duration = SpellDB:GetDuration(effect, 0) or 12
+
+                    -- Track ownership - the player owns this debuff on this target
+                    if SpellDB.TrackOwnerBoundDebuff then
+                        SpellDB:TrackOwnerBoundDebuff(unit, effect, duration)
+
+                        -- Also track by GUID if target matches
+                        if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                            local guid = UnitGUID and UnitGUID("target")
+                            if guid then
+                                SpellDB:TrackOwnerBoundDebuff(guid, effect, duration)
+                            end
+                        end
+                    end
+
+                    -- Also update SpellDB for timer display
+                    local unitlevel = UnitExists("target") and UnitName("target") == unit and UnitLevel("target") or 0
+                    SpellDB:RefreshEffect(unit, unitlevel, effect, duration, true)
+                end
+            end
+        end
+
+    elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
+        -- Track melee crits for Deep Wound heuristic
+        -- Format: "You crit Target for X damage." or "You hit Target for X damage."
+        if arg1 then
+            local unit
+
+            -- Pattern: "You crit Target for X damage."
+            for u in string.gfind(arg1, "You crit (.+) for %d+") do
+                unit = u
+                break
+            end
+
+            if unit then
+                -- Record that we crit this target recently
+                recentMeleeCrits[unit] = GetTime()
+
+                -- Also store by GUID if available
+                if superwow_active and UnitExists("target") and UnitName("target") == unit then
+                    local guid = UnitGUID and UnitGUID("target")
+                    if guid then
+                        recentMeleeCrits[guid] = GetTime()
+                    end
                 end
             end
         end
