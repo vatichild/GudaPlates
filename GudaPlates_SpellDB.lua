@@ -169,8 +169,10 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Hunter's Mark"] = {[0]=120},
 	["Counterattack"] = {[0]=5},
 	["Wyvern Sting"] = {[0]=12}, -- sleep, then 12s DoT
-	["Freezing Trap Effect"] = {[0]=20},
+	["Freezing Trap Effect"] = {[1]=10,[2]=15,[3]=20,[0]=20},
 	["Immolation Trap Effect"] = {[0]=15},
+	["Explosive Trap Effect"] = {[0]=20},
+	["Frost Trap"] = {[0]=8},
 	["Intimidation"] = {[0]=3},
 	["Entrapment"] = {[0]=5},
 	["Lacerate"] = {[0]=8},
@@ -282,6 +284,12 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	-- Hunter
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
+	["Scare Beast"] = "HUNTER",
+	["Freezing Trap Effect"] = true,
+	["Immolation Trap Effect"] = "HUNTER",
+	["Explosive Trap Effect"] = "HUNTER",
+	["Frost Trap"] = "HUNTER",
+
 	-- Paladin
 	["Hammer of Justice"] = "PALADIN",
 	["Repentance"] = "PALADIN",
@@ -373,10 +381,8 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Hunter
 	["Serpent Sting"] = true,
-	["Hunter's Mark"] = true,
 	["Wing Clip"] = true,
 	["Lacerate"] = true,
-	["Scare Beast"] = true,
 
 	-- Mage
 	["Ignite"] = true,
