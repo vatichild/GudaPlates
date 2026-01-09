@@ -171,6 +171,8 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Immolation Trap Effect"] = {[0]=15},
 	["Intimidation"] = {[0]=3},
 	["Entrapment"] = {[0]=5},
+	["Lacerate"] = {[0]=8},
+	["Scare Beast"] = {[1]=10,[2]=15,[3]=20,[0]=20},
 
 	-- DRUID
 	["Moonfire"] = {[1]=9, [2]=18, [3]=18, [4]=18, [5]=18, [6]=18, [7]=18, [8]=18, [9]=18, [10]=18, [0]=18},
@@ -369,6 +371,10 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Hunter
 	["Serpent Sting"] = true,
+	["Hunter's Mark"] = true,
+	["Wing Clip"] = true,
+	["Lacerate"] = true,
+	["Scare Beast"] = true,
 
 	-- Mage
 	["Ignite"] = true,
