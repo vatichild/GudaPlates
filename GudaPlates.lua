@@ -218,6 +218,7 @@ end
 
 -- Strip rank suffix from spell name (for combat log parsing)
 -- "Rend (Rank 2)" -> "Rend", rank 2
+-- "Deadly Poison II" -> "Deadly Poison", rank 2
 -- "Rend" -> "Rend", rank 0
 local function StripSpellRank(spellString)
 	if not spellString then return nil, 0 end
@@ -229,6 +230,14 @@ local function StripSpellRank(spellString)
 	for name, rank in string.gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
+	
+	-- Match Roman numerals: II, III, IV, V, VI
+	for name, rank in string.gfind(spellString, "^(.+) (VI)$") do return name, 6 end
+	for name, rank in string.gfind(spellString, "^(.+) (V)$") do return name, 5 end
+	for name, rank in string.gfind(spellString, "^(.+) (IV)$") do return name, 4 end
+	for name, rank in string.gfind(spellString, "^(.+) (III)$") do return name, 3 end
+	for name, rank in string.gfind(spellString, "^(.+) (II)$") do return name, 2 end
+
 	return spellString, 0
 end
 
@@ -2416,7 +2425,8 @@ GudaPlates:SetScript("OnEvent", function()
                 else
                     -- Check for proc via melee heuristic
                     local isProc = false
-                    if effect == "Deep Wound" or effect == "Vindication" then
+                    if effect == "Deep Wound" or effect == "Vindication" or
+                       string.find(effect, "Poison") then
                         local now = GetTime()
                         local recentTime = nil
                         

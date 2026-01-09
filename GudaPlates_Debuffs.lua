@@ -358,7 +358,9 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                             lastSeen = now
                         }
                     else
-                        local fallbackDuration = duration or SpellDB:GetDuration(effect) or 1
+                        local fallbackDuration = duration or SpellDB:GetDuration(effect, 0)
+                        if fallbackDuration <= 0 then fallbackDuration = 30 end
+                        
                         if not debuffTimers[debuffKey] then
                             debuffTimers[debuffKey] = { startTime = now, duration = fallbackDuration, lastStacks = stacks or 0 }
                         end
@@ -418,7 +420,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                         lastSeen = now
                     }
                 else
-                    local fallbackDuration = duration or (effect and effect ~= "" and SpellDB:GetDuration(effect)) or 1
+                    local fallbackDuration = duration or (effect and effect ~= "" and SpellDB:GetDuration(effect, 0)) or 12
                     if not debuffTimers[debuffKey] then
                         debuffTimers[debuffKey] = { startTime = now, duration = fallbackDuration, lastStacks = stacks or 0 }
                     end

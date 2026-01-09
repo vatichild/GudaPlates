@@ -84,6 +84,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Garrote"] = {[1]=18, [2]=18, [3]=18, [4]=18, [5]=18, [0]=18},
 	["Expose Armor"] = {[0]=30},
 	["Crippling Poison"] = {[0]=12},
+	["Crippling Poison II"] = {[0]=12},
 	["Deadly Poison"] = {[0]=12},
 	["Deadly Poison II"] = {[0]=12},
 	["Deadly Poison III"] = {[0]=12},
@@ -96,12 +97,12 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Wound Poison II"] = {[0]=15},
 	["Wound Poison III"] = {[0]=15},
 	["Wound Poison IV"] = {[0]=15},
-	["Instant Poison"] = {[0]=3},
-	["Instant Poison II"] = {[0]=3},
-	["Instant Poison III"] = {[0]=3},
-	["Instant Poison IV"] = {[0]=3},
-	["Instant Poison V"] = {[0]=3},
-	["Instant Poison VI"] = {[0]=3},
+	["Instant Poison"] = {[0]=0},
+	["Instant Poison II"] = {[0]=0},
+	["Instant Poison III"] = {[0]=0},
+	["Instant Poison IV"] = {[0]=0},
+	["Instant Poison V"] = {[0]=0},
+	["Instant Poison VI"] = {[0]=0},
 
 	-- MAGE
 	["Frost Nova"] = {[1]=8, [2]=8, [3]=8, [4]=8, [0]=8},
@@ -319,12 +320,32 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	["Pounce Bleed"] = true,
 
 	-- Rogue
+	["Sap"] = true,
+	["Kidney Shot"] = true,
+	["Blind"] = true,
 	["Garrote"] = true,
 	["Rupture"] = true,
+	["Gouge"] = true,
 	["Crippling Poison"] = true,
+	["Crippling Poison II"] = true,
 	["Deadly Poison"] = true,
+	["Deadly Poison II"] = true,
+	["Deadly Poison III"] = true,
+	["Deadly Poison IV"] = true,
+	["Deadly Poison V"] = true,
 	["Instant Poison"] = true,
+	["Instant Poison II"] = true,
+	["Instant Poison III"] = true,
+	["Instant Poison IV"] = true,
+	["Instant Poison V"] = true,
+	["Instant Poison VI"] = true,
 	["Mind-numbing Poison"] = true,
+	["Mind-numbing Poison II"] = true,
+	["Mind-numbing Poison III"] = true,
+	["Wound Poison"] = true,
+	["Wound Poison II"] = true,
+	["Wound Poison III"] = true,
+	["Wound Poison IV"] = true,
 
 	-- Hunter
 	["Serpent Sting"] = true,
@@ -334,7 +355,6 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Paladin
 	["Vindication"] = true,
-	["Deep Wound"] = true,
 }
 
 -- ============================================
