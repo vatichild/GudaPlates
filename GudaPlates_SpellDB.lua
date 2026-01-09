@@ -296,6 +296,46 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Armor Shatter"] = true,
 }
 
+-- Rogue Poisons - always show for Rogue players with "Only My Debuffs" enabled
+-- Since only Rogues can apply these, they are always "mine" when present
+GudaPlates_SpellDB.ROGUE_POISONS = {
+	["Crippling Poison"] = true,
+	["Crippling Poison II"] = true,
+	["Deadly Poison"] = true,
+	["Deadly Poison II"] = true,
+	["Deadly Poison III"] = true,
+	["Deadly Poison IV"] = true,
+	["Deadly Poison V"] = true,
+	["Instant Poison"] = true,
+	["Instant Poison II"] = true,
+	["Instant Poison III"] = true,
+	["Instant Poison IV"] = true,
+	["Instant Poison V"] = true,
+	["Instant Poison VI"] = true,
+	["Mind-numbing Poison"] = true,
+	["Mind-numbing Poison II"] = true,
+	["Mind-numbing Poison III"] = true,
+	["Wound Poison"] = true,
+	["Wound Poison II"] = true,
+	["Wound Poison III"] = true,
+	["Wound Poison IV"] = true,
+}
+
+-- Rogue Poison TEXTURES - for icon-based detection when tooltip scanning fails
+-- This ensures poisons are detected even without spell name
+GudaPlates_SpellDB.ROGUE_POISON_TEXTURES = {
+	-- Crippling Poison
+	["Interface\\Icons\\Ability_PoisonSting"] = "Crippling Poison",
+	-- Deadly Poison
+	["Interface\\Icons\\Ability_Rogue_DualWeild"] = "Deadly Poison",
+	-- Instant Poison
+	["Interface\\Icons\\Ability_Poisons"] = "Instant Poison",
+	-- Mind-numbing Poison
+	["Interface\\Icons\\Spell_Nature_NullifyDisease"] = "Mind-numbing Poison",
+	-- Wound Poison
+	["Interface\\Icons\\INV_Misc_Herb_16"] = "Wound Poison",
+}
+
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
 GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Warrior
@@ -319,33 +359,13 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	["Rake"] = true,
 	["Pounce Bleed"] = true,
 
-	-- Rogue
+	-- Rogue (excluding poisons - those are handled via ROGUE_POISONS visibility exception)
 	["Sap"] = true,
 	["Kidney Shot"] = true,
 	["Blind"] = true,
 	["Garrote"] = true,
 	["Rupture"] = true,
 	["Gouge"] = true,
-	["Crippling Poison"] = true,
-	["Crippling Poison II"] = true,
-	["Deadly Poison"] = true,
-	["Deadly Poison II"] = true,
-	["Deadly Poison III"] = true,
-	["Deadly Poison IV"] = true,
-	["Deadly Poison V"] = true,
-	["Instant Poison"] = true,
-	["Instant Poison II"] = true,
-	["Instant Poison III"] = true,
-	["Instant Poison IV"] = true,
-	["Instant Poison V"] = true,
-	["Instant Poison VI"] = true,
-	["Mind-numbing Poison"] = true,
-	["Mind-numbing Poison II"] = true,
-	["Mind-numbing Poison III"] = true,
-	["Wound Poison"] = true,
-	["Wound Poison II"] = true,
-	["Wound Poison III"] = true,
-	["Wound Poison IV"] = true,
 
 	-- Hunter
 	["Serpent Sting"] = true,

@@ -255,9 +255,32 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
         local stacks = debuffData.stacks
         local isOwnerBound = debuffData.isOwnerBound
 
+        -- Rogue poisons: Early detection for visibility exception
+        -- Poisons are weapon procs with no ownership data, must be force-allowed for Rogues
+        -- Check both effect name AND texture (texture-based detection for when tooltip scanning fails)
+        local isRoguePoison = false
+        if playerClass == "ROGUE" then
+            -- Check by effect name first
+            if effect and SpellDB.ROGUE_POISONS and SpellDB.ROGUE_POISONS[effect] then
+                isRoguePoison = true
+            -- Fallback: check by texture if effect name is missing or unknown
+            elseif texture and SpellDB.ROGUE_POISON_TEXTURES and SpellDB.ROGUE_POISON_TEXTURES[texture] then
+                isRoguePoison = true
+                -- Also set effect name from texture for timer tracking
+                if not effect or effect == "" then
+                    effect = SpellDB.ROGUE_POISON_TEXTURES[texture]
+                end
+            end
+        end
+
         -- Determine ownership
         local isMyDebuff = false
         local duration, timeleft = nil, nil
+
+        -- Force Rogue poisons as "mine" - they bypass all ownership checks
+        if isRoguePoison then
+            isMyDebuff = true
+        end
 
         if effect and effect ~= "" then
             local data = self:GetSpellData(unitstr, plateName, effect, unitlevel)
@@ -393,6 +416,12 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             local uniqueClass = effect and SpellDB and SpellDB.SHARED_DEBUFFS and SpellDB.SHARED_DEBUFFS[effect]
             local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
             local isRedundant = self:IsDebuffRedundant(scanUnit, effect, debuffData.index)
+
+            -- Rogue poisons: Force-allow at acceptance stage
+            -- Bypass redundancy and treat as owned
+            if isRoguePoison then
+                isRedundant = false
+            end
 
             local shouldDisplay = true
             if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique and not isOwnerBound then
