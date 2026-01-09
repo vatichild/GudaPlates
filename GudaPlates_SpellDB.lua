@@ -233,36 +233,38 @@ GudaPlates_SpellDB.DYN_DEBUFFS = {
 
 -- Shared debuffs that can only exist once on a target (shared across all players of the same class)
 GudaPlates_SpellDB.SHARED_DEBUFFS = {
+	-- Rogue
+	["Expose Armor"] = "ROGUE",
+	-- Mage
+	["Winter's Chill"] = "MAGE",
+	["Fire Vulnerability"] = "MAGE",
+	["Frostbolt"] = "MAGE",
 	-- Warrior
 	["Thunder Clap"] = "WARRIOR",
 	["Demoralizing Shout"] = "WARRIOR",
 	["Sunder Armor"] = "WARRIOR",
 	["Challenging Shout"] = "WARRIOR",
 	["Hamstring"] = "WARRIOR",
+	["Mortal Strike"] = "WARRIOR",
+	["Piercing Howl"] = "WARRIOR",
+	["Disarm"] = "WARRIOR",
 	["Taunt"] = true,
 	-- Druid
 	["Faerie Fire"] = "DRUID",
 	["Faerie Fire (Feral)"] = "DRUID",
 	["Demoralizing Roar"] = "DRUID",
-	["Insect Swarm"] = "DRUID",
-	["Moonfire"] = "DRUID",
 	["Entangling Roots"] = "DRUID",
 	["Hibernate"] = "DRUID",
-	["Rip"] = "DRUID",
-	["Rake"] = "DRUID",
 	["Bash"] = "DRUID",
 	["Pounce"] = "DRUID",
-	["Pounce Bleed"] = "DRUID",
 	["Challenging Roar"] = "DRUID",
 	["Feral Charge Effect"] = "DRUID",
 	["Mangle"] = "DRUID",
 	["Growl"] = true,
 	-- Priest
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
-	["Shadow Word: Pain"] = "PRIEST",
 	["Silence"] = "PRIEST",
 	-- Warlock
-	["Curse of Agony"] = "WARLOCK",
 	["Curse of Weakness"] = "WARLOCK",
 	["Curse of Recklessness"] = "WARLOCK",
 	["Curse of Tongues"] = "WARLOCK",
@@ -277,6 +279,7 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Hammer of Justice"] = "PALADIN",
 	["Repentance"] = "PALADIN",
 	["Crusader Strike"] = "PALADIN",
+	["Vindication"] = "PALADIN",
 	["Judgement of the Crusader"] = true,
 	["Judgement of Light"] = true,
 	["Judgement of Wisdom"] = true,
@@ -285,6 +288,9 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	-- Other
 	["Thunderfury"] = true,
 	["Thunderfury's Blessing"] = true,
+	["Gift of Arthas"] = true,
+	["Spell Vulnerability"] = true,
+	["Armor Shatter"] = true,
 }
 
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
