@@ -73,6 +73,7 @@ local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
+local clickThrough = GudaPlates.nameplateClickThrough
 
 
 local fontOptions = {
@@ -1841,9 +1842,11 @@ GudaPlates:SetScript("OnUpdate", function()
                         plate:SetHeight(1)
                     end
                     -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                    nameplate:EnableMouse(true)
+                    -- If clickThrough, disable mouse on nameplate too
+                    nameplate:EnableMouse(not clickThrough)
                 else
-                    plate:EnableMouse(true)
+                    -- If NOT clickThrough, enable mouse on plate; otherwise disable
+                    plate:EnableMouse(not clickThrough)
                     nameplate:EnableMouse(false)
                 end
 
@@ -1884,11 +1887,11 @@ GudaPlates:SetScript("OnUpdate", function()
                 end
 
                 -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                -- Enable clicking on nameplate itself
-                nameplate:EnableMouse(true)
+                -- Enable clicking on nameplate itself if click-through is disabled
+                nameplate:EnableMouse(not clickThrough)
             else
             -- Stacking: restore parent frame size so game stacks them
-                plate:EnableMouse(true)
+                plate:EnableMouse(not clickThrough)
                 nameplate:EnableMouse(false)
             end
 
@@ -2159,12 +2162,17 @@ GudaPlates:SetScript("OnEvent", function()
         ParseAttackHit(arg1)
     end
 
-    if event == "ADDON_LOADED" and arg1 == "pfUI" then
-        -- pfUI just loaded, disable its nameplates
-        if DisablePfUINameplates() then
-            Print("Disabled pfUI nameplates module")
+    if event == "ADDON_LOADED" then
+        if arg1 == "GudaPlates" then
+            LoadSettings()
+            -- Also try to disable pfUI nameplates when our addon is loaded
+            DisablePfUINameplates()
+        elseif arg1 == "pfUI" then
+            -- pfUI just loaded, disable its nameplates
+            if DisablePfUINameplates() then
+                Print("Disabled pfUI nameplates module")
+            end
         end
-
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
         DisablePfUINameplates()
@@ -2786,13 +2794,15 @@ local function SaveSettings()
     GudaPlatesDB.playerRole = playerRole
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
+    GudaPlatesDB.nameplateClickThrough = clickThrough
     GudaPlatesDB.minimapAngle = minimapAngle
     GudaPlatesDB.Settings = Settings  -- Save entire Settings table
-    
+
     -- Sync back to GudaPlates global table for consistency
     GudaPlates.playerRole = playerRole
     GudaPlates.THREAT_COLORS = THREAT_COLORS
     GudaPlates.nameplateOverlap = nameplateOverlap
+    GudaPlates.nameplateClickThrough = clickThrough
     GudaPlates.minimapAngle = minimapAngle
     GudaPlates.Settings = Settings
 end
@@ -2803,6 +2813,9 @@ local function LoadSettings()
     end
     if GudaPlatesDB.nameplateOverlap ~= nil then
         nameplateOverlap = GudaPlatesDB.nameplateOverlap
+    end
+    if GudaPlatesDB.nameplateClickThrough ~= nil then
+        clickThrough = GudaPlatesDB.nameplateClickThrough
     end
     if GudaPlatesDB.minimapAngle then
         minimapAngle = GudaPlatesDB.minimapAngle
@@ -3272,8 +3285,26 @@ overlapCheckbox:SetScript("OnClick", function()
     SaveSettings()
 end)
 
+local clickThroughCheckbox = CreateFrame("CheckButton", "GudaPlatesClickThroughCheckbox", generalTab, "UICheckButtonTemplate")
+clickThroughCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 150, 0)
+local clickThroughLabel = getglobal(clickThroughCheckbox:GetName().."Text")
+clickThroughLabel:SetText("Click-Through")
+clickThroughLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+clickThroughCheckbox:SetScript("OnClick", function()
+    clickThrough = this:GetChecked() == 1
+    SaveSettings()
+end)
+clickThroughCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Enable this to let clicks pass through nameplates (default: checked)")
+    GameTooltip:Show()
+end)
+clickThroughCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
-raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 200, 0)
+raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 300, 0)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
 raidMarkLabel:SetText("Raid Mark Right")
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3290,7 +3321,7 @@ raidMarkCheckbox:SetScript("OnClick", function()
 end)
 
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
-swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 400, 0)
+swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 450, 0)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
 swapLabel:SetText("Swap Name/Debuffs")
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3302,41 +3333,8 @@ swapCheckbox:SetScript("OnClick", function()
     end
 end)
 
--- Row 2
-local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
-debuffTimerCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "BOTTOMLEFT", 0, -10)
-local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
-debuffTimerLabel:SetText("Debuff Timers")
-debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
-debuffTimerCheckbox:SetScript("OnClick", function()
-    Settings.showDebuffTimers = this:GetChecked() == 1
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
-    end
-end)
-
--- Debuff Icon Size Slider
-local debuffSizeSlider = CreateFrame("Slider", "GudaPlatesDebuffSizeSlider", generalTab, "OptionsSliderTemplate")
-debuffSizeSlider:SetPoint("TOPLEFT", debuffTimerCheckbox, "BOTTOMLEFT", 0, -35)
-debuffSizeSlider:SetWidth(580)
-debuffSizeSlider:SetMinMaxValues(8, 32)
-debuffSizeSlider:SetValueStep(1)
-local debuffSizeText = getglobal(debuffSizeSlider:GetName() .. "Text")
-debuffSizeText:SetFont("Fonts\\FRIZQT__.TTF", 12)
-getglobal(debuffSizeSlider:GetName() .. "Low"):SetText("8")
-getglobal(debuffSizeSlider:GetName() .. "High"):SetText("32")
-debuffSizeSlider:SetScript("OnValueChanged", function()
-    Settings.debuffIconSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Debuff Icon Size: " .. math.floor(this:GetValue()) .. " px")
-    SaveSettings()
-    for plate, _ in pairs(registry) do
-        UpdateNamePlate(plate)
-    end
-end)
-
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
-onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 200, 0)
+onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "BOTTOMLEFT", 0, -10)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
 onlyMyDebuffsLabel:SetText("Only My Debuffs")
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
@@ -3349,12 +3347,43 @@ onlyMyDebuffsCheckbox:SetScript("OnClick", function()
 end)
 
 local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
-targetGlowCheckbox:SetPoint("TOPLEFT", debuffTimerCheckbox, "TOPLEFT", 400, 0)
+targetGlowCheckbox:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "TOPLEFT", 150, 0)
 local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
 targetGlowLabel:SetText("Target Glow")
 targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 targetGlowCheckbox:SetScript("OnClick", function()
     Settings.showTargetGlow = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
+debuffTimerCheckbox:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "TOPLEFT", 300, 0)
+local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
+debuffTimerLabel:SetText("Debuff Timers")
+debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+debuffTimerCheckbox:SetScript("OnClick", function()
+    Settings.showDebuffTimers = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+
+local debuffSizeSlider = CreateFrame("Slider", "GudaPlatesDebuffSizeSlider", generalTab, "OptionsSliderTemplate")
+debuffSizeSlider:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "BOTTOMLEFT", 0, -35)
+debuffSizeSlider:SetWidth(580)
+debuffSizeSlider:SetMinMaxValues(8, 32)
+debuffSizeSlider:SetValueStep(1)
+local debuffSizeText = getglobal(debuffSizeSlider:GetName() .. "Text")
+debuffSizeText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+getglobal(debuffSizeSlider:GetName() .. "Low"):SetText("8")
+getglobal(debuffSizeSlider:GetName() .. "High"):SetText("32")
+debuffSizeSlider:SetScript("OnValueChanged", function()
+    Settings.debuffIconSize = this:GetValue()
+    getglobal(this:GetName() .. "Text"):SetText("Debuff Icon Size: " .. math.floor(this:GetValue()) .. " px")
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -4435,6 +4464,7 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesOptionsTransparencySliderText"):SetText("Background Transparency: " .. math.floor(currentTransparency * 100) .. "%")
     getglobal("GudaPlatesHideBorderCheckbox"):SetChecked(Settings.hideOptionsBorder)
     getglobal("GudaPlatesOverlapCheckbox"):SetChecked(nameplateOverlap)
+    getglobal("GudaPlatesClickThroughCheckbox"):SetChecked(clickThrough)
     getglobal("GudaPlatesLevelFontSlider"):SetValue(Settings.levelFontSize)
     getglobal("GudaPlatesLevelFontSliderText"):SetText("Level Font Size: " .. Settings.levelFontSize)
     getglobal("GudaPlatesNameFontSlider"):SetValue(Settings.nameFontSize)
