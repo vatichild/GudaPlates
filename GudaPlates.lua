@@ -1001,7 +1001,7 @@ local function UpdateNamePlate(frame)
         end
 
         -- Method 2: Check name against Critters list
-        if not isCritter then
+        if not isCritter and GudaPlates.Critters then
             local plateName = nameplate.name and nameplate.name:GetText()
             if plateName and GudaPlates.Critters[string_lower(plateName)] then
                 isCritter = true
