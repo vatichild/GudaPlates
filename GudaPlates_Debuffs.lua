@@ -144,8 +144,9 @@ end
 
 function GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
     nameplate.debuffs = {}
+    local plateName = nameplate:GetName() or "UnknownPlate"
     for i = 1, MAX_DEBUFFS do
-        local debuff = CreateFrame("Frame", nil, nameplate)
+        local debuff = CreateFrame("Frame", plateName .. "Debuff" .. i, nameplate)
         debuff:SetWidth(DEBUFF_SIZE)
         debuff:SetHeight(DEBUFF_SIZE)
         debuff:SetFrameLevel(nameplate.health:GetFrameLevel() + 5)

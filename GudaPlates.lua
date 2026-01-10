@@ -1946,34 +1946,10 @@ local function UpdateNamePlate(frame)
 end
 GudaPlates.UpdateNamePlate = UpdateNamePlate  -- Expose for Options module
 
--- Check if ShaguTweaks libnameplate is available
-local function TryShaguTweaksHook()
-    if ShaguTweaks and ShaguTweaks.libnameplate then
-        Print("Using ShaguTweaks libnameplate")
+-- Note: We no longer use ShaguTweaks libnameplate callbacks because they run
+-- in an unnamed frame context, causing pfDebug to show <unnamed>:OnUpdate().
+-- Instead, we always use our own scanner which runs in GudaPlatesFrame:OnUpdate().
 
-        -- Hook into ShaguTweaks OnInit
-        ShaguTweaks.libnameplate.OnInit["GudaPlates"] = function(plate)
-            if plate and not registry[plate] then
-                HandleNamePlate(plate)
-            end
-        end
-
-        -- Hook into ShaguTweaks OnUpdate for our updates
-        -- Note: ShaguTweaks passes 'this' as the plate in Lua 5.0 style
-        ShaguTweaks.libnameplate.OnUpdate["GudaPlates"] = function()
-            local plate = this
-            if plate and plate:IsShown() and registry[plate] then
-                UpdateNamePlate(plate)
-            end
-        end
-
-        return true
-    end
-    return false
-end
-
--- Try ShaguTweaks hook first, otherwise use our own scanner
-local usingShaguTweaks = false
 local scanCount = 0
 local lastChildCount = 0
 -- Throttle for debuff timer cleanup
@@ -1984,41 +1960,7 @@ GudaPlatesEventFrame:SetScript("OnUpdate", function()
         GudaPlates_Debuffs:CleanupTimers()
     end
 
-    -- Try to hook ShaguTweaks once
-    if not usingShaguTweaks and ShaguTweaks and ShaguTweaks.libnameplate then
-        if TryShaguTweaksHook() then
-            usingShaguTweaks = true
-        end
-    end
-
-    -- If using ShaguTweaks, still apply overlap settings
-    if usingShaguTweaks then
-        for plate, nameplate in pairs(registry) do
-            if plate:IsShown() then
-            -- Apply overlap/stacking setting
-                if nameplateOverlap then
-                    plate:EnableMouse(false)
-                    if plate:GetWidth() > 1 then
-                        plate:SetWidth(1)
-                        plate:SetHeight(1)
-                    end
-                    -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                    -- If clickThrough, disable mouse on nameplate too
-                    nameplate:EnableMouse(not clickThrough)
-                else
-                    -- If NOT clickThrough, enable mouse on plate; otherwise disable
-                    plate:EnableMouse(not clickThrough)
-                    nameplate:EnableMouse(false)
-                end
-
-                -- Ensure dimensions are correct
-                UpdateNamePlateDimensions(plate)
-            end
-        end
-        return
-    end
-
-    -- Our own scanning logic
+    -- Scanning logic (always use our own scanner for proper frame attribution in pfDebug)
     parentcount = WorldFrame:GetNumChildren()
 
     -- Only refresh cached children when count changes (reduces garbage)
