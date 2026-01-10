@@ -138,6 +138,16 @@ local function Print(msg)
 end
 GudaPlates.Print = Print  -- Expose for Options module
 
+-- HookScript helper - hooks a script handler without replacing existing one
+-- Similar to ShaguPlates API implementation
+local function HookScript(frame, script, func)
+    local prev = frame:GetScript(script)
+    frame:SetScript(script, function(a1, a2, a3, a4, a5, a6, a7, a8, a9)
+        if prev then prev(a1, a2, a3, a4, a5, a6, a7, a8, a9) end
+        func(a1, a2, a3, a4, a5, a6, a7, a8, a9)
+    end)
+end
+
 local initialized = 0
 local parentcount = 0
 local platecount = 0
@@ -744,6 +754,50 @@ local function UpdateNamePlateDimensions(frame)
 end
 GudaPlates.UpdateNamePlateDimensions = UpdateNamePlateDimensions  -- Expose for Options module
 
+-- OnShow handler - immediately hides original Blizzard elements to prevent flash
+-- This is called when the nameplate parent frame becomes visible
+local function NamePlate_OnShow()
+    local frame = this
+    local nameplate = registry[frame]
+    if not nameplate then return end
+
+    local original = nameplate.original
+    if not original then return end
+
+    -- Immediately hide original healthbar
+    if original.healthbar then
+        original.healthbar:SetStatusBarTexture("")
+        original.healthbar:SetAlpha(0)
+    end
+
+    -- Hide all cached regions (textures/fontstrings except raid icon)
+    local cachedRegions = nameplate.cachedRegions
+    local regionsCount = nameplate.cachedRegionsCount or 0
+    for i = 1, regionsCount do
+        local region = cachedRegions[i]
+        if region and region ~= original.raidicon and region ~= frame.raidicon then
+            if region.SetAlpha then region:SetAlpha(0) end
+        end
+    end
+
+    -- Hide ShaguTweaks .new frame if present
+    if frame.new then
+        frame.new:SetAlpha(0)
+    end
+
+    -- Reset overlapApplied flag so UpdateNamePlate applies settings
+    nameplate.overlapApplied = nil
+
+    -- Show our custom nameplate
+    if not nameplate:IsShown() then
+        nameplate:Show()
+    end
+
+    -- Re-enable OnUpdate in case we were in idle mode
+    if GudaPlates.EnableOnUpdate then
+        GudaPlates.EnableOnUpdate()
+    end
+end
 
 local function HandleNamePlate(frame)
     if not frame then return end
@@ -1024,6 +1078,19 @@ local function HandleNamePlate(frame)
 
     frame.nameplate = nameplate
     registry[frame] = nameplate
+
+    -- Hook OnShow to immediately hide original elements when nameplate appears
+    -- This prevents the brief flash of Blizzard nameplates before we process them
+    HookScript(frame, "OnShow", NamePlate_OnShow)
+
+    -- If frame is already visible, hide originals immediately
+    if frame:IsShown() then
+        -- Temporarily set 'this' for the handler since it uses 'this'
+        local oldThis = this
+        this = frame
+        NamePlate_OnShow()
+        this = oldThis
+    end
 
     --Print("Hooked: " .. platename)
 end
@@ -1992,7 +2059,7 @@ local lastDebuffCleanup = 0
 local CLEANUP_INTERVAL = 1
 -- Throttle plate updates when out of combat
 local lastPlateUpdate = 0
-local PLATE_UPDATE_INTERVAL = 0.5 -- 2x per second when out of combat
+local PLATE_UPDATE_INTERVAL = 0.5
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
 -- Idle detection - disable OnUpdate when nothing to do
