@@ -1,6 +1,21 @@
 -- GudaPlates Debuff Logic
 GudaPlates_Debuffs = {}
 
+-- Performance: Upvalue frequently used globals
+local pairs = pairs
+local ipairs = ipairs
+local tostring = tostring
+local tonumber = tonumber
+local string_find = string.find
+local string_format = string.format
+local string_gsub = string.gsub
+local string_lower = string.lower
+local math_floor = math.floor
+local GetTime = GetTime
+local UnitDebuff = UnitDebuff
+local UnitGUID = UnitGUID
+local CreateFrame = CreateFrame
+
 local SpellDB = GudaPlates_SpellDB
 local Settings = GudaPlates.Settings
 local _, playerClass = UnitClass("player")
@@ -18,15 +33,15 @@ function GudaPlates_Debuffs:FormatTime(remaining)
     if not remaining or remaining < 0 then return "", 1, 1, 1, 1 end
 
     if remaining > 3600 then
-        return math.floor(remaining / 3600 + 0.5) .. "h", 0.5, 0.5, 0.5, 1
+        return math_floor(remaining / 3600 + 0.5) .. "h", 0.5, 0.5, 0.5, 1
     elseif remaining > 60 then
-        return math.floor(remaining / 60 + 0.5) .. "m", 0.5, 0.5, 0.5, 1
+        return math_floor(remaining / 60 + 0.5) .. "m", 0.5, 0.5, 0.5, 1
     elseif remaining > 10 then
-        return math.floor(remaining + 0.5) .. "", 0.7, 0.7, 0.7, 1
+        return math_floor(remaining + 0.5) .. "", 0.7, 0.7, 0.7, 1
     elseif remaining > 5 then
-        return math.floor(remaining + 0.5) .. "", 1, 1, 0, 1
+        return math_floor(remaining + 0.5) .. "", 1, 1, 0, 1
     elseif remaining > 0 then
-        return string.format("%.1f", remaining), 1, 0, 0, 1
+        return string_format("%.1f", remaining), 1, 0, 0, 1
     end
     return "", 1, 1, 1, 1
 end
@@ -81,7 +96,7 @@ function GudaPlates_Debuffs:SealHandler(attacker, victim)
             if guid then self.timers[guid .. "_" .. effect] = nil end
 
             -- Handle icon variations
-            local iconVar = string.gsub(effect, "Judgement of", "Seal of")
+            local iconVar = string_gsub(effect, "Judgement of", "Seal of")
             if iconVar ~= effect then
                 self.timers[victim .. "_" .. iconVar] = nil
                 if guid then self.timers[guid .. "_" .. iconVar] = nil end
@@ -181,8 +196,8 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
         debuff:SetHeight(size)
         
         -- Scale fonts proportionally
-        local cdFontSize = math.floor(size * 0.625 + 0.5) -- 10 for 16px
-        local countFontSize = math.floor(size * 0.5625 + 0.5) -- 9 for 16px
+        local cdFontSize = math_floor(size * 0.625 + 0.5) -- 10 for 16px
+        local countFontSize = math_floor(size * 0.5625 + 0.5) -- 9 for 16px
         
         debuff.cd:SetFont(Settings.textFont, cdFontSize, "OUTLINE")
         debuff.count:SetFont(Settings.textFont, countFontSize, "OUTLINE")
@@ -338,7 +353,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
 
             -- Paladin special handling
-            if playerClass == "PALADIN" and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ") or effect == "Crusader Strike" or effect == "Hammer of Justice" or effect == "Repentance") then
+            if playerClass == "PALADIN" and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of ") or effect == "Crusader Strike" or effect == "Hammer of Justice" or effect == "Repentance") then
                 isMyDebuff = true
                 claimedMyDebuffs[effect] = true
                 local dbData = self:GetSpellData(unitstr, plateName, effect, 0)
@@ -505,7 +520,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     cached.lastSeen = now
 
                     -- Sync with SpellDB for Paladin
-                    if playerClass == "PALADIN" and effect and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of ")) then
+                    if playerClass == "PALADIN" and effect and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of ")) then
                         local dbData = self:GetSpellData(unitstr, plateName, effect, 0)
                         if dbData and dbData.start then
                             cached.startTime = dbData.start
@@ -514,7 +529,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     end
 
                     local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
-                    local isPaladin = playerClass == "PALADIN" and effect and (string.find(effect, "Judgement of ") or string.find(effect, "Seal of "))
+                    local isPaladin = playerClass == "PALADIN" and effect and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of "))
 
                     if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
                         if not isPaladin or (now - cached.startTime) > cached.duration then

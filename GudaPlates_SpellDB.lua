@@ -1,6 +1,14 @@
 -- GudaPlates Spell Database
 -- Debuff duration tracking with rank support (ShaguPlates-style)
 
+-- Performance: Upvalue frequently used globals
+local pairs = pairs
+local type = type
+local tonumber = tonumber
+local string_gfind = string.gfind
+local string_sub = string.sub
+local GetTime = GetTime
+
 GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
 GudaPlates_SpellDB.textureToSpell = {
@@ -162,6 +170,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Blackout"] = {[0]=3},
 	["Mana Burn"] = {[0]=0}, -- instant
 	["Touch of Weakness"] = {[0]=120},
+	["Mind Soothe"] = {[0]=15},
 
 	-- HUNTER
 	["Serpent Sting"] = {[1]=15, [2]=15, [3]=15, [4]=15, [5]=15, [6]=15, [7]=15, [8]=15, [9]=15, [0]=15},
@@ -279,6 +288,7 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
 	["Silence"] = "PRIEST",
 	["Touch of Weakness"] = "PRIEST",
+	["Mind Soothe"] = "PRIEST",
 	-- Warlock
 	["Curse of Weakness"] = "WARLOCK",
 	["Curse of Recklessness"] = "WARLOCK",
@@ -495,7 +505,7 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 			rankNum = rank
 		elseif type(rank) == "string" then
 		-- Extract number from "Rank X" format
-			for num in string.gfind(rank, "(%d+)") do
+			for num in string_gfind(rank, "(%d+)") do
 				rankNum = tonumber(num) or 0
 				break
 			end
@@ -827,7 +837,7 @@ end
 -- Check if a string looks like a SuperWoW GUID
 local function IsGUID(unit)
 	if not unit or type(unit) ~= "string" then return false end
-	return string.sub(unit, 1, 2) == "0x"
+	return string_sub(unit, 1, 2) == "0x"
 end
 
 function GudaPlates_SpellDB:ScanDebuff(unit, index)
