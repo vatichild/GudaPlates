@@ -234,50 +234,6 @@ local function IsTankClass(unit)
     return class and TANK_CLASSES[class]
 end
 
--- Helper function to check if we are in an instance (raid or dungeon)
-local function IsInInstance()
-    -- On Turtle WoW / Vanilla 1.12.1
-    -- 1. Check if IsInInstance() exists (some clients backport it)
-    if getglobal("IsInInstance") then
-        local inInst, instType = getglobal("IsInInstance")()
-        if inInst then return true end
-    end
-
-    -- 2. Check for raid or party and zone type
-    local pvpType, isFFA, faction = GetZonePVPInfo()
-    -- 'sanctuary' is usually used for safe zones in cities but also some instances in custom servers
-    -- More importantly, check if we are in a raid/party and if the zone is an instance
-    
-    -- 3. Check if we have a raid/party and if GetRealZoneText() matches common instance names
-    -- but a better way in 1.12.1 is checking if the world map is unavailable or using specific zone checks
-    
-    -- For Turtle WoW specifically, many people use GetRealZoneText and compare with known instances
-    -- but we can use a simpler heuristic: if we are in a raid, we are likely in an instance or world boss.
-    -- The requirement says "raid or dungeon".
-    
-    -- Let's use a more robust check for 1.12.1
-    local zone = GetRealZoneText()
-    if not zone or zone == "" then return false end
-    
-    -- Instances usually have a specific map ID or are not on continents
-    -- In 1.12.1, we can't easily get MapID, but we can check if we're in a party/raid 
-    -- and if the zone is NOT one of the major continents.
-    
-    -- Turtle WoW uses a backported IsInInstance if I'm not mistaken.
-    -- If not, checking for raid status is a common fallback for "raid or dungeon" 
-    -- because you're almost always in a party/raid in those.
-    if UnitInRaid("player") or GetNumPartyMembers() > 0 then
-        -- If in a group, check if we are in a known non-instance zone
-        local isContinent = (zone == "Azeroth" or zone == "Kalimdor" or zone == "Eastern Kingdoms" or zone == "Stranglethorn Vale" or zone == "Tanaris") -- etc
-        if not isContinent then
-            -- This is still a bit weak, but better than nothing.
-            -- Actually, let's just trust IsInInstance() if it exists.
-        end
-    end
-    
-    return false 
-end
-
 -- Helper function to check if a unit is in the player's group (player, party, or raid)
 local function IsInPlayerGroup(unit)
     if not unit or not UnitExists(unit) then return false end
@@ -1468,72 +1424,47 @@ local function UpdateNamePlate(frame)
 
         -- Check if mob is tapped by others
         local isTappedByOthers = false
-        
-        -- Requirement: In instances, ignore tapping coloring
-        local inInstance = IsInInstance()
-        
-        if not inInstance then
-            -- 1. Check original color for gray (tapped)
-            -- Blizzard gray for tapped is (0.5, 0.5, 0.5)
-            if r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6 then
-                isTappedByOthers = true
-            end
 
-            -- 2. Use API for 100% accuracy if unit is available
-            local unitForAPI = nil
-            if hasValidGUID then
-                unitForAPI = unitstr
-            elseif UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
-                unitForAPI = "target"
-            end
+        -- 1. Check original color for gray (tapped)
+        -- Blizzard gray for tapped is (0.5, 0.5, 0.5)
+        if r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6 then
+            isTappedByOthers = true
+        end
 
-            if not isTappedByOthers and unitForAPI then
-                if UnitIsTapped(unitForAPI) and not UnitIsTappedByPlayer(unitForAPI) then
-                    -- Double check if the mob is attacking someone in our group (excluding player)
-                    -- (Fixes cases where joining a group mid-combat doesn't update UnitIsTappedByPlayer immediately)
-                    local isMobTargetingGroupMate = false
-                    local apiTarget = unitForAPI .. "target"
-                    if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
-                        isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
-                    end
-                    
-                    if not isMobTargetingGroupMate then
-                        isTappedByOthers = true
-                    end
-                end
-            end
+        -- 2. Use API for 100% accuracy if unit is available
+        local unitForAPI = nil
+        if hasValidGUID then
+            unitForAPI = unitstr
+        elseif UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+            unitForAPI = "target"
+        end
 
-            -- 3. Also keep the current logic as backup if color detection fails for some reason
-            -- or if it's already attacking someone not in group.
-            -- IMPORTANT: Only run this fallback if we haven't already confirmed it's ours (original bar not gray)
-            local originalIsGray = (r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6)
-            if not isTappedByOthers and mobInCombat and (originalIsGray or (r < 0.1 and g < 0.1 and b < 0.1)) then
+        if not isTappedByOthers and unitForAPI then
+            if UnitIsTapped(unitForAPI) and not UnitIsTappedByPlayer(unitForAPI) then
+                -- Double check if the mob is attacking someone in our group (excluding player)
                 local isMobTargetingGroupMate = false
-
-                if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
-                    isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
+                local apiTarget = unitForAPI .. "target"
+                if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
+                    isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
                 end
-                
-                -- If it's targeting us, we don't set isMobTargetingGroupMate to true here.
-                -- This means if it was already tapped (but color detection failed), 
-                -- it will stay tapped even if attacking us, unless UnitIsTappedByPlayer says otherwise (handled by API check above).
-                
-                -- However, if it's NOT targeting a group mate AND it's not our tap, it's tapped by others.
-                -- But wait, if it's targeting US, isMobTargetingGroupMate is false.
-                -- If we are the one who tapped it, it shouldn't be here (ideally).
-                -- But Block 3 is a fallback for non-target plates where we don't have UnitIsTapped.
-                -- For non-target plates, if it's attacking us, we usually assume it's ours.
-                -- This is tricky. But if color detection (Block 1) didn't catch it as gray, 
-                -- it's probably NOT tapped by someone else, or the color hasn't updated.
-                
-                -- Let's stick to the user request: "shouldn't change any color if I aggro it".
-                -- If it was gray, Block 1 should catch it.
-                -- If Block 1 caught it, isTappedByOthers is true, and Block 2 & 3 don't run.
-                
-                -- If it's attacking us, we'll keep the existing logic for now but be careful.
-                local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
-                isTappedByOthers = not isMobTargetingGroup
+
+                if not isMobTargetingGroupMate then
+                    isTappedByOthers = true
+                end
             end
+        end
+
+        -- 3. Fallback for non-target plates
+        local originalIsGray = (r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6)
+        if not isTappedByOthers and mobInCombat and (originalIsGray or (r < 0.1 and g < 0.1 and b < 0.1)) then
+            local isMobTargetingGroupMate = false
+
+            if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
+                isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
+            end
+
+            local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
+            isTappedByOthers = not isMobTargetingGroup
         end
 
         -- Apply color based on state (priority order: TAPPED -> STUNNED -> NEUTRAL -> THREAT COLORS)
