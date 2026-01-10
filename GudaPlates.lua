@@ -2367,6 +2367,15 @@ local lastPlateUpdate = 0
 local PLATE_UPDATE_INTERVAL = 0.5
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
+
+-- Helper function to reset nameplate scanning state (called on zone change)
+-- Defined here to capture locals without adding upvalues to event handler
+local function ResetNameplateScanning()
+    initializedChildren = 0
+    for k in pairs(registry) do registry[k] = nil end
+    cachedWorldChildCount = 0
+end
+GudaPlates.ResetNameplateScanning = ResetNameplateScanning
 -- Idle detection - disable OnUpdate when nothing to do
 local idleFrames = 0
 local IDLE_THRESHOLD = 30 -- After 30 frames of no work, go idle
@@ -2610,6 +2619,14 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         for k in pairs(recentMeleeHits) do recentMeleeHits[k] = nil end
         if SpellDB then SpellDB.objects = {} end
         if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
+
+        -- Reset nameplate scanning state to force re-scan of all nameplates
+        -- This fixes nameplates not being styled after entering dungeons/raids
+        if GudaPlates.ResetNameplateScanning then
+            GudaPlates.ResetNameplateScanning()
+        end
+        EnableOnUpdate()  -- Wake up OnUpdate to start scanning
+
         Print("Initialized. Scanning...")
         if twthreat_active then
             Print("TWThreat detected - full threat colors enabled")
