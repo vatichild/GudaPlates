@@ -373,6 +373,22 @@ GudaPlates_SpellDB.HUNTER_TRAP_TEXTURES = {
 	["Interface\\Icons\\Ability_Ensnare"] = "Entrapment",
 }
 
+-- Hunter Stings - for Hunter players, treat as owned for reliable display
+GudaPlates_SpellDB.HUNTER_STINGS = {
+	["Serpent Sting"] = true,
+	["Viper Sting"] = true,
+	["Scorpid Sting"] = true,
+	["Wyvern Sting"] = true,
+}
+
+-- Hunter Sting TEXTURES - for icon-based detection when tooltip scanning fails
+GudaPlates_SpellDB.HUNTER_STING_TEXTURES = {
+	["Interface\\Icons\\Ability_Hunter_Quickshot"] = "Serpent Sting",
+	["Interface\\Icons\\Ability_Hunter_AimedShot"] = "Viper Sting",
+	["Interface\\Icons\\Ability_Hunter_CriticalShot"] = "Scorpid Sting",
+	["Interface\\Icons\\INV_Spear_02"] = "Wyvern Sting",
+}
+
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
 GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Warrior

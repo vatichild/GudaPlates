@@ -290,6 +290,21 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             effect = SpellDB.HUNTER_TRAP_TEXTURES[texture]
         end
 
+        -- Hunter stings: For Hunter players, ensure reliable display
+        -- Ownership tracking can sometimes fail, so we force-detect these
+        local isHunterSting = false
+        if playerClass == "HUNTER" then
+            -- Check by effect name first
+            if effect and SpellDB.HUNTER_STINGS and SpellDB.HUNTER_STINGS[effect] then
+                isHunterSting = true
+            -- Fallback: check by texture if effect name is missing or unknown
+            elseif texture and SpellDB.HUNTER_STING_TEXTURES and SpellDB.HUNTER_STING_TEXTURES[texture] then
+                isHunterSting = true
+                -- Always use the correct effect name from texture mapping for timer tracking
+                effect = SpellDB.HUNTER_STING_TEXTURES[texture]
+            end
+        end
+
         -- Determine ownership
         local isMyDebuff = false
         local duration, timeleft = nil, nil
@@ -301,6 +316,11 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
 
         -- Force Hunter traps as "mine" for Hunter players - for timer tracking
         if isHunterTrap and playerClass == "HUNTER" then
+            isMyDebuff = true
+        end
+
+        -- Force Hunter stings as "mine" for Hunter players - ensures reliable display
+        if isHunterSting then
             isMyDebuff = true
         end
 
