@@ -450,7 +450,6 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 -- ============================================
 GudaPlates_SpellDB.objects = {}
 GudaPlates_SpellDB.pending = {}  -- Array: [1]=unit, [2]=unitlevel, [3]=effect, [4]=duration
-local lastspell = nil
 
 -- ============================================
 -- OWNER_BOUND_DEBUFFS OWNERSHIP CACHE
@@ -622,13 +621,6 @@ end
 -- EFFECT TRACKING
 -- ============================================
 
-function GudaPlates_SpellDB:RevertLastAction()
-	if lastspell and lastspell.start_old then
-		lastspell.start = lastspell.start_old
-		lastspell.start_old = nil
-	end
-end
-
 function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration, isOwn)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
@@ -644,11 +636,7 @@ function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration, isOwn)
 
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
-	-- Save current effect as lastspell for potential revert
-	lastspell = self.objects[unit][unitlevel][effect]
-
 	self.objects[unit][unitlevel][effect].effect = effect
-	self.objects[unit][unitlevel][effect].start_old = self.objects[unit][unitlevel][effect].start
 	self.objects[unit][unitlevel][effect].start = GetTime()
 	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
 	self.objects[unit][unitlevel][effect].isOwn = isOwn or false -- default to false (other players' spells)

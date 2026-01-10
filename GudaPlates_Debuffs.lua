@@ -4,12 +4,9 @@ GudaPlates_Debuffs = {}
 -- Performance: Upvalue frequently used globals
 local pairs = pairs
 local ipairs = ipairs
-local tostring = tostring
-local tonumber = tonumber
 local string_find = string.find
 local string_format = string.format
 local string_gsub = string.gsub
-local string_lower = string.lower
 local math_floor = math.floor
 local GetTime = GetTime
 local UnitDebuff = UnitDebuff

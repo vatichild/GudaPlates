@@ -17,27 +17,15 @@ local tonumber = tonumber
 local unpack = unpack
 local getglobal = getglobal
 
--- Lua string functions
+-- Lua string functions (only upvalue those actually used)
 local string_find = string.find
 local string_lower = string.lower
-local string_upper = string.upper
 local string_format = string.format
 local string_gsub = string.gsub
 local string_gfind = string.gfind
-local string_sub = string.sub
-local string_len = string.len
 
 -- Lua math functions
 local math_floor = math.floor
-local math_ceil = math.ceil
-local math_abs = math.abs
-local math_max = math.max
-local math_min = math.min
-
--- Lua table functions
-local table_insert = table.insert
-local table_remove = table.remove
-local table_getn = table.getn
 
 -- WoW API functions (client-side)
 local GetTime = GetTime
