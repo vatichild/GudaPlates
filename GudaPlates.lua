@@ -2580,6 +2580,10 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
             end
         end
     elseif arg1 and COMBAT_EVENTS[event] then
+        -- Debug: verify combat events are reaching here
+        if GudaPlates_Debuffs and GudaPlates_Debuffs.DEBUG_JUDGEMENT then
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] COMBAT_EVENT: " .. event .. " - " .. string_sub(arg1, 1, 50))
+        end
         if GudaPlates.ParseAttackHit then GudaPlates.ParseAttackHit(arg1) end
     end
 
@@ -3031,12 +3035,14 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             local duration = spellName and SpellDB and SpellDB:GetDuration(spellName, 0)
             local durationStr = duration and (duration .. "s") or "NOT IN DB"
             Print(i .. ": " .. (spellName or "UNKNOWN") .. " (" .. durationStr .. ")")
+            Print("   Texture: " .. texture)
             -- Check if we have tracked data
-            if SpellDB and spellName then
-                local tracked = SpellDB:GetTrackedDebuff(targetName, spellName)
-                if tracked then
+            if SpellDB and spellName and SpellDB.FindEffectData then
+                local unitlevel = UnitLevel("target") or 0
+                local tracked = SpellDB:FindEffectData(targetName, unitlevel, spellName)
+                if tracked and tracked.start then
                     local remaining = tracked.duration - (GetTime() - tracked.start)
-                    Print("   -> TRACKED: " .. string_format("%.1f", remaining) .. "s left (rank " .. (tracked.rank or 0) .. ")")
+                    Print("   -> TRACKED: " .. string_format("%.1f", remaining) .. "s left")
                 end
             end
         end
@@ -3144,6 +3150,28 @@ SlashCmdList["GUDAPLATES"] = function(msg)
                 Print("Available presets: lightblue, cyan, green, teal, purple, pink, yellow, white, gray")
             end
         end
+    elseif msg == "debugjudge" then
+        if GudaPlates_Debuffs and GudaPlates_Debuffs.ToggleJudgeDebug then
+            GudaPlates_Debuffs:ToggleJudgeDebug()
+            Print("DEBUG_JUDGEMENT is now: " .. tostring(GudaPlates_Debuffs.DEBUG_JUDGEMENT))
+        else
+            Print("GudaPlates_Debuffs not loaded")
+        end
+    elseif msg == "judgements" or msg == "judge" then
+        if GudaPlates_Debuffs and GudaPlates_Debuffs.ShowJudgements then
+            GudaPlates_Debuffs:ShowJudgements()
+        else
+            Print("GudaPlates_Debuffs not loaded")
+        end
+    elseif msg == "testrefresh" then
+        -- Manually trigger judgement refresh to test if logic works
+        if GudaPlates_Debuffs and GudaPlates_Debuffs.SealHandler then
+            Print("Manually triggering SealHandler...")
+            GudaPlates_Debuffs:SealHandler("You", UnitName("target") or "test")
+            Print("Done. Check if judgement timer refreshed.")
+        else
+            Print("GudaPlates_Debuffs.SealHandler not available")
+        end
     elseif msg == "finddebuff" then
         if UnitExists("target") then
             Print("=== All Debuffs on Target ===")
@@ -3166,6 +3194,8 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         Print("Commands: /gp tank | /gp dps | /gp toggle | /gp config")
         Print("         /gp othertank <color> - Set Other Tank Aggro color")
         Print("         /gp debug - Show target debuffs with tooltip scanning")
+        Print("         /gp debugjudge - Toggle Paladin Judgement refresh debug")
+        Print("         /gp judge - Show tracked judgements on target")
         Print("         /gp tracked - Show all tracked debuffs")
         Print("         /gp pending - Show pending spell cast")
         Print("         /gp spelldb - Test SpellDB loading")

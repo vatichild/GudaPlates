@@ -76,75 +76,215 @@ function GudaPlates_Debuffs:IsDebuffRedundant(unit, effect, index)
     return false
 end
 
--- Helper function to refresh judgements on the current target
+-- Debug flag for judgement refresh (toggle with /gp debugjudge)
+local DEBUG_JUDGEMENT = false
+GudaPlates_Debuffs.DEBUG_JUDGEMENT = DEBUG_JUDGEMENT
+
+-- Helper function to refresh judgements on the current target (ShaguPlates-style)
 -- Only refreshes judgements that ALREADY EXIST on the target
+-- This is called on ANY melee hit - we refresh judgements on current target
 local function RefreshJudgementsOnTarget()
+    local showDebug = DEBUG_JUDGEMENT or GudaPlates_Debuffs.DEBUG_JUDGEMENT
     if playerClass ~= "PALADIN" then return end
-    if not UnitExists("target") then return end
+    if not UnitExists("target") then
+        if showDebug then
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] No target exists")
+        end
+        return
+    end
+    if not SpellDB or not SpellDB.objects then
+        if showDebug then
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] SpellDB or SpellDB.objects not available")
+        end
+        return
+    end
 
     local name = UnitName("target")
     local level = UnitLevel("target") or 0
     local guid = UnitGUID and UnitGUID("target")
 
+    -- Check if we have any data for this target
+    local hasNameData = name and SpellDB.objects[name]
+    local hasGuidData = guid and SpellDB.objects[guid]
+
+    if showDebug then
+        DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Target: %s, lvl=%d, hasName=%s, hasGuid=%s",
+            name or "nil", level, tostring(hasNameData ~= nil), tostring(hasGuidData ~= nil)))
+        -- Dump what levels we have for this target
+        if hasNameData then
+            local levels = ""
+            for lvl, _ in pairs(SpellDB.objects[name]) do
+                levels = levels .. tostring(lvl) .. " "
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] Name data levels: " .. levels)
+        end
+        if hasGuidData then
+            local levels = ""
+            for lvl, _ in pairs(SpellDB.objects[guid]) do
+                levels = levels .. tostring(lvl) .. " "
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] GUID data levels: " .. levels)
+        end
+    end
+
+    if not hasNameData and not hasGuidData then return end
+
     for _, effect in ipairs(JUDGEMENT_EFFECTS) do
-        -- Only refresh if the judgement ALREADY EXISTS on the target
-        local data = GudaPlates_Debuffs:GetSpellData(guid, name, effect, level)
-        if data and data.start then
-            local duration = SpellDB:GetDuration(effect, 0)
-            if duration and duration > 0 then
-                SpellDB:RefreshEffect(name, level, effect, duration, true)
-                if guid then SpellDB:RefreshEffect(guid, level, effect, duration, true) end
+        local found = false
+        local duration = SpellDB:GetDuration(effect, 0) or 10
 
-                -- Clear visual cache to force re-read
-                GudaPlates_Debuffs.timers[name .. "_" .. effect] = nil
-                if guid then GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil end
-
-                -- Handle icon variations (Seal of X icons for Judgement of X)
-                local iconVar = string_gsub(effect, "Judgement of", "Seal of")
-                if iconVar ~= effect then
-                    GudaPlates_Debuffs.timers[name .. "_" .. iconVar] = nil
-                    if guid then GudaPlates_Debuffs.timers[guid .. "_" .. iconVar] = nil end
+        -- Check by name: first try exact level, then level 0, then search all levels
+        if hasNameData then
+            if SpellDB.objects[name][level] and SpellDB.objects[name][level][effect] then
+                SpellDB.objects[name][level][effect].start = GetTime()
+                SpellDB.objects[name][level][effect].duration = duration
+                found = true
+                if showDebug then
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on %s (name+lvl=%d)", effect, name, level))
                 end
+            elseif SpellDB.objects[name][0] and SpellDB.objects[name][0][effect] then
+                SpellDB.objects[name][0][effect].start = GetTime()
+                SpellDB.objects[name][0][effect].duration = duration
+                found = true
+                if showDebug then
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on %s (name+0)", effect, name))
+                end
+            else
+                -- Fallback: search all levels (in case stored at different level)
+                for lvl, effects in pairs(SpellDB.objects[name]) do
+                    if effects[effect] then
+                        effects[effect].start = GetTime()
+                        effects[effect].duration = duration
+                        found = true
+                        if showDebug then
+                            DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on %s (name+anylvl=%d)", effect, name, lvl))
+                        end
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Check by GUID: first try exact level, then level 0, then search all levels
+        if hasGuidData and not found then
+            if SpellDB.objects[guid][level] and SpellDB.objects[guid][level][effect] then
+                SpellDB.objects[guid][level][effect].start = GetTime()
+                SpellDB.objects[guid][level][effect].duration = duration
+                found = true
+                if showDebug then
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on GUID (guid+lvl=%d)", effect, level))
+                end
+            elseif SpellDB.objects[guid][0] and SpellDB.objects[guid][0][effect] then
+                SpellDB.objects[guid][0][effect].start = GetTime()
+                SpellDB.objects[guid][0][effect].duration = duration
+                found = true
+                if showDebug then
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on GUID (guid+0)", effect))
+                end
+            else
+                -- Fallback: search all levels
+                for lvl, effects in pairs(SpellDB.objects[guid]) do
+                    if effects[effect] then
+                        effects[effect].start = GetTime()
+                        effects[effect].duration = duration
+                        found = true
+                        if showDebug then
+                            DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] Refreshed %s on GUID (guid+anylvl=%d)", effect, lvl))
+                        end
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Clear visual cache if we refreshed
+        if found then
+            GudaPlates_Debuffs.timers[name .. "_" .. effect] = nil
+            if guid then GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil end
+
+            -- Handle icon variations (Seal of X icons for Judgement of X)
+            local iconVar = string_gsub(effect, "Judgement of", "Seal of")
+            if iconVar ~= effect then
+                GudaPlates_Debuffs.timers[name .. "_" .. iconVar] = nil
+                if guid then GudaPlates_Debuffs.timers[guid .. "_" .. iconVar] = nil end
             end
         end
     end
 end
 
--- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
--- Only refreshes judgements that ALREADY EXIST on the target (conservative approach)
-function GudaPlates_Debuffs:SealHandler(attacker, victim)
-    if not attacker or not victim or playerClass ~= "PALADIN" then return end
-    if victim == "you" then victim = "You" end
+-- Function to toggle judgement debug
+function GudaPlates_Debuffs:ToggleJudgeDebug()
+    DEBUG_JUDGEMENT = not DEBUG_JUDGEMENT
+    GudaPlates_Debuffs.DEBUG_JUDGEMENT = DEBUG_JUDGEMENT
+    DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] Judgement debug: " .. (DEBUG_JUDGEMENT and "ON" or "OFF"))
+end
 
-    local isOwn = (attacker == "You" or attacker == UnitName("player"))
-    if not isOwn then return end
+-- Debug function to show tracked judgements on current target
+function GudaPlates_Debuffs:ShowJudgements()
+    if not UnitExists("target") then
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] No target selected")
+        return
+    end
 
-    local isTarget = UnitExists("target") and (UnitName("target") == victim or (victim == "You" and UnitIsUnit("player", "target")))
-    local guid = isTarget and UnitGUID and UnitGUID("target")
-    local level = isTarget and UnitLevel("target") or 0
+    local name = UnitName("target")
+    local level = UnitLevel("target") or 0
+    local guid = UnitGUID and UnitGUID("target")
 
-    for _, effect in ipairs(JUDGEMENT_EFFECTS) do
-        -- Only refresh if the judgement ALREADY EXISTS on the target
-        local data = self:GetSpellData(guid, victim, effect, level)
-        if data and data.start then
-            local duration = SpellDB:GetDuration(effect, 0)
-            if duration and duration > 0 then
-                SpellDB:RefreshEffect(victim, level, effect, duration, true)
-                if guid then SpellDB:RefreshEffect(guid, level, effect, duration, true) end
+    DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] === Judgements on " .. (name or "target") .. " ===")
 
-                -- Clear visual cache to force re-read
-                self.timers[victim .. "_" .. effect] = nil
-                if guid then self.timers[guid .. "_" .. effect] = nil end
+    if not SpellDB or not SpellDB.objects then
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] SpellDB not available")
+        return
+    end
 
-                -- Handle icon variations (Seal of X icons for Judgement of X)
-                local iconVar = string_gsub(effect, "Judgement of", "Seal of")
-                if iconVar ~= effect then
-                    self.timers[victim .. "_" .. iconVar] = nil
-                    if guid then self.timers[guid .. "_" .. iconVar] = nil end
+    -- Check by name
+    if SpellDB.objects[name] then
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] Data exists for name: " .. name)
+        for lvl, effects in pairs(SpellDB.objects[name]) do
+            for eff, data in pairs(effects) do
+                if string_find(eff, "Judgement") then
+                    local timeLeft = data.duration - (GetTime() - data.start)
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("  [%s] lvl=%d: %s %.1fs left", name, lvl, eff, timeLeft))
                 end
             end
         end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] No data for name: " .. name)
     end
+
+    -- Check by GUID
+    if guid and SpellDB.objects[guid] then
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] Data exists for GUID: " .. guid)
+        for lvl, effects in pairs(SpellDB.objects[guid]) do
+            for eff, data in pairs(effects) do
+                if string_find(eff, "Judgement") then
+                    local timeLeft = data.duration - (GetTime() - data.start)
+                    DEFAULT_CHAT_FRAME:AddMessage(string_format("  [GUID] lvl=%d: %s %.1fs left", lvl, eff, timeLeft))
+                end
+            end
+        end
+    elseif guid then
+        DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] No data for GUID: " .. guid)
+    end
+
+    DEFAULT_CHAT_FRAME:AddMessage("[GudaPlates] === End of judgements ===")
+end
+
+-- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
+-- ShaguPlates-style: On ANY melee hit, refresh judgements on CURRENT TARGET
+function GudaPlates_Debuffs:SealHandler(attacker, victim)
+    if playerClass ~= "PALADIN" then return end
+
+    -- Only process our own hits
+    local isOwn = (attacker == "You" or attacker == UnitName("player"))
+    if not isOwn then return end
+
+    if DEBUG_JUDGEMENT or GudaPlates_Debuffs.DEBUG_JUDGEMENT then
+        DEFAULT_CHAT_FRAME:AddMessage(string_format("[Judge] SealHandler: attacker=%s, victim=%s", attacker or "nil", victim or "nil"))
+    end
+
+    -- Refresh judgements on current target (ShaguPlates approach)
+    RefreshJudgementsOnTarget()
 end
 
 -- TurtleWoW: Holy Strike also refreshes judgements (custom Paladin ability)
@@ -429,7 +569,11 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if dbDuration > 0 then
                     local isUnique = SpellDB.SHARED_DEBUFFS and SpellDB.SHARED_DEBUFFS[effect]
                     if isUnique or isMyDebuff then
-                        SpellDB:AddEffect(unitstr or plateName, unitlevel, effect, dbDuration, isMyDebuff)
+                        -- Store by BOTH name and GUID for reliable lookup
+                        SpellDB:AddEffect(plateName, unitlevel, effect, dbDuration, isMyDebuff)
+                        if unitstr and unitstr ~= plateName then
+                            SpellDB:AddEffect(unitstr, unitlevel, effect, dbDuration, isMyDebuff)
+                        end
                     end
                 end
             end
@@ -579,22 +723,38 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                     local cached = debuffTimers[debuffKey]
                     cached.lastSeen = now
 
-                    -- Sync with SpellDB for Paladin
-                    if playerClass == "PALADIN" and effect and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of ")) then
+                    -- Sync with SpellDB for Paladin (only if SpellDB data is not expired)
+                    local isPaladin = playerClass == "PALADIN" and effect and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of "))
+                    local syncedFromSpellDB = false
+                    if isPaladin then
                         local dbData = self:GetSpellData(unitstr, plateName, effect, 0)
-                        if dbData and dbData.start then
-                            cached.startTime = dbData.start
-                            cached.duration = dbData.duration or fallbackDuration
+                        if dbData and dbData.start and dbData.duration then
+                            -- Only sync if SpellDB data is NOT expired
+                            local spellDBTimeLeft = dbData.duration - (now - dbData.start)
+                            if spellDBTimeLeft > 0 then
+                                cached.startTime = dbData.start
+                                cached.duration = dbData.duration
+                                syncedFromSpellDB = true
+                            end
                         end
                     end
 
                     local stacksChanged = stacks and cached.lastStacks and stacks ~= cached.lastStacks
-                    local isPaladin = playerClass == "PALADIN" and effect and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of "))
 
-                    if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
-                        if not isPaladin or (now - cached.startTime) > cached.duration then
+                    -- For Paladins: don't auto-reset expired judgements - let RefreshJudgementsOnTarget handle it
+                    -- For other classes: reset timer if expired or duration changed
+                    if not isPaladin then
+                        if fallbackDuration > 1 and (cached.duration ~= fallbackDuration or (now - cached.startTime) > cached.duration or stacksChanged) then
                             cached.duration = fallbackDuration
                             cached.startTime = now
+                        end
+                    elseif not syncedFromSpellDB then
+                        -- Paladin judgement with expired SpellDB - don't reset, but cap at 0
+                        -- The timer will show as expired; if we're hitting the target,
+                        -- RefreshJudgementsOnTarget will update SpellDB with fresh data
+                        if (now - cached.startTime) > cached.duration then
+                            -- Timer expired - show 0 or let it disappear naturally
+                            -- Don't reset to 10 - that causes the "stuck" issue
                         end
                     end
                     cached.lastStacks = stacks or 0

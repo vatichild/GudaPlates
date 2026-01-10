@@ -42,6 +42,10 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
 	-- Paladin
 	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
+	["Interface\\Icons\\Spell_Holy_HealingAura"] = "Judgement of Light",
+	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
+	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
+	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
 	-- Hunter
 	["Interface\\Icons\\spell_lacerate_1C"] = "Lacerate",
 	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",

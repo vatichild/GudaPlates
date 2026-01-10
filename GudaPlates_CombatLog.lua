@@ -120,28 +120,56 @@ local function ParseCastStart(msg)
 end
 
 local function ParseAttackHit(msg)
-    if not msg or not SpellDB then return end
+    -- Debug: show raw combat message if debug enabled
+    local showDebug = GudaPlates_Debuffs and GudaPlates_Debuffs.DEBUG_JUDGEMENT
+    if showDebug then
+        DEFAULT_CHAT_FRAME:AddMessage("[Judge] ParseAttackHit msg: " .. (msg or "nil"))
+    end
+    if not msg then return end
 
-    -- Ensure we have references
+    -- For Paladin judgement refresh, we don't need SpellDB or recentMeleeHits
+    -- Just parse the message and call SealHandler
+    local attacker, victim = nil, nil
+
+    -- Simple pattern: check if message starts with "You hit " or "You crit "
+    if string.sub(msg, 1, 8) == "You hit " then
+        -- Find " for " to get the victim name
+        local forPos = string.find(msg, " for ")
+        if forPos then
+            victim = string.sub(msg, 9, forPos - 1)
+            attacker = "You"
+        end
+    elseif string.sub(msg, 1, 9) == "You crit " then
+        local forPos = string.find(msg, " for ")
+        if forPos then
+            victim = string.sub(msg, 10, forPos - 1)
+            attacker = "You"
+        end
+    end
+
+    if showDebug then
+        DEFAULT_CHAT_FRAME:AddMessage("[Judge] Parsed: attacker=" .. tostring(attacker) .. ", victim=" .. tostring(victim))
+    end
+
+    -- Call SealHandler for Paladin judgement refresh
+    if attacker == "You" and victim and GudaPlates_Debuffs then
+        GudaPlates_Debuffs:SealHandler(attacker, victim)
+    end
+
+    -- Original melee tracking code (needs SpellDB and recentMeleeHits)
+    if not SpellDB then return end
     if not recentMeleeHits then
         recentMeleeHits = GudaPlates.recentMeleeHits
     end
     if not recentMeleeHits then return end
 
-    local attacker, victim = nil, nil
-    -- Patterns for melee hits (English)
-    -- You hit X for Y.
-    for v in string_gfind(msg, "You hit (.-) for %d+%.") do
-        attacker = "You"
-        victim = v
-        break
-    end
-    if not victim then
-    -- You crit X for Y.
-        for v in string_gfind(msg, "You crit (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
+    if attacker == "You" and victim then
+        recentMeleeHits[victim] = GetTime()
+        if superwow_active and UnitExists("target") and UnitName("target") == victim then
+            local guid = UnitGUID and UnitGUID("target")
+            if guid then
+                recentMeleeHits[guid] = GetTime()
+            end
         end
     end
     if not victim then
@@ -207,6 +235,10 @@ local function ParseAttackHit(msg)
     end
 
     if attacker and victim and GudaPlates_Debuffs then
+        -- Debug output if judgement debug is enabled
+        if GudaPlates_Debuffs.DEBUG_JUDGEMENT then
+            DEFAULT_CHAT_FRAME:AddMessage("[Judge] ParseAttackHit: attacker=" .. (attacker or "nil") .. ", victim=" .. (victim or "nil"))
+        end
         GudaPlates_Debuffs:SealHandler(attacker, victim)
     end
 end
