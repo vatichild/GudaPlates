@@ -1000,7 +1000,15 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Method 2: Fallback - detect neutral units with level 1 and very low HP (typical critters)
+        -- Method 2: Check name against Critters list
+        if not isCritter then
+            local plateName = nameplate.name and nameplate.name:GetText()
+            if plateName and GudaPlates.Critters[string_lower(plateName)] then
+                isCritter = true
+            end
+        end
+
+        -- Method 3: Fallback - detect neutral units with level 1 and very low HP (typical critters)
         if not isCritter and not unitstr then
             local r, g, b = original.healthbar:GetStatusBarColor()
             local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
@@ -1026,14 +1034,21 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Hide the nameplate if it's a critter
+        -- Hide the nameplate AND original frame if it's a critter
         if isCritter then
             nameplate:Hide()
+            -- Also hide original frame elements completely
+            frame:SetAlpha(0)
+            nameplate.isCritterHidden = true
             return
         end
     end
 
     -- Ensure nameplate is shown (in case it was hidden as a critter before)
+    if nameplate.isCritterHidden then
+        frame:SetAlpha(1)
+        nameplate.isCritterHidden = nil
+    end
     if not nameplate:IsShown() then
         nameplate:Show()
     end
