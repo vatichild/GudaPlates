@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(dir \"G:\\\\TurtleWoW 1172 Client\\\\twmoa_1172\\\\Interface\\\\AddOns\\\\GudaPlates\" /B)",
-      "Bash(dir:*)"
-    ]
-  }
-}

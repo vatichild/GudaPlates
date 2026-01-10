@@ -17,8 +17,6 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
-	-- Other
-	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
 	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
@@ -36,6 +34,14 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Ability_Physical_Taunt"] = "Taunt",
 	-- Paladin
 	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
+	-- Hunter
+	["Interface\\Icons\\spell_lacerate_1C"] = "Lacerate",
+	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",
+	["Interface\\Icons\\Spell_Fire_FlameShock"] = "Immolation Trap Effect",
+	["Interface\\Icons\\Spell_Fire_SelfDestruct"] = "Explosive Trap Effect",
+	["Interface\\Icons\\Spell_Frost_FreezingBreath"] = "Frost Trap Aura",
+	-- Other
+	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }
 
 -- Preferred names for textures when encountered as DEBUFFS (context-aware priority)
@@ -167,10 +173,14 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Hunter's Mark"] = {[0]=120},
 	["Counterattack"] = {[0]=5},
 	["Wyvern Sting"] = {[0]=12}, -- sleep, then 12s DoT
-	["Freezing Trap Effect"] = {[0]=20},
+	["Freezing Trap Effect"] = {[1]=10,[2]=15,[3]=20,[0]=20},
 	["Immolation Trap Effect"] = {[0]=15},
+	["Explosive Trap Effect"] = {[0]=20},
+	["Frost Trap Aura"] = {[0]=8},
 	["Intimidation"] = {[0]=3},
 	["Entrapment"] = {[0]=5},
+	["Lacerate"] = {[0]=8},
+	["Scare Beast"] = {[1]=10,[2]=15,[3]=20,[0]=20},
 
 	-- DRUID
 	["Moonfire"] = {[1]=9, [2]=18, [3]=18, [4]=18, [5]=18, [6]=18, [7]=18, [8]=18, [9]=18, [10]=18, [0]=18},
@@ -278,6 +288,13 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	-- Hunter
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
+	["Scare Beast"] = "HUNTER",
+	["Freezing Trap Effect"] = true,
+	["Immolation Trap Effect"] = true,
+	["Explosive Trap Effect"] = true,
+	["Frost Trap Aura"] = true,
+	["Entrapment"] = true,
+
 	-- Paladin
 	["Hammer of Justice"] = "PALADIN",
 	["Repentance"] = "PALADIN",
@@ -336,6 +353,42 @@ GudaPlates_SpellDB.ROGUE_POISON_TEXTURES = {
 	["Interface\\Icons\\INV_Misc_Herb_16"] = "Wound Poison",
 }
 
+-- Hunter Traps - always show regardless of "Only My Debuffs" setting
+-- These are placed on ground and triggered by enemies, so ownership can't be tracked
+GudaPlates_SpellDB.HUNTER_TRAPS = {
+	["Freezing Trap Effect"] = true,
+	["Immolation Trap Effect"] = true,
+	["Explosive Trap Effect"] = true,
+	["Frost Trap Aura"] = true,
+	["Entrapment"] = true,
+}
+
+-- Hunter Trap TEXTURES - for icon-based detection when tooltip scanning fails
+GudaPlates_SpellDB.HUNTER_TRAP_TEXTURES = {
+	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",
+	["Interface\\Icons\\Spell_Fire_FlameShock"] = "Immolation Trap Effect",
+	["Interface\\Icons\\Spell_Fire_SelfDestruct"] = "Explosive Trap Effect",
+	["Interface\\Icons\\Spell_Frost_FreezingBreath"] = "Frost Trap Aura",
+	["Interface\\Icons\\Spell_Frost_FrostNova"] = "Frost Trap Aura",
+	["Interface\\Icons\\Ability_Ensnare"] = "Entrapment",
+}
+
+-- Hunter Stings - for Hunter players, treat as owned for reliable display
+GudaPlates_SpellDB.HUNTER_STINGS = {
+	["Serpent Sting"] = true,
+	["Viper Sting"] = true,
+	["Scorpid Sting"] = true,
+	["Wyvern Sting"] = true,
+}
+
+-- Hunter Sting TEXTURES - for icon-based detection when tooltip scanning fails
+GudaPlates_SpellDB.HUNTER_STING_TEXTURES = {
+	["Interface\\Icons\\Ability_Hunter_Quickshot"] = "Serpent Sting",
+	["Interface\\Icons\\Ability_Hunter_AimedShot"] = "Viper Sting",
+	["Interface\\Icons\\Ability_Hunter_CriticalShot"] = "Scorpid Sting",
+	["Interface\\Icons\\INV_Spear_02"] = "Wyvern Sting",
+}
+
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
 GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	-- Warrior
@@ -369,6 +422,8 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 
 	-- Hunter
 	["Serpent Sting"] = true,
+	["Wing Clip"] = true,
+	["Lacerate"] = true,
 
 	-- Mage
 	["Ignite"] = true,
