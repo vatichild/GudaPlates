@@ -170,6 +170,7 @@ playerClass = playerClass or ""
 
 -- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
 local castDB = {}
+GudaPlates.castDB = castDB  -- Expose for Castbar module
 
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
@@ -2119,7 +2120,17 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 end)
 
--- Combat log parsing functions (cmatch, castIcons, ParseCastStart, ParseAttackHit) moved to GudaPlates_CombatLog.lua
+-- Combat log parsing functions (castIcons, ParseCastStart, ParseAttackHit) moved to GudaPlates_CombatLog.lua
+-- cmatch kept here due to load order (needed before CombatLog loads)
+local function cmatch(str, pattern)
+    if not str or not pattern then return nil end
+    local pat = string_gsub(pattern, "%%%d?%$?s", "(.+)")
+    pat = string_gsub(pat, "%%%d?%$?d", "(%d+)")
+    for a, b, c, d in string_gfind(str, pat) do
+        return a, b, c, d
+    end
+    return nil
+end
 
 GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
@@ -2243,74 +2254,11 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
 
-    -- SuperWoW UNIT_CASTEVENT handler (ShaguPlates-style)
-    -- This provides exact GUID of caster for accurate per-mob cast tracking
+    -- SuperWoW UNIT_CASTEVENT handler (moved to GudaPlates_Castbar.lua)
     elseif event == "UNIT_CASTEVENT" then
-        local guid = arg1      -- GUID of the caster
-        local target = arg2    -- target GUID (can be empty)
-        local eventType = arg3 -- "START", "CAST", "CHANNEL", "FAIL"
-        local spellId = arg4   -- spell ID
-        local timer = arg5     -- duration in milliseconds
-
-        if eventType == "START" or eventType == "CAST" or eventType == "CHANNEL" then
-            -- Get spell info from SpellInfo if available
-            local spell, icon
-            if SpellInfo and spellId then
-                spell, _, icon = SpellInfo(spellId)
-            end
-
-            -- Fallback values
-            spell = spell or "Casting"
-            icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark"
-
-            -- Update SpellDB with debuff info if it's a known debuff
-            if SpellDB and eventType == "CAST" and target and target ~= "" then
-                local duration = SpellDB:GetDuration(spell, 0)
-                if duration and duration > 0 then
-                    local isOwn = (guid == (UnitGUID and UnitGUID("player")))
-                    SpellDB:RefreshEffect(target, 0, spell, duration, isOwn)
-                    
-                    -- Also handle Thunderfury double-refresh if one of them procs
-                    if spell == "Thunderfury" or spell == "Thunderfury's Blessing" then
-                        SpellDB:RefreshEffect(target, 0, "Thunderfury", duration, isOwn)
-                        SpellDB:RefreshEffect(target, 0, "Thunderfury's Blessing", duration, isOwn)
-                        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
-                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury"] = nil
-                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury's Blessing"] = nil
-                            
-                            -- Also clear by name if we can find it
-                            local targetName = UnitName("target")
-                            if targetName and (UnitGUID and UnitGUID("target") == target) then
-                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury"] = nil
-                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury's Blessing"] = nil
-                            end
-                        end
-                    elseif GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
-                        GudaPlates_Debuffs.timers[target .. "_" .. spell] = nil
-                    end
-                end
-            end
-
-            -- Skip buff procs during cast (same logic as ShaguPlates)
-            if eventType == "CAST" then
-                if castDB[guid] and castDB[guid].spell ~= spell then
-                    return
-                end
-            end
-
-            -- Store cast by GUID
-            castDB[guid] = {
-                spell = spell,
-                startTime = GetTime(),
-                duration = timer or 2000,
-                icon = icon,
-                channel = (eventType == "CHANNEL")
-            }
-        elseif eventType == "FAIL" then
-            -- Remove cast entry for this GUID
-            if castDB[guid] then
-                castDB[guid] = nil
-            end
+        if GudaPlates.HandleUnitCastEvent then
+            local shouldReturn = GudaPlates.HandleUnitCastEvent(arg1, arg2, arg3, arg4, arg5)
+            if shouldReturn then return end
         end
 
     -- ShaguPlates-style event handlers

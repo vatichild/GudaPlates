@@ -221,6 +221,7 @@ GudaPlates.CombatLog = {
 }
 
 -- Also expose directly for backwards compatibility
+GudaPlates.cmatch = cmatch
 GudaPlates.ParseCastStart = ParseCastStart
 GudaPlates.ParseAttackHit = ParseAttackHit
 GudaPlates.castIcons = castIcons
