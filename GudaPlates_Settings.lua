@@ -179,3 +179,74 @@ GudaPlates.playerRole = "DPS"
 GudaPlates.minimapAngle = 220
 GudaPlates.nameplateOverlap = true
 GudaPlates.nameplateClickThrough = true  -- When true, clicks pass through nameplates
+
+-- Event lookup tables (faster than string.find)
+GudaPlates.SPELL_EVENTS = {
+    ["CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF"] = true,
+    ["CHAT_MSG_SPELL_SELF_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_TRADESKILLS"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_AURA_GONE_OTHER"] = true,
+    ["CHAT_MSG_SPELL_AURA_GONE_SELF"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF"] = true,
+    ["CHAT_MSG_SPELL_FAILED_LOCALPLAYER"] = true,
+}
+
+-- Subset of SPELL_EVENTS that are damage/miss events (for proc tracking like Thunderfury)
+GudaPlates.SPELL_DAMAGE_EVENTS = {
+    ["CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_SELF_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE"] = true,
+    ["CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"] = true,
+}
+
+GudaPlates.COMBAT_EVENTS = {
+    ["CHAT_MSG_COMBAT_SELF_HITS"] = true,
+    ["CHAT_MSG_COMBAT_PARTY_HITS"] = true,
+    ["CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS"] = true,
+    ["CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS"] = true,
+    ["CHAT_MSG_COMBAT_SELF_RANGED_HITS"] = true,
+    ["CHAT_MSG_COMBAT_PARTY_RANGED_HITS"] = true,
+}
+
+-- Stun effects list for stun color detection
+GudaPlates.STUN_EFFECTS = {
+    "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice",
+    "Charge Stun", "Intercept Stun", "Concussion Blow",
+    "Gouge", "Sap", "Pounce"
+}
+
+-- Tank class detection for OTHER_TANK coloring
+GudaPlates.TANK_CLASSES = {
+    ["Warrior"] = true,
+    ["Paladin"] = true,
+    ["Druid"] = true,
+    ["Shaman"] = true,
+}
+
+-- Patterns for removing pending spells (ShaguPlates-style)
+-- Uses WoW global patterns with fallbacks
+GudaPlates.REMOVE_PENDING_PATTERNS = {
+    SPELLIMMUNESELFOTHER or "%s is immune to your %s.",
+    IMMUNEDAMAGECLASSSELFOTHER or "%s is immune to your %s damage.",
+    SPELLMISSSELFOTHER or "Your %s missed %s.",
+    SPELLRESISTSELFOTHER or "Your %s was resisted by %s.",
+    SPELLEVADEDSELFOTHER or "Your %s was evaded by %s.",
+    SPELLDODGEDSELFOTHER or "Your %s was dodged by %s.",
+    SPELLDEFLECTEDSELFOTHER or "Your %s was deflected by %s.",
+    SPELLREFLECTSELFOTHER or "Your %s was reflected back by %s.",
+    SPELLPARRIEDSELFOTHER or "Your %s was parried by %s.",
+    SPELLLOGABSORBSELFOTHER or "Your %s is absorbed by %s.",
+}
