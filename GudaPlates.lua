@@ -52,6 +52,8 @@ local string_lower = string.lower
 local string_format = string.format
 local string_gsub = string.gsub
 local string_gfind = string.gfind
+local string_sub = string.sub
+local string_len = string.len
 
 -- Lua math functions
 local math_floor = math.floor
@@ -159,7 +161,9 @@ local LoadSettings
 local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
 -- Track combat state per nameplate frame to avoid issues with same-named mobs
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
-local twthreat_active = UnitThreat ~= nil -- TWThreat detection
+-- TWThreat detection - checked dynamically since TWT may load after us
+-- We'll check TWT ~= nil at runtime instead of at load time
+local twthreat_active = false  -- Will be updated dynamically
 
 -- Expose for Core module
 GudaPlates.superwow_active = superwow_active
@@ -209,14 +213,270 @@ local fontOptions = {
 }
 GudaPlates.fontOptions = fontOptions  -- Expose for Options module
 
--- Tank class detection for OTHER_TANK coloring (from Settings)
-local TANK_CLASSES = GudaPlates.TANK_CLASSES
+-- Debug flag for threat logging (toggle with /gp debugthreat)
+local DEBUG_THREAT = false
+local debugThreatThrottle = 0
 
--- Helper function to check if a unit is a tank class
-local function IsTankClass(unit)
-    if not unit or not UnitExists(unit) then return false end
-    local _, class = UnitClass(unit)
-    return class and TANK_CLASSES[class]
+--------------------------------------------------------------------------------
+-- TWThreat Integration: Listen to addon messages for threat data
+-- TWThreat uses 'TMTv1=' prefix for tank mode data
+-- Format: TMTv1=creature:guid:name:perc;creature:guid:name:perc;...
+--------------------------------------------------------------------------------
+local GP_TankModeThreats = {}  -- Our own copy of tank mode threat data
+local GP_Threats = {}  -- Player threat data (from TWTv4= messages)
+
+-- Simple string split function
+local function GP_Split(str, delimiter)
+    local result = {}
+    local pattern = "([^" .. delimiter .. "]+)"
+    for match in string_gfind(str, pattern) do
+        table.insert(result, match)
+    end
+    return result
+end
+
+-- Parse TWThreat tank mode packet
+local function GP_HandleTankModePacket(packet)
+    -- Find TMTv1= prefix and extract data after it
+    local startPos = string_find(packet, "TMTv1=")
+    if not startPos then return end
+
+    local dataStr = string_sub(packet, startPos + 6)  -- Skip "TMTv1="
+
+    -- Clear old data
+    for k in pairs(GP_TankModeThreats) do
+        GP_TankModeThreats[k] = nil
+    end
+
+    -- Parse each entry (creature:guid:name:perc)
+    local entries = GP_Split(dataStr, ";")
+    for _, entry in ipairs(entries) do
+        local parts = GP_Split(entry, ":")
+        if parts[1] and parts[2] and parts[3] and parts[4] then
+            local creature = parts[1]
+            local guid = parts[2]
+            local name = parts[3]
+            local perc = tonumber(parts[4]) or 0
+
+            GP_TankModeThreats[guid] = {
+                creature = creature,
+                name = name,
+                perc = perc
+            }
+
+            if DEBUG_THREAT then
+                Print(string_format("[GP_TankMode] %s: guid=%s, holder=%s, perc=%d",
+                    creature, guid, name, perc))
+            end
+        end
+    end
+end
+
+-- Parse TWThreat player threat packet
+local function GP_HandleThreatPacket(packet)
+    -- Find TWTv4= prefix and extract data after it
+    local startPos = string_find(packet, "TWTv4=")
+    if not startPos then return end
+
+    local dataStr = string_sub(packet, startPos + 6)  -- Skip "TWTv4="
+
+    -- Clear old data
+    for k in pairs(GP_Threats) do
+        GP_Threats[k] = nil
+    end
+
+    -- Parse each entry (name:class:threat:perc:melee:tank)
+    local entries = GP_Split(dataStr, ";")
+    for _, entry in ipairs(entries) do
+        local parts = GP_Split(entry, ":")
+        if parts[1] and parts[3] and parts[4] then
+            local name = parts[1]
+            local threat = tonumber(parts[3]) or 0
+            local perc = tonumber(parts[4]) or 0
+            local tank = (parts[6] == "1")
+
+            GP_Threats[name] = {
+                threat = threat,
+                perc = perc,
+                tank = tank
+            }
+
+            if DEBUG_THREAT then
+                Print(string_format("[GP_Threat] %s: threat=%d, perc=%d, tank=%s",
+                    name, threat, perc, tostring(tank)))
+            end
+        end
+    end
+end
+
+-- Register for addon messages
+local GP_ThreatFrame = CreateFrame("Frame")
+GP_ThreatFrame:RegisterEvent("CHAT_MSG_ADDON")
+GP_ThreatFrame:SetScript("OnEvent", function()
+    if event == "CHAT_MSG_ADDON" then
+        local msg = arg2 or ""
+        -- Check for tank mode data
+        if string_find(msg, "TMTv1=") then
+            GP_HandleTankModePacket(msg)
+        end
+        -- Check for player threat data
+        if string_find(msg, "TWTv4=") then
+            GP_HandleThreatPacket(msg)
+        end
+    end
+end)
+
+-- Expose for debugging
+GudaPlates.GP_TankModeThreats = GP_TankModeThreats
+GudaPlates.GP_Threats = GP_Threats
+
+--------------------------------------------------------------------------------
+-- Tank Mode Sharing Between Players
+-- Broadcasts player's Tank Mode setting to group members on join/zone
+--------------------------------------------------------------------------------
+local GP_TankPlayers = {}  -- Table of player names who have Tank Mode enabled
+local GP_ADDON_PREFIX = "GudaPlates"
+
+-- Broadcast our Tank Mode setting to group
+local function BroadcastTankMode()
+    local isTank = (playerRole == "TANK")
+    local msg = isTank and "TM=1" or "TM=0"
+
+    -- Also track ourselves (we don't receive our own addon messages)
+    local myName = UnitName("player")
+    if myName then
+        GP_TankPlayers[myName] = isTank or nil
+    end
+
+    if UnitInRaid("player") then
+        SendAddonMessage(GP_ADDON_PREFIX, msg, "RAID")
+    elseif UnitInParty() then
+        SendAddonMessage(GP_ADDON_PREFIX, msg, "PARTY")
+    end
+
+    if DEBUG_THREAT then
+        Print(string_format("[TankMode] Broadcast: %s, myTank=%s", msg, tostring(isTank)))
+    end
+end
+
+-- Check if a player has Tank Mode enabled
+local function IsPlayerTank(playerName)
+    if not playerName then return false end
+    return GP_TankPlayers[playerName] == true
+end
+
+-- Handle incoming Tank Mode messages
+local function GP_HandleTankModeMessage(sender, msg)
+    if string_find(msg, "TM=") then
+        local isTank = string_sub(msg, 4, 4) == "1"
+        GP_TankPlayers[sender] = isTank or nil  -- Store true or remove entry
+        if DEBUG_THREAT then
+            Print(string_format("[TankMode] Received from %s: tank=%s", sender, tostring(isTank)))
+        end
+    end
+end
+
+-- Frame for Tank Mode sharing events
+local GP_TankModeFrame = CreateFrame("Frame")
+GP_TankModeFrame:RegisterEvent("CHAT_MSG_ADDON")
+GP_TankModeFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+GP_TankModeFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+GP_TankModeFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+GP_TankModeFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+GP_TankModeFrame:SetScript("OnEvent", function()
+    if event == "CHAT_MSG_ADDON" then
+        local prefix = arg1
+        local msg = arg2
+        local sender = arg4
+        if prefix == GP_ADDON_PREFIX and msg and sender then
+            GP_HandleTankModeMessage(sender, msg)
+        end
+    elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE"
+           or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
+        -- Broadcast our Tank Mode setting when group changes or we zone
+        BroadcastTankMode()
+    end
+end)
+
+-- Expose for external use
+GudaPlates.GP_TankPlayers = GP_TankPlayers
+GudaPlates.BroadcastTankMode = BroadcastTankMode
+GudaPlates.IsPlayerTank = IsPlayerTank
+
+-- Helper function to get Tank Mode threat data for a specific mob
+-- Uses GP_TankModeThreats which we populate from addon messages
+-- Returns: hasData, playerHasAggro, otherPlayerName, otherPlayerPct
+local function GetTWTankModeThreat(mobGUID, mobName)
+    local playerName = UnitName("player")
+
+    -- Debug: show all tank mode threats
+    if DEBUG_THREAT then
+        local now = GetTime()
+        if now - debugThreatThrottle > 1 then
+            local count = 0
+            for guid, data in pairs(GP_TankModeThreats) do
+                count = count + 1
+                Print(string_format("[TankMode] GUID=%s creature=%s player=%s perc=%s",
+                    tostring(guid), tostring(data.creature), tostring(data.name), tostring(data.perc)))
+            end
+            if count == 0 then
+                Print("[TankMode] No entries (is Tank Mode enabled in TWThreat? Are you in combat?)")
+            end
+        end
+    end
+
+    -- Look for this mob in tank mode threats by GUID
+    if mobGUID then
+        local data = GP_TankModeThreats[mobGUID]
+        if data then
+            local playerHasAggro = (data.name == playerName)
+            return true, playerHasAggro, data.name, data.perc or 0
+        end
+    end
+
+    -- Fallback: search by creature name
+    if mobName then
+        for guid, data in pairs(GP_TankModeThreats) do
+            if data.creature == mobName then
+                local playerHasAggro = (data.name == playerName)
+                return true, playerHasAggro, data.name, data.perc or 0
+            end
+        end
+    end
+
+    return false, false, nil, 0
+end
+
+-- Helper function to get threat data from GP_Threats (populated from TWTv4= messages)
+-- Returns: hasData, playerHasAggro, playerThreatPct, highestOtherPct, threatHolderName
+-- Note: We determine aggro based on threat percentage (100% = has aggro), not TWThreat's tank field
+local function GetGPThreatData()
+    local playerName = UnitName("player")
+    local playerPct = 0
+    local highestOtherPct = 0
+    local hasData = false
+    local threatHolderName = nil
+
+    for name, data in pairs(GP_Threats) do
+        hasData = true
+        local pct = data.perc or 0
+        if name == playerName then
+            playerPct = pct
+        else
+            if pct > highestOtherPct then
+                highestOtherPct = pct
+            end
+        end
+        -- Track who has 100% threat (the threat holder)
+        if pct >= 100 then
+            threatHolderName = name
+        end
+    end
+
+    -- Player has aggro if they have 100% threat (they ARE the threat holder)
+    local playerHasAggro = (playerPct >= 100)
+
+    return hasData, playerHasAggro, playerPct, highestOtherPct, threatHolderName
 end
 
 -- Helper function to check if a unit is in the player's group (player, party, or raid)
@@ -1407,78 +1667,117 @@ local function UpdateNamePlate(frame)
         -- This check works regardless of what player is targeting
         if UnitIsUnit(mobTarget, "player") then
             isAttackingPlayer = true
-            -- Store on nameplate object for this specific plate
             nameplate.isAttackingPlayer = true
             nameplate.lastAttackTime = GetTime()
         elseif UnitExists(mobTarget) then
-            -- Mob has a target and it's NOT the player - clear stickiness immediately
+            -- Mob has a target and it's NOT the player
             isAttackingPlayer = false
             nameplate.isAttackingPlayer = false
-            nameplate.lastAttackTime = nil
         else
-        -- Check if this specific plate was recently attacking
-            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                isAttackingPlayer = true
-            else
-                nameplate.isAttackingPlayer = false
-            end
+            -- Mob has no target - clear tracking
+            isAttackingPlayer = false
+            nameplate.isAttackingPlayer = false
         end
     else
     -- Fallback: use name-based tracking (has same-name mob limitation)
         if plateName then
-        -- Use original glow texture as primary indicator if available
-        -- Glow usually appears when unit is in combat and has threat
+            -- Use original glow texture as primary indicator
+            -- Glow usually appears when unit is in combat and has threat
             if hasAggroGlow then
                 isAttackingPlayer = true
                 nameplate.isAttackingPlayer = true
-                nameplate.lastAttackTime = GetTime()
             end
 
-            -- Check if this specific plate was recently confirmed attacking
-            if not isAttackingPlayer and nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                isAttackingPlayer = true
-            end
-
-            -- If we're targeting this mob, verify and update tracking
+            -- If we're targeting this mob, verify with targettarget
             if UnitExists("target") and UnitName("target") == plateName then
-            -- Check if target is actually this nameplate (alpha check is a common vanilla trick)
-            -- Usually target nameplate has alpha 1.0, others might be 0.x
-            -- Note: GetAlpha might be affected by UI modifications, but 1.0 is default for target
                 if frame:GetAlpha() > 0.9 then
                     if UnitExists("targettarget") and UnitIsUnit("targettarget", "player") then
-                        nameplate.isAttackingPlayer = true
-                        nameplate.lastAttackTime = GetTime()
                         isAttackingPlayer = true
+                        nameplate.isAttackingPlayer = true
                     elseif UnitExists("targettarget") then
-                    -- Mob is targeting someone else, clear tracking immediately
-                        nameplate.isAttackingPlayer = false
-                        nameplate.lastAttackTime = nil
+                        -- Mob is targeting someone else
                         isAttackingPlayer = false
+                        nameplate.isAttackingPlayer = false
                     end
                 end
-            end
-
-            -- Expire old entries after 2 seconds without refresh
-            if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime > 2) then
-                nameplate.isAttackingPlayer = false
-                nameplate.lastAttackTime = nil
-                isAttackingPlayer = false
             end
         end
     end
 
-    -- TWThreat: get threat information
-    local threatPct = 0
-    local isTanking = false
-    local threatStatus = 0
+    -- TWThreat: get threat information from addon messages
+    -- We listen to CHAT_MSG_ADDON and populate GP_TankModeThreats and GP_Threats
+    local hasTWThreatData = false
+    local playerHasAggro = false
+    local threatHolderName = nil
+    local highestOtherPct = 0
+    local playerThreatPct = 0  -- Player's own threat percentage (for DPS warning)
 
-    if twthreat_active and unitstr and isHostile then
-    -- UnitThreat returns: isTanking, status, threatpct, rawthreatpct, threatvalue
-        local tanking, status, pct = UnitThreat("player", unitstr)
-        if tanking ~= nil then
-            isTanking = tanking
-            threatStatus = status or 0
-            threatPct = pct or 0
+    if isHostile then
+        -- Get mob GUID for lookup (TWThreat uses low part of GUID as string key)
+        local mobGUID = nil
+        if unitstr and superwow_active then
+            -- Extract low part of GUID - TWThreat stores just the low 4 hex digits
+            local len = string_len(unitstr)
+            if len >= 4 then
+                local lowPart = string_sub(unitstr, len - 3, len)
+                local num = tonumber(lowPart, 16)
+                if num then
+                    mobGUID = tostring(num)
+                end
+            end
+        end
+
+        if DEBUG_THREAT then
+            local now = GetTime()
+            if now - debugThreatThrottle > 0.5 then
+                Print(string_format("[Debug] Checking mob: %s, GUID: %s, unitstr: %s",
+                    plateName or "?", mobGUID or "nil", unitstr or "nil"))
+            end
+        end
+
+        -- Try to get Tank Mode threat data for this specific mob (TMTv1= packets)
+        hasTWThreatData, playerHasAggro, threatHolderName, _ = GetTWTankModeThreat(mobGUID, plateName)
+
+        -- If no Tank Mode data, fall back to player threat data (TWTv4= packets)
+        -- IMPORTANT: GP_Threats only contains data for current target, so only use it
+        -- for the nameplate that matches the player's current target
+        local isCurrentTarget = false
+        if plateName and UnitExists("target") and UnitName("target") == plateName then
+            -- Check if this is the selected nameplate (full alpha = targeted)
+            if frame:GetAlpha() > 0.9 then
+                isCurrentTarget = true
+            end
+        end
+
+        if not hasTWThreatData and isCurrentTarget then
+            -- Only use GP_Threats data for the current target nameplate
+            local gpHasData, gpPlayerAggro, gpPlayerPct, gpHighestOther, gpThreatHolder = GetGPThreatData()
+            if gpHasData then
+                hasTWThreatData = true
+                playerHasAggro = gpPlayerAggro
+                playerThreatPct = gpPlayerPct
+                highestOtherPct = gpHighestOther
+                threatHolderName = gpThreatHolder  -- Actual name of whoever has 100% threat
+            end
+        elseif hasTWThreatData and isCurrentTarget then
+            -- Get player threat data from GP_Threats for current target
+            local _, _, gpPlayerPct, gpHighestOther, gpThreatHolder = GetGPThreatData()
+            playerThreatPct = gpPlayerPct or 0
+            highestOtherPct = gpHighestOther or 0
+            if not threatHolderName then
+                threatHolderName = gpThreatHolder
+            end
+        end
+
+        if DEBUG_THREAT then
+            local now = GetTime()
+            if now - debugThreatThrottle > 0.5 then
+                debugThreatThrottle = now
+                local holderIsTank = IsPlayerTank(threatHolderName)
+                Print(string_format("[Result] %s: hasData=%s, playerAggro=%s, playerPct=%.1f, holder=%s, holderIsTank=%s",
+                    plateName or "?", tostring(hasTWThreatData), tostring(playerHasAggro),
+                    playerThreatPct, threatHolderName or "nil", tostring(holderIsTank)))
+            end
         end
     end
 
@@ -1579,98 +1878,96 @@ local function UpdateNamePlate(frame)
         elseif not mobInCombat then
         -- Not in combat (and not neutral/tapped) - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
-        elseif hasValidGUID and twthreat_active then
-        -- Full threat-based coloring (mob is in combat with us, has GUID and threat data)
+        elseif hasTWThreatData then
+        -- Full threat-based coloring using TWThreat Tank Mode data (from addon messages)
             if playerRole == "TANK" then
-                if isTanking then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                elseif threatPct > 80 then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
-                elseif isAttackingPlayer then
-                    -- Stickiness or mob mid-swing but we don't officially have 'isTanking' status yet
-                    -- and threat is not high enough to be LOSING_AGGRO
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                if playerHasAggro then
+                    -- Tank has aggro - check if anyone else is close to pulling (on current target only)
+                    if highestOtherPct > 80 then
+                        -- Someone is close to pulling - warning orange
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
+                    else
+                        -- Safe - no one close to pulling
+                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
+                    end
                 else
-                    if IsTankClass(mobTargetUnit) then
+                    -- Tank doesn't have aggro - someone else does
+                    -- Check if the threat holder has Tank Mode enabled in GudaPlates
+                    if IsPlayerTank(threatHolderName) then
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                     else
+                        -- Non-tank has aggro - need to taunt
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                     end
                 end
             else
-                if isTanking then
+                -- DPS/Healer mode
+                if playerHasAggro then
                     -- DPS having aggro is bad
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                elseif threatPct > 80 then
+                elseif playerThreatPct > 80 then
+                    -- High threat warning (we're close to pulling)
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
-                elseif isAttackingPlayer then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
                 else
+                    -- Tank has aggro - good
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
             end
         elseif hasValidGUID then
-        -- Has GUID but no TWThreat - use targeting-based colors
+        -- Has GUID but no TWThreat - use targeting-based colors only
+        -- Without threat data, we can only react to target changes
             if playerRole == "TANK" then
                 if isAttackingPlayer then
+                    -- Mob targeting player - tank has aggro
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
                 elseif mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
-                    -- Mob is targeting someone else, but it's still orange if it was just attacking us (stickiness)
-                    -- Wait, targeting-based mode has no threatPct, so we rely purely on target.
-                    -- If we want "Losing Aggro" (Orange) here, we need a condition.
-                    -- Usually Orange is when we ARE targeted but about to lose it (hard to know without threat API),
-                    -- OR when we WERE targeted but just lost it.
-                    if nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                        -- We just lost it (stickiness is active) -> Orange
-                        nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
-                    elseif IsTankClass(mobTargetUnit) then
+                    -- Mob is targeting someone else
+                    local targetName = UnitName(mobTargetUnit)
+                    if IsPlayerTank(targetName) then
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                     else
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                     end
-                elseif IsTankClass(mobTargetUnit) then
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                 else
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                 end
             else
                 if isAttackingPlayer then
+                    -- DPS has aggro - bad
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                    -- Just lost it -> High Threat
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
+                    -- DPS doesn't have aggro - good
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
             end
         else
         -- No GUID (no SuperWoW) - fallback with name-based detection
+        -- Without threat data, we can only react to target changes
             if playerRole == "TANK" then
                 if isAttackingPlayer then
+                    -- Mob targeting player - tank has aggro
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
-                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                    -- Just lost it -> Orange
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.LOSING_AGGRO))
                 else
+                    -- Check if another tank has aggro (only when we're targeting this mob)
                     local otherTankHasAggro = false
                     if plateName and UnitExists("target") and UnitName("target") == plateName then
                         if frame:GetAlpha() > 0.9 and UnitExists("targettarget") then
-                            otherTankHasAggro = IsTankClass("targettarget")
+                            otherTankHasAggro = IsPlayerTank(UnitName("targettarget"))
                         end
                     end
                     if otherTankHasAggro then
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.OTHER_TANK))
                     else
+                        -- Non-tank has aggro or unknown
                         nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.NO_AGGRO))
                     end
                 end
             else
                 if isAttackingPlayer then
+                    -- DPS has aggro - bad
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.AGGRO))
-                elseif nameplate.isAttackingPlayer and nameplate.lastAttackTime and (GetTime() - nameplate.lastAttackTime < 2) then
-                    -- Just lost it -> High Threat
-                    nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.HIGH_THREAT))
                 else
+                    -- DPS doesn't have aggro - good
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.DPS.NO_AGGRO))
                 end
             end
@@ -2691,6 +2988,13 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             playerRole = "TANK"
             Print("Role set to TANK")
         end
+    elseif msg == "debugthreat" then
+        DEBUG_THREAT = not DEBUG_THREAT
+        if DEBUG_THREAT then
+            Print("Threat debug logging ENABLED - check chat for threat info")
+        else
+            Print("Threat debug logging DISABLED")
+        end
     elseif msg == "config" or msg == "options" then
         if GudaPlatesOptionsFrame:IsShown() then
             GudaPlatesOptionsFrame:Hide()
@@ -2805,8 +3109,15 @@ SlashCmdList["GUDAPLATES"] = function(msg)
             SaveSettings()
             Print("OTHER_TANK color set to: " .. args)
         else
-            -- Try to parse as RGB values
-            local r, g, b = string.match(args, "([%d%.]+)%s+([%d%.]+)%s+([%d%.]+)")
+            -- Try to parse as RGB values (Lua 5.0 compatible)
+            local r, g, b
+            local values = {}
+            for num in string_gfind(args, "([%d%.]+)") do
+                table.insert(values, num)
+            end
+            if values[1] and values[2] and values[3] then
+                r, g, b = values[1], values[2], values[3]
+            end
             if r and g and b then
                 r, g, b = tonumber(r), tonumber(g), tonumber(b)
                 if r and g and b and r >= 0 and r <= 1 and g >= 0 and g <= 1 and b >= 0 and b <= 1 then
@@ -2873,6 +3184,7 @@ local function SaveSettings()
     GudaPlatesDB.nameplateClickThrough = clickThrough
     GudaPlatesDB.minimapAngle = minimapAngle
     GudaPlatesDB.Settings = Settings  -- Save entire Settings table
+    GudaPlatesDB.GP_TankPlayers = GP_TankPlayers  -- Save Tank Mode states from other players
 
     -- Sync back to GudaPlates global table for consistency
     GudaPlates.playerRole = playerRole
@@ -2938,6 +3250,13 @@ LoadSettings = function()
         end
         if GudaPlatesDB.THREAT_COLORS.MANA_BAR then
             THREAT_COLORS.MANA_BAR = GudaPlatesDB.THREAT_COLORS.MANA_BAR
+        end
+    end
+
+    -- Load Tank Mode states from other players (persists across reloads)
+    if GudaPlatesDB.GP_TankPlayers then
+        for name, isTank in pairs(GudaPlatesDB.GP_TankPlayers) do
+            GP_TankPlayers[name] = isTank
         end
     end
 
