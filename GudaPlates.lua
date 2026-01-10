@@ -1855,11 +1855,19 @@ local function UpdateNamePlate(frame)
 
         -- Apply color based on state (priority order: TAPPED -> STUNNED -> NEUTRAL -> THREAT COLORS)
         local isStunned = false
-        if hasValidGUID and GudaPlates_Debuffs then
-            -- We can check our own timers for this unit
-            -- Stun types in WoW: Stun, Incapacitate, Fear? User specifically asked for "Stun color"
+        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
+            -- Check stuns by GUID if available, or by name as fallback
             for _, stunName in ipairs(STUN_EFFECTS) do
-                if GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName] or GudaPlates_Debuffs.timers[plateName .. "_" .. stunName] then
+                local hasStun = false
+                -- Check by GUID first (more accurate)
+                if hasValidGUID and unitstr then
+                    hasStun = GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName]
+                end
+                -- Also check by name (works for non-targeted units)
+                if not hasStun and plateName then
+                    hasStun = GudaPlates_Debuffs.timers[plateName .. "_" .. stunName]
+                end
+                if hasStun then
                     isStunned = true
                     break
                 end
