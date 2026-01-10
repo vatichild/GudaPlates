@@ -17,27 +17,15 @@ local tonumber = tonumber
 local unpack = unpack
 local getglobal = getglobal
 
--- Lua string functions
+-- Lua string functions (only upvalue those actually used)
 local string_find = string.find
 local string_lower = string.lower
-local string_upper = string.upper
 local string_format = string.format
 local string_gsub = string.gsub
 local string_gfind = string.gfind
-local string_sub = string.sub
-local string_len = string.len
 
 -- Lua math functions
 local math_floor = math.floor
-local math_ceil = math.ceil
-local math_abs = math.abs
-local math_max = math.max
-local math_min = math.min
-
--- Lua table functions
-local table_insert = table.insert
-local table_remove = table.remove
-local table_getn = table.getn
 
 -- WoW API functions (client-side)
 local GetTime = GetTime
@@ -70,46 +58,10 @@ GudaPlates.DEBUFF_UPDATE_INTERVAL = DEBUFF_UPDATE_INTERVAL
 local cachedWorldChildren = {}
 local cachedWorldChildCount = 0
 
--- Performance: Event lookup tables (faster than string.find)
-local SPELL_EVENTS = {
-    ["CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF"] = true,
-    ["CHAT_MSG_SPELL_SELF_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_TRADESKILLS"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_AURA_GONE_OTHER"] = true,
-    ["CHAT_MSG_SPELL_AURA_GONE_SELF"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF"] = true,
-    ["CHAT_MSG_SPELL_FAILED_LOCALPLAYER"] = true,
-}
-
--- Subset of SPELL_EVENTS that are damage/miss events (for proc tracking like Thunderfury)
-local SPELL_DAMAGE_EVENTS = {
-    ["CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_SELF_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE"] = true,
-    ["CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE"] = true,
-}
-
-local COMBAT_EVENTS = {
-    ["CHAT_MSG_COMBAT_SELF_HITS"] = true,
-    ["CHAT_MSG_COMBAT_PARTY_HITS"] = true,
-    ["CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS"] = true,
-    ["CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS"] = true,
-    ["CHAT_MSG_COMBAT_SELF_RANGED_HITS"] = true,
-    ["CHAT_MSG_COMBAT_PARTY_RANGED_HITS"] = true,
-}
+-- Performance: Event lookup tables (from Settings, faster than string.find)
+local SPELL_EVENTS = GudaPlates.SPELL_EVENTS
+local SPELL_DAMAGE_EVENTS = GudaPlates.SPELL_DAMAGE_EVENTS
+local COMBAT_EVENTS = GudaPlates.COMBAT_EVENTS
 
 -- Macro Texture Hover Only
 local macroFrame = CreateFrame("Frame")
@@ -193,12 +145,8 @@ local Settings = GudaPlates.Settings
 local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
 
--- Performance: Pre-defined stun effects list (avoid creating table in hot path)
-local STUN_EFFECTS = {
-    "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice",
-    "Charge Stun", "Intercept Stun", "Concussion Blow",
-    "Gouge", "Sap", "Pounce"
-}
+-- Performance: Pre-defined stun effects list (from Settings)
+local STUN_EFFECTS = GudaPlates.STUN_EFFECTS
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
 local clickThrough = GudaPlates.nameplateClickThrough
@@ -219,13 +167,8 @@ local fontOptions = {
 }
 GudaPlates.fontOptions = fontOptions  -- Expose for Options module
 
--- Tank class detection for OTHER_TANK coloring
-local TANK_CLASSES = {
-    ["Warrior"] = true,
-    ["Paladin"] = true,
-    ["Druid"] = true,
-	["Shaman"] = true,
-}
+-- Tank class detection for OTHER_TANK coloring (from Settings)
+local TANK_CLASSES = GudaPlates.TANK_CLASSES
 
 -- Helper function to check if a unit is a tank class
 local function IsTankClass(unit)
@@ -474,19 +417,8 @@ GudaPlates:RegisterEvent("UNIT_AURA")
 GudaPlates:RegisterEvent("PARTY_MEMBERS_CHANGED")
 GudaPlates:RegisterEvent("RAID_ROSTER_UPDATE")
 
--- Patterns for removing pending spells (ShaguPlates-style)
-local REMOVE_PENDING_PATTERNS = {
-	SPELLIMMUNESELFOTHER or "%s is immune to your %s.",
-	IMMUNEDAMAGECLASSSELFOTHER or "%s is immune to your %s damage.",
-	SPELLMISSSELFOTHER or "Your %s missed %s.",
-	SPELLRESISTSELFOTHER or "Your %s was resisted by %s.",
-	SPELLEVADEDSELFOTHER or "Your %s was evaded by %s.",
-	SPELLDODGEDSELFOTHER or "Your %s was dodged by %s.",
-	SPELLDEFLECTEDSELFOTHER or "Your %s was deflected by %s.",
-	SPELLREFLECTSELFOTHER or "Your %s was reflected back by %s.",
-	SPELLPARRIEDSELFOTHER or "Your %s was parried by %s.",
-	SPELLLOGABSORBSELFOTHER or "Your %s is absorbed by %s.",
-}
+-- Patterns for removing pending spells (from Settings)
+local REMOVE_PENDING_PATTERNS = GudaPlates.REMOVE_PENDING_PATTERNS
 
 local function UpdateNamePlateDimensions(frame)
     local nameplate = frame.nameplate
@@ -1068,7 +1000,15 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Method 2: Fallback - detect neutral units with level 1 and very low HP (typical critters)
+        -- Method 2: Check name against Critters list
+        if not isCritter then
+            local plateName = nameplate.name and nameplate.name:GetText()
+            if plateName and GudaPlates.Critters[string_lower(plateName)] then
+                isCritter = true
+            end
+        end
+
+        -- Method 3: Fallback - detect neutral units with level 1 and very low HP (typical critters)
         if not isCritter and not unitstr then
             local r, g, b = original.healthbar:GetStatusBarColor()
             local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
@@ -1094,14 +1034,21 @@ local function UpdateNamePlate(frame)
             end
         end
 
-        -- Hide the nameplate if it's a critter
+        -- Hide the nameplate AND original frame if it's a critter
         if isCritter then
             nameplate:Hide()
+            -- Also hide original frame elements completely
+            frame:SetAlpha(0)
+            nameplate.isCritterHidden = true
             return
         end
     end
 
     -- Ensure nameplate is shown (in case it was hidden as a critter before)
+    if nameplate.isCritterHidden then
+        frame:SetAlpha(1)
+        nameplate.isCritterHidden = nil
+    end
     if not nameplate:IsShown() then
         nameplate:Show()
     end
