@@ -3,6 +3,35 @@
 
 GudaPlates = GudaPlates or {}
 
+-- Ensure Settings exists with defaults (fallback if Settings file didn't load)
+if not GudaPlates.Settings then
+    GudaPlates.Settings = {
+        healthbarHeight = 14, healthbarWidth = 115, healthFontSize = 10,
+        healthTextPosition = "CENTER", healthTextFormat = 1,
+        friendHealthbarHeight = 4, friendHealthbarWidth = 85, friendHealthFontSize = 10,
+        friendHealthTextPosition = "CENTER", friendHealthTextFormat = 1,
+        showManaBar = false, manaTextFormat = 1, manaTextPosition = "CENTER", manabarHeight = 4,
+        friendShowManaBar = false, friendManaTextFormat = 1, friendManaTextPosition = "CENTER", friendManabarHeight = 4,
+        castbarHeight = 12, castbarWidth = 115, castbarIndependent = false, showCastbarIcon = true,
+        friendCastbarHeight = 6, friendCastbarWidth = 85, friendCastbarIndependent = false, friendShowCastbarIcon = true,
+        castbarColor = {1, 0.8, 0, 1},
+        levelFontSize = 10, nameFontSize = 10, friendLevelFontSize = 8, friendNameFontSize = 8,
+        textFont = "Fonts\\ARIALN.TTF",
+        raidIconPosition = "LEFT", swapNameDebuff = true,
+        showOnlyMyDebuffs = true, showDebuffTimers = true,
+        showTargetGlow = true, targetGlowColor = {0.4, 0.8, 0.9, 0.4},
+        debuffIconSize = 16,
+        nameColor = {1, 1, 1, 1}, healthTextColor = {1, 1, 1, 1},
+        manaTextColor = {1, 1, 1, 1}, levelColor = {1, 1, 0.6, 1},
+        optionsBgAlpha = 0.9, hideOptionsBorder = false,
+        showCritterNameplates = false,
+    }
+end
+if not GudaPlates.Critters then GudaPlates.Critters = {} end
+if not GudaPlates.THREAT_COLORS then GudaPlates.THREAT_COLORS = {} end
+if not GudaPlates.STUN_EFFECTS then GudaPlates.STUN_EFFECTS = {} end
+if not GudaPlates.REMOVE_PENDING_PATTERNS then GudaPlates.REMOVE_PENDING_PATTERNS = {} end
+
 -- ============================================
 -- PERFORMANCE: Upvalue frequently used globals
 -- Local lookups are faster than global table lookups
@@ -140,14 +169,17 @@ GudaPlates.castDB = castDB  -- Expose for Castbar module
 local castTracker = {}
 GudaPlates.castTracker = castTracker  -- Expose for CombatLog module
 
+-- Debuff tracking (for aura fade detection)
+local debuffTracker = {}
+
 -- Settings and other variables from GudaPlates_Settings.lua
-local Settings = GudaPlates.Settings
-local THREAT_COLORS = GudaPlates.THREAT_COLORS
-local playerRole = GudaPlates.playerRole
+local Settings = GudaPlates.Settings or {}
+local THREAT_COLORS = GudaPlates.THREAT_COLORS or {}
+local playerRole = GudaPlates.playerRole or "DPS"
 
 -- Performance: Pre-defined stun effects list (from Settings)
-local STUN_EFFECTS = GudaPlates.STUN_EFFECTS
-local minimapAngle = GudaPlates.minimapAngle
+local STUN_EFFECTS = GudaPlates.STUN_EFFECTS or {}
+local minimapAngle = GudaPlates.minimapAngle or 220
 local nameplateOverlap = GudaPlates.nameplateOverlap
 local clickThrough = GudaPlates.nameplateClickThrough
 
@@ -383,39 +415,39 @@ GudaPlates.IsNamePlate = IsNamePlate
 GudaPlates.getPlateCount = function() return platecount end
 GudaPlates.incPlateCount = function() platecount = platecount + 1; return platecount end
 
-local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
-GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
-GudaPlates:RegisterEvent("ADDON_LOADED")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE") -- Player's DoTs ticking (Deep Wound, etc.)
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_PARTY_HITS")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_SELF_RANGED_HITS")
-GudaPlates:RegisterEvent("CHAT_MSG_COMBAT_PARTY_RANGED_HITS")
+local GudaPlatesEventFrame = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
+GudaPlatesEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+GudaPlatesEventFrame:RegisterEvent("ADDON_LOADED")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_TRADESKILLS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE") -- Player's DoTs ticking (Deep Wound, etc.)
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_BUFF")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_BUFF")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_PARTY_HITS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_RANGED_HITS")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_COMBAT_PARTY_RANGED_HITS")
 -- SuperWoW cast event (provides exact GUID of caster)
-GudaPlates:RegisterEvent("UNIT_CASTEVENT")
+GudaPlatesEventFrame:RegisterEvent("UNIT_CASTEVENT")
 -- ShaguPlates-style events for debuff tracking
-GudaPlates:RegisterEvent("SPELLCAST_STOP")
-GudaPlates:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
-GudaPlates:RegisterEvent("PLAYER_TARGET_CHANGED")
-GudaPlates:RegisterEvent("UNIT_AURA")
-GudaPlates:RegisterEvent("PARTY_MEMBERS_CHANGED")
-GudaPlates:RegisterEvent("RAID_ROSTER_UPDATE")
+GudaPlatesEventFrame:RegisterEvent("SPELLCAST_STOP")
+GudaPlatesEventFrame:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
+GudaPlatesEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+GudaPlatesEventFrame:RegisterEvent("UNIT_AURA")
+GudaPlatesEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+GudaPlatesEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 
 -- Patterns for removing pending spells (from Settings)
 local REMOVE_PENDING_PATTERNS = GudaPlates.REMOVE_PENDING_PATTERNS
@@ -920,10 +952,15 @@ local function HandleNamePlate(frame)
     nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
 
     -- Cast Bar below the name
+    local cbHeight = Settings.castbarHeight or 12
+    local cbColor = Settings.castbarColor or {1, 0.8, 0, 1}
+    local textFont = Settings.textFont or "Fonts\\ARIALN.TTF"
+    local hbHeight = Settings.healthbarHeight or 14
+
     nameplate.castbar = CreateFrame("StatusBar", nil, nameplate)
     nameplate.castbar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    nameplate.castbar:SetHeight(Settings.castbarHeight)
-    nameplate.castbar:SetStatusBarColor(Settings.castbarColor[1], Settings.castbarColor[2], Settings.castbarColor[3], Settings.castbarColor[4])
+    nameplate.castbar:SetHeight(cbHeight)
+    nameplate.castbar:SetStatusBarColor(cbColor[1], cbColor[2], cbColor[3], cbColor[4] or 1)
     nameplate.castbar:Hide()
 
     nameplate.castbar.bg = nameplate.castbar:CreateTexture(nil, "BACKGROUND")
@@ -937,21 +974,21 @@ local function HandleNamePlate(frame)
     nameplate.castbar.border:SetDrawLayer("BACKGROUND", -1)
 
     nameplate.castbar.text = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.text:SetFont(Settings.textFont, 8, "OUTLINE")
+    nameplate.castbar.text:SetFont(textFont, 8, "OUTLINE")
     nameplate.castbar.text:SetPoint("LEFT", nameplate.castbar, "LEFT", 2, 0)
     nameplate.castbar.text:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.text:SetJustifyH("LEFT")
 
     nameplate.castbar.timer = nameplate.castbar:CreateFontString(nil, "OVERLAY")
-    nameplate.castbar.timer:SetFont(Settings.textFont, 8, "OUTLINE")
+    nameplate.castbar.timer:SetFont(textFont, 8, "OUTLINE")
     nameplate.castbar.timer:SetPoint("RIGHT", nameplate.castbar, "RIGHT", -2, 0)
     nameplate.castbar.timer:SetTextColor(1, 1, 1, 1)
     nameplate.castbar.timer:SetJustifyH("RIGHT")
 
     nameplate.castbar.icon = nameplate.castbar:CreateTexture(nil, "OVERLAY")
     -- Icon size will be set dynamically based on healthbar + castbar height
-    nameplate.castbar.icon:SetWidth(Settings.healthbarHeight + Settings.castbarHeight)
-    nameplate.castbar.icon:SetHeight(Settings.healthbarHeight + Settings.castbarHeight)
+    nameplate.castbar.icon:SetWidth(hbHeight + cbHeight)
+    nameplate.castbar.icon:SetHeight(hbHeight + cbHeight)
     -- Position will be set dynamically based on raidIconPosition
     nameplate.castbar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -983,7 +1020,7 @@ local function UpdateNamePlate(frame)
     if not original.healthbar then return end
 
     -- Critter filtering: Hide nameplates for critters/ambient mobs if setting is disabled
-    if not Settings.showCritterNameplates then
+    if Settings and not Settings.showCritterNameplates then
         local isCritter = false
 
         -- Get unit info for critter detection
@@ -1076,17 +1113,14 @@ local function UpdateNamePlate(frame)
         end
     end
 
-    -- Hide all other children frames (like Blizzard or other addon castbars)
-    -- Use cached children to avoid creating new table every frame
-    local cachedChildren = nameplate.cachedChildren
-    if cachedChildren then
-        for i, child in ipairs(cachedChildren) do
-            if child and child ~= nameplate and child ~= original.healthbar then
-            -- Only hide if it's not a known useful child (like the original castbar if we want it)
-            -- ShaguPlates disables the original castbar explicitly.
-                if child.SetAlpha then child:SetAlpha(0) end
-                if child.Hide then child:Hide() end
-            end
+    -- Hide all other children frames (like Blizzard or SuperWoW castbars)
+    -- Re-fetch children each frame since SuperWoW may add castbar dynamically
+    local children = {frame:GetChildren()}
+    for i, child in ipairs(children) do
+        if child and child ~= nameplate and child ~= original.healthbar then
+            -- Hide any child that's not our custom nameplate or the healthbar
+            if child.SetAlpha then child:SetAlpha(0) end
+            if child.Hide then child:Hide() end
         end
     end
 
@@ -1210,14 +1244,16 @@ local function UpdateNamePlate(frame)
     nameplate.healthtext:SetText(hpText)
 
     -- Apply name color if Name-integrated format is selected, otherwise use health text color
-    if hTextFormat >= 6 then
-        nameplate.healthtext:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+    local nameColor = Settings.nameColor or {1, 1, 1, 1}
+    local healthTextColor = Settings.healthTextColor or {1, 1, 1, 1}
+    if hTextFormat and hTextFormat >= 6 then
+        nameplate.healthtext:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4])
     else
-        nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
+        nameplate.healthtext:SetTextColor(healthTextColor[1], healthTextColor[2], healthTextColor[3], healthTextColor[4])
     end
 
     -- Hide name if Name-integrated format is selected
-    if hTextFormat >= 6 then
+    if hTextFormat and hTextFormat >= 6 then
         nameplate.name:Hide()
     else
         nameplate.name:Show()
@@ -1540,9 +1576,10 @@ local function UpdateNamePlate(frame)
     -- Update name from original
     if original.name and original.name.GetText then
         local name = original.name:GetText()
-        if name then 
+        if name then
             nameplate.name:SetText(name)
-            nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
+            local nColor = Settings.nameColor or {1, 1, 1, 1}
+            nameplate.name:SetTextColor(nColor[1], nColor[2], nColor[3], nColor[4])
         end
     end
 
@@ -1669,14 +1706,16 @@ local function UpdateNamePlate(frame)
         
         -- Show target glow if enabled (Dragonflight3-style top/bottom glow)
         if Settings.showTargetGlow then
+            local glowColor = Settings.targetGlowColor or {0.4, 0.8, 0.9, 0.4}
+            local hbWidth = Settings.healthbarWidth or 115
             if nameplate.targetGlowTop then
-                nameplate.targetGlowTop:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
-                nameplate.targetGlowTop:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowTop:SetVertexColor(glowColor[1], glowColor[2], glowColor[3], 0.4)
+                nameplate.targetGlowTop:SetWidth(hbWidth)
                 nameplate.targetGlowTop:Show()
             end
             if nameplate.targetGlowBottom then
-                nameplate.targetGlowBottom:SetVertexColor(Settings.targetGlowColor[1], Settings.targetGlowColor[2], Settings.targetGlowColor[3], 0.4)
-                nameplate.targetGlowBottom:SetWidth(Settings.healthbarWidth)
+                nameplate.targetGlowBottom:SetVertexColor(glowColor[1], glowColor[2], glowColor[3], 0.4)
+                nameplate.targetGlowBottom:SetWidth(hbWidth)
                 nameplate.targetGlowBottom:Show()
             end
         end
@@ -1777,21 +1816,21 @@ local function UpdateNamePlate(frame)
         -- Determine settings to use based on reaction
         local cHeight, cIndependent, cWidth, cShowIcon, hHeight, hWidth, mHeight
         if isFriendly then
-            cHeight = Settings.friendCastbarHeight
+            cHeight = Settings.friendCastbarHeight or 6
             cIndependent = Settings.friendCastbarIndependent
-            cWidth = Settings.friendCastbarWidth
+            cWidth = Settings.friendCastbarWidth or 85
             cShowIcon = Settings.friendShowCastbarIcon
-            hHeight = Settings.friendHealthbarHeight
-            hWidth = Settings.friendHealthbarWidth
-            mHeight = Settings.friendManabarHeight
+            hHeight = Settings.friendHealthbarHeight or 4
+            hWidth = Settings.friendHealthbarWidth or 85
+            mHeight = Settings.friendManabarHeight or 4
         else
-            cHeight = Settings.castbarHeight
+            cHeight = Settings.castbarHeight or 12
             cIndependent = Settings.castbarIndependent
-            cWidth = Settings.castbarWidth
+            cWidth = Settings.castbarWidth or 115
             cShowIcon = Settings.showCastbarIcon
-            hHeight = Settings.healthbarHeight
-            hWidth = Settings.healthbarWidth
-            mHeight = Settings.manabarHeight
+            hHeight = Settings.healthbarHeight or 14
+            hWidth = Settings.healthbarWidth or 115
+            mHeight = Settings.manabarHeight or 4
         end
 
         if now < start + (duration / 1000) then
@@ -1940,7 +1979,7 @@ local lastChildCount = 0
 -- Throttle for debuff timer cleanup
 local lastDebuffCleanup = 0
 
-GudaPlates:SetScript("OnUpdate", function()
+GudaPlatesEventFrame:SetScript("OnUpdate", function()
     if GudaPlates_Debuffs then
         GudaPlates_Debuffs:CleanupTimers()
     end
@@ -2041,7 +2080,7 @@ local function cmatch(str, pattern)
     return nil
 end
 
-GudaPlates:SetScript("OnEvent", function()
+GudaPlatesEventFrame:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     -- Using lookup tables instead of string.find for better performance
     if arg1 and SPELL_EVENTS[event] then
@@ -2144,12 +2183,12 @@ GudaPlates:SetScript("OnEvent", function()
         -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
         DisablePfUINameplates()
 
-        -- Clear trackers on zone/load
-        debuffTracker = {}
-        castTracker = {}
-        castDB = {}
-        recentMeleeCrits = {}
-        recentMeleeHits = {}
+        -- Clear trackers on zone/load (clear contents, don't reassign to preserve references)
+        for k in pairs(debuffTracker) do debuffTracker[k] = nil end
+        for k in pairs(castTracker) do castTracker[k] = nil end
+        for k in pairs(castDB) do castDB[k] = nil end
+        for k in pairs(recentMeleeCrits) do recentMeleeCrits[k] = nil end
+        for k in pairs(recentMeleeHits) do recentMeleeHits[k] = nil end
         if SpellDB then SpellDB.objects = {} end
         if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
         Print("Initialized. Scanning...")
