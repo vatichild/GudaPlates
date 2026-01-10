@@ -95,6 +95,7 @@ local TANK_CLASSES = {
     ["Warrior"] = true,
     ["Paladin"] = true,
     ["Druid"] = true,
+	["Shaman"] = true,
 }
 
 -- Helper function to check if a unit is a tank class

@@ -275,12 +275,32 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
         end
 
+        -- Hunter traps: Always show regardless of "Only My Debuffs" setting
+        -- Traps are placed on ground and triggered by enemies, so ownership can't be tracked reliably
+        -- Check both effect name AND texture (texture-based detection for when tooltip scanning fails)
+        local isHunterTrap = false
+        -- Check by effect name first
+        if effect and SpellDB.HUNTER_TRAPS and SpellDB.HUNTER_TRAPS[effect] then
+            isHunterTrap = true
+        -- Fallback: check by texture if effect name is missing or unknown
+        elseif texture and SpellDB.HUNTER_TRAP_TEXTURES and SpellDB.HUNTER_TRAP_TEXTURES[texture] then
+            isHunterTrap = true
+            -- Always use the correct effect name from texture mapping for timer tracking
+            -- This overrides potentially incorrect tooltip-scanned names
+            effect = SpellDB.HUNTER_TRAP_TEXTURES[texture]
+        end
+
         -- Determine ownership
         local isMyDebuff = false
         local duration, timeleft = nil, nil
 
         -- Force Rogue poisons as "mine" - they bypass all ownership checks
         if isRoguePoison then
+            isMyDebuff = true
+        end
+
+        -- Force Hunter traps as "mine" for Hunter players - for timer tracking
+        if isHunterTrap and playerClass == "HUNTER" then
             isMyDebuff = true
         end
 
@@ -425,8 +445,13 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 isRedundant = false
             end
 
+            -- Hunter traps: Force-allow, bypass redundancy check
+            if isHunterTrap then
+                isRedundant = false
+            end
+
             local shouldDisplay = true
-            if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique and not isOwnerBound then
+            if Settings.showOnlyMyDebuffs and not isMyDebuff and not isUnique and not isOwnerBound and not isHunterTrap then
                 shouldDisplay = false
             end
             if isRedundant then

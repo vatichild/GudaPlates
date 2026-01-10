@@ -36,6 +36,10 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Holy_Vindication"] = "Vindication",
 	-- Hunter
 	["Interface\\Icons\\spell_lacerate_1C"] = "Lacerate",
+	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",
+	["Interface\\Icons\\Spell_Fire_FlameShock"] = "Immolation Trap Effect",
+	["Interface\\Icons\\Spell_Fire_SelfDestruct"] = "Explosive Trap Effect",
+	["Interface\\Icons\\Spell_Frost_FreezingBreath"] = "Frost Trap Aura",
 	-- Other
 	["Interface\\Icons\\Spell_Nature_Cyclone"] = "Thunderfury's Blessing",
 }
@@ -172,7 +176,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Freezing Trap Effect"] = {[1]=10,[2]=15,[3]=20,[0]=20},
 	["Immolation Trap Effect"] = {[0]=15},
 	["Explosive Trap Effect"] = {[0]=20},
-	["Frost Trap"] = {[0]=8},
+	["Frost Trap Aura"] = {[0]=8},
 	["Intimidation"] = {[0]=3},
 	["Entrapment"] = {[0]=5},
 	["Lacerate"] = {[0]=8},
@@ -286,9 +290,10 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Scorpid Sting"] = "HUNTER",
 	["Scare Beast"] = "HUNTER",
 	["Freezing Trap Effect"] = true,
-	["Immolation Trap Effect"] = "HUNTER",
-	["Explosive Trap Effect"] = "HUNTER",
-	["Frost Trap"] = "HUNTER",
+	["Immolation Trap Effect"] = true,
+	["Explosive Trap Effect"] = true,
+	["Frost Trap Aura"] = true,
+	["Entrapment"] = true,
 
 	-- Paladin
 	["Hammer of Justice"] = "PALADIN",
@@ -346,6 +351,26 @@ GudaPlates_SpellDB.ROGUE_POISON_TEXTURES = {
 	["Interface\\Icons\\Spell_Nature_NullifyDisease"] = "Mind-numbing Poison",
 	-- Wound Poison
 	["Interface\\Icons\\INV_Misc_Herb_16"] = "Wound Poison",
+}
+
+-- Hunter Traps - always show regardless of "Only My Debuffs" setting
+-- These are placed on ground and triggered by enemies, so ownership can't be tracked
+GudaPlates_SpellDB.HUNTER_TRAPS = {
+	["Freezing Trap Effect"] = true,
+	["Immolation Trap Effect"] = true,
+	["Explosive Trap Effect"] = true,
+	["Frost Trap Aura"] = true,
+	["Entrapment"] = true,
+}
+
+-- Hunter Trap TEXTURES - for icon-based detection when tooltip scanning fails
+GudaPlates_SpellDB.HUNTER_TRAP_TEXTURES = {
+	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",
+	["Interface\\Icons\\Spell_Fire_FlameShock"] = "Immolation Trap Effect",
+	["Interface\\Icons\\Spell_Fire_SelfDestruct"] = "Explosive Trap Effect",
+	["Interface\\Icons\\Spell_Frost_FreezingBreath"] = "Frost Trap Aura",
+	["Interface\\Icons\\Spell_Frost_FrostNova"] = "Frost Trap Aura",
+	["Interface\\Icons\\Ability_Ensnare"] = "Entrapment",
 }
 
 -- Debuffs that are bound to the owner (should be visible when "Only My Debuffs" is active)
