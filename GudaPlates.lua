@@ -65,6 +65,11 @@ local UnitGUID = UnitGUID
 local DEBUFF_UPDATE_INTERVAL = 0.1  -- Update debuffs 10 times/sec instead of every frame
 GudaPlates.DEBUFF_UPDATE_INTERVAL = DEBUFF_UPDATE_INTERVAL
 
+-- Performance: Cached WorldFrame children to avoid garbage collection
+-- Only refresh when child count changes
+local cachedWorldChildren = {}
+local cachedWorldChildCount = 0
+
 -- Performance: Event lookup tables (faster than string.find)
 local SPELL_EVENTS = {
     ["CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE"] = true,
@@ -187,6 +192,13 @@ GudaPlates.castTracker = castTracker  -- Expose for CombatLog module
 local Settings = GudaPlates.Settings
 local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
+
+-- Performance: Pre-defined stun effects list (avoid creating table in hot path)
+local STUN_EFFECTS = {
+    "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice",
+    "Charge Stun", "Intercept Stun", "Concussion Blow",
+    "Gouge", "Sap", "Pounce"
+}
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
 local clickThrough = GudaPlates.nameplateClickThrough
@@ -1529,8 +1541,7 @@ local function UpdateNamePlate(frame)
         if hasValidGUID and GudaPlates_Debuffs then
             -- We can check our own timers for this unit
             -- Stun types in WoW: Stun, Incapacitate, Fear? User specifically asked for "Stun color"
-            local stuns = { "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice", "Charge Stun", "Intercept Stun", "Concussion Blow", "Gouge", "Sap", "Pounce" }
-            for _, stunName in ipairs(stuns) do
+            for _, stunName in ipairs(STUN_EFFECTS) do
                 if GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName] or GudaPlates_Debuffs.timers[plateName .. "_" .. stunName] then
                     isStunned = true
                     break
@@ -2093,12 +2104,18 @@ GudaPlates:SetScript("OnUpdate", function()
     -- Our own scanning logic
     parentcount = WorldFrame:GetNumChildren()
 
-    local childs = { WorldFrame:GetChildren() }
+    -- Only refresh cached children when count changes (reduces garbage)
+    if parentcount ~= cachedWorldChildCount then
+        cachedWorldChildren = { WorldFrame:GetChildren() }
+        cachedWorldChildCount = parentcount
+    end
+
+    -- Only scan for new nameplates (not already in registry)
     for i = 1, parentcount do
-        local plate = childs[i]
-        if plate then
+        local plate = cachedWorldChildren[i]
+        if plate and not registry[plate] then
             local isPlate = IsNamePlate(plate)
-            if isPlate and not registry[plate] then
+            if isPlate then
                 HandleNamePlate(plate)
             end
         end

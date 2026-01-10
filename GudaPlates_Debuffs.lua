@@ -25,6 +25,12 @@ playerClass = playerClass or ""
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
 
+-- Performance: Pre-defined spell lists (avoid creating tables in hot paths)
+local JUDGEMENT_EFFECTS = {
+    "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader",
+    "Judgement of Justice", "Judgement", "Crusader Strike"
+}
+
 -- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
 GudaPlates_Debuffs.timers = {}
 local debuffTimers = GudaPlates_Debuffs.timers
@@ -80,10 +86,9 @@ function GudaPlates_Debuffs:SealHandler(attacker, victim)
     local isOwn = (attacker == "You" or attacker == UnitName("player"))
     if not isOwn then return end
 
-    local judgements = { "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader", "Judgement of Justice", "Judgement", "Crusader Strike" }
     local guid = isTarget and UnitGUID and UnitGUID("target")
 
-    for _, effect in pairs(judgements) do
+    for _, effect in ipairs(JUDGEMENT_EFFECTS) do
         -- AGGRESSIVE REFRESH for current target or if it exists in DB
         local data = self:GetSpellData(guid, victim, effect, 0)
         if data or isTarget then
