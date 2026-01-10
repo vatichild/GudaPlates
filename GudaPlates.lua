@@ -173,6 +173,7 @@ local castDB = {}
 
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
+GudaPlates.castTracker = castTracker  -- Expose for CombatLog module
 
 -- Settings and other variables from GudaPlates_Settings.lua
 local Settings = GudaPlates.Settings
@@ -291,8 +292,10 @@ end
 -- Melee crit tracker for Deep Wound heuristic
 -- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
 local recentMeleeCrits = {}
+GudaPlates.recentMeleeCrits = recentMeleeCrits  -- Expose for CombatLog module
 -- Melee hit tracker for procs (Vindication)
 local recentMeleeHits = {}
+GudaPlates.recentMeleeHits = recentMeleeHits  -- Expose for CombatLog module
 
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
@@ -2116,185 +2119,13 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 end)
 
--- Helper function to match combat log patterns (ShaguPlates-style cmatch)
-local function cmatch(str, pattern)
-    if not str or not pattern then return nil end
-    -- Convert WoW format strings to Lua patterns
-    local pat = string_gsub(pattern, "%%%d?%$?s", "(.+)")
-    pat = string_gsub(pat, "%%%d?%$?d", "(%d+)")
-    for a, b, c, d in string_gfind(str, pat) do
-        return a, b, c, d
-    end
-    return nil
-end
-
-
--- Cast icons lookup table
-local castIcons = {
-    ["Fireball"] = "Interface\\Icons\\Spell_Fire_FlameBolt",
-    ["Frostbolt"] = "Interface\\Icons\\Spell_Frost_FrostBolt02",
-    ["Shadow Bolt"] = "Interface\\Icons\\Spell_Shadow_ShadowBolt",
-    ["Greater Heal"] = "Interface\\Icons\\Spell_Holy_GreaterHeal",
-    ["Flash Heal"] = "Interface\\Icons\\Spell_Holy_FlashHeal",
-    ["Lightning Bolt"] = "Interface\\Icons\\Spell_Nature_Lightning",
-    ["Chain Lightning"] = "Interface\\Icons\\Spell_Nature_ChainLightning",
-    ["Earthbind Totem"] = "Interface\\Icons\\Spell_Nature_StrengthOfEarthTotem02",
-    ["Healing Wave"] = "Interface\\Icons\\Spell_Nature_MagicImmunity",
-    ["Fear"] = "Interface\\Icons\\Spell_Shadow_Possession",
-    ["Polymorph"] = "Interface\\Icons\\Spell_Nature_Polymorph",
-    ["Scorching Totem"] = "Interface\\Icons\\Spell_Fire_ScorchingTotem",
-    ["Slowing Poison"] = "Interface\\Icons\\Ability_PoisonSting",
-    ["Web"] = "Interface\\Icons\\Ability_Ensnare",
-    ["Cursed Blood"] = "Interface\\Icons\\Spell_Shadow_RitualOfSacrifice",
-    ["Shrink"] = "Interface\\Icons\\Spell_Shadow_AntiShadow",
-    ["Shadow Weaving"] = "Interface\\Icons\\Spell_Shadow_BlackPlague",
-    ["Smite"] = "Interface\\Icons\\Spell_Holy_HolySmite",
-    ["Mind Blast"] = "Interface\\Icons\\Spell_Shadow_UnholyFrenzy",
-    ["Holy Light"] = "Interface\\Icons\\Spell_Holy_HolyLight",
-    ["Starfire"] = "Interface\\Icons\\Spell_Arcane_StarFire",
-    ["Wrath"] = "Interface\\Icons\\Spell_Nature_AbolishMagic",
-    ["Entangling Roots"] = "Interface\\Icons\\Spell_Nature_StrangleVines",
-    ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
-    ["Regrowth"] = "Interface\\Icons\\Spell_Nature_ResistNature",
-    ["Rejuvenation"] = "Interface\\Icons\\Spell_Nature_Rejuvenation",
-}
-
--- Helper function to parse cast starts from combat log
-local function ParseCastStart(msg)
-    if not msg then return end
-
-    local unit, spell = nil, nil
-
-    -- Try "begins to cast"
-    for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
-        unit, spell = u, s
-    end
-
-    -- Try "begins to perform"
-    if not unit then
-        for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
-            unit, spell = u, s
-        end
-    end
-
-    if unit and spell then
-        local duration = 2000 -- Default 2 seconds
-
-        if not castTracker[unit] then castTracker[unit] = {} end
-
-        local newCast = {
-            spell = spell,
-            startTime = GetTime(),
-            duration = duration,
-            icon = castIcons[spell],
-        }
-
-        table.insert(castTracker[unit], newCast)
-    end
-
-    -- Check for interrupts/failures
-    local interruptedUnit = nil
-    for u in string_gfind(msg, "(.+)'s .+ is interrupted%.") do interruptedUnit = u end
-    if not interruptedUnit then
-        for u in string_gfind(msg, "(.+)'s .+ fails%.") do interruptedUnit = u end
-    end
-
-    if interruptedUnit and castTracker[interruptedUnit] then
-        table.remove(castTracker[interruptedUnit], 1)
-    end
-end
-
-local function ParseAttackHit(msg)
-    if not msg or not SpellDB then return end
-
-    local attacker, victim = nil, nil
-    -- Patterns for melee hits (English)
-    -- You hit X for Y.
-    for v in string_gfind(msg, "You hit (.-) for %d+%.") do
-        attacker = "You"
-        victim = v
-        break
-    end
-    if not victim then
-    -- You crit X for Y.
-        for v in string_gfind(msg, "You crit (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X hits Y for Z.
-        for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X crits Y for Z.
-        for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-
-    -- Patterns for ranged hits
-    if not victim then
-    -- Your ranged attack hits X for Y.
-        for v in string_gfind(msg, "Your ranged attack hits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- Your ranged attack crits X for Y.
-        for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack hits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack crits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-
-    if attacker == "You" and victim then
-        recentMeleeHits[victim] = GetTime()
-        -- Also store by GUID if available
-        if superwow_active and UnitExists("target") and UnitName("target") == victim then
-            local guid = UnitGUID and UnitGUID("target")
-            if guid then
-                recentMeleeHits[guid] = GetTime()
-            end
-        end
-    end
-
-    if attacker and victim and GudaPlates_Debuffs then
-        GudaPlates_Debuffs:SealHandler(attacker, victim)
-    end
-end
+-- Combat log parsing functions (cmatch, castIcons, ParseCastStart, ParseAttackHit) moved to GudaPlates_CombatLog.lua
 
 GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     -- Using lookup tables instead of string.find for better performance
     if arg1 and SPELL_EVENTS[event] then
-        ParseCastStart(arg1)
+        if GudaPlates.ParseCastStart then GudaPlates.ParseCastStart(arg1) end
         -- Also check for spell damage that might refresh debuffs (like Thunderfury)
         if SpellDB and SPELL_DAMAGE_EVENTS[event] then
             -- Patterns for player and others
@@ -2375,7 +2206,7 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
     elseif arg1 and COMBAT_EVENTS[event] then
-        ParseAttackHit(arg1)
+        if GudaPlates.ParseAttackHit then GudaPlates.ParseAttackHit(arg1) end
     end
 
     if event == "ADDON_LOADED" then
