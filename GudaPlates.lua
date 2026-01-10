@@ -63,6 +63,12 @@ local UnitGUID = UnitGUID
 
 -- Performance: Throttle intervals
 local DEBUFF_UPDATE_INTERVAL = 0.1  -- Update debuffs 10 times/sec instead of every frame
+GudaPlates.DEBUFF_UPDATE_INTERVAL = DEBUFF_UPDATE_INTERVAL
+
+-- Performance: Cached WorldFrame children to avoid garbage collection
+-- Only refresh when child count changes
+local cachedWorldChildren = {}
+local cachedWorldChildCount = 0
 
 -- Performance: Event lookup tables (faster than string.find)
 local SPELL_EVENTS = {
@@ -164,20 +170,35 @@ local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
 local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 
+-- Expose for Core module
+GudaPlates.superwow_active = superwow_active
+GudaPlates.twthreat_active = twthreat_active
+GudaPlates.REGION_ORDER = REGION_ORDER
+
 -- Player class for debuff filtering
 local _, playerClass = UnitClass("player")
 playerClass = playerClass or ""
+GudaPlates.playerClass = playerClass
 
 -- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
 local castDB = {}
+GudaPlates.castDB = castDB  -- Expose for Castbar module
 
 -- Cast tracking for non-SuperWoW
 local castTracker = {}
+GudaPlates.castTracker = castTracker  -- Expose for CombatLog module
 
 -- Settings and other variables from GudaPlates_Settings.lua
 local Settings = GudaPlates.Settings
 local THREAT_COLORS = GudaPlates.THREAT_COLORS
 local playerRole = GudaPlates.playerRole
+
+-- Performance: Pre-defined stun effects list (avoid creating table in hot path)
+local STUN_EFFECTS = {
+    "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice",
+    "Charge Stun", "Intercept Stun", "Concussion Blow",
+    "Gouge", "Sap", "Pounce"
+}
 local minimapAngle = GudaPlates.minimapAngle
 local nameplateOverlap = GudaPlates.nameplateOverlap
 local clickThrough = GudaPlates.nameplateClickThrough
@@ -211,50 +232,6 @@ local function IsTankClass(unit)
     if not unit or not UnitExists(unit) then return false end
     local _, class = UnitClass(unit)
     return class and TANK_CLASSES[class]
-end
-
--- Helper function to check if we are in an instance (raid or dungeon)
-local function IsInInstance()
-    -- On Turtle WoW / Vanilla 1.12.1
-    -- 1. Check if IsInInstance() exists (some clients backport it)
-    if getglobal("IsInInstance") then
-        local inInst, instType = getglobal("IsInInstance")()
-        if inInst then return true end
-    end
-
-    -- 2. Check for raid or party and zone type
-    local pvpType, isFFA, faction = GetZonePVPInfo()
-    -- 'sanctuary' is usually used for safe zones in cities but also some instances in custom servers
-    -- More importantly, check if we are in a raid/party and if the zone is an instance
-    
-    -- 3. Check if we have a raid/party and if GetRealZoneText() matches common instance names
-    -- but a better way in 1.12.1 is checking if the world map is unavailable or using specific zone checks
-    
-    -- For Turtle WoW specifically, many people use GetRealZoneText and compare with known instances
-    -- but we can use a simpler heuristic: if we are in a raid, we are likely in an instance or world boss.
-    -- The requirement says "raid or dungeon".
-    
-    -- Let's use a more robust check for 1.12.1
-    local zone = GetRealZoneText()
-    if not zone or zone == "" then return false end
-    
-    -- Instances usually have a specific map ID or are not on continents
-    -- In 1.12.1, we can't easily get MapID, but we can check if we're in a party/raid 
-    -- and if the zone is NOT one of the major continents.
-    
-    -- Turtle WoW uses a backported IsInInstance if I'm not mistaken.
-    -- If not, checking for raid status is a common fallback for "raid or dungeon" 
-    -- because you're almost always in a party/raid in those.
-    if UnitInRaid("player") or GetNumPartyMembers() > 0 then
-        -- If in a group, check if we are in a known non-instance zone
-        local isContinent = (zone == "Azeroth" or zone == "Kalimdor" or zone == "Eastern Kingdoms" or zone == "Stranglethorn Vale" or zone == "Tanaris") -- etc
-        if not isContinent then
-            -- This is still a bit weak, but better than nothing.
-            -- Actually, let's just trust IsInInstance() if it exists.
-        end
-    end
-    
-    return false 
 end
 
 -- Helper function to check if a unit is in the player's group (player, party, or raid)
@@ -291,8 +268,10 @@ end
 -- Melee crit tracker for Deep Wound heuristic
 -- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
 local recentMeleeCrits = {}
+GudaPlates.recentMeleeCrits = recentMeleeCrits  -- Expose for CombatLog module
 -- Melee hit tracker for procs (Vindication)
 local recentMeleeHits = {}
+GudaPlates.recentMeleeHits = recentMeleeHits  -- Expose for CombatLog module
 
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
@@ -440,6 +419,7 @@ local function DisableObject(object)
     if not object then return end
     if object.SetAlpha then object:SetAlpha(0) end
 end
+GudaPlates.DisableObject = DisableObject
 
 local function HideVisual(object)
     if not object then return end
@@ -453,6 +433,12 @@ local function HideVisual(object)
         end
     end
 end
+GudaPlates.HideVisual = HideVisual
+GudaPlates.IsNamePlate = IsNamePlate
+
+-- Platecount getter/setter for Core module
+GudaPlates.getPlateCount = function() return platecount end
+GudaPlates.incPlateCount = function() platecount = platecount + 1; return platecount end
 
 local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
 GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -1438,72 +1424,47 @@ local function UpdateNamePlate(frame)
 
         -- Check if mob is tapped by others
         local isTappedByOthers = false
-        
-        -- Requirement: In instances, ignore tapping coloring
-        local inInstance = IsInInstance()
-        
-        if not inInstance then
-            -- 1. Check original color for gray (tapped)
-            -- Blizzard gray for tapped is (0.5, 0.5, 0.5)
-            if r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6 then
-                isTappedByOthers = true
-            end
 
-            -- 2. Use API for 100% accuracy if unit is available
-            local unitForAPI = nil
-            if hasValidGUID then
-                unitForAPI = unitstr
-            elseif UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
-                unitForAPI = "target"
-            end
+        -- 1. Check original color for gray (tapped)
+        -- Blizzard gray for tapped is (0.5, 0.5, 0.5)
+        if r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6 then
+            isTappedByOthers = true
+        end
 
-            if not isTappedByOthers and unitForAPI then
-                if UnitIsTapped(unitForAPI) and not UnitIsTappedByPlayer(unitForAPI) then
-                    -- Double check if the mob is attacking someone in our group (excluding player)
-                    -- (Fixes cases where joining a group mid-combat doesn't update UnitIsTappedByPlayer immediately)
-                    local isMobTargetingGroupMate = false
-                    local apiTarget = unitForAPI .. "target"
-                    if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
-                        isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
-                    end
-                    
-                    if not isMobTargetingGroupMate then
-                        isTappedByOthers = true
-                    end
-                end
-            end
+        -- 2. Use API for 100% accuracy if unit is available
+        local unitForAPI = nil
+        if hasValidGUID then
+            unitForAPI = unitstr
+        elseif UnitExists("target") and UnitName("target") == plateName and frame:GetAlpha() > 0.9 then
+            unitForAPI = "target"
+        end
 
-            -- 3. Also keep the current logic as backup if color detection fails for some reason
-            -- or if it's already attacking someone not in group.
-            -- IMPORTANT: Only run this fallback if we haven't already confirmed it's ours (original bar not gray)
-            local originalIsGray = (r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6)
-            if not isTappedByOthers and mobInCombat and (originalIsGray or (r < 0.1 and g < 0.1 and b < 0.1)) then
+        if not isTappedByOthers and unitForAPI then
+            if UnitIsTapped(unitForAPI) and not UnitIsTappedByPlayer(unitForAPI) then
+                -- Double check if the mob is attacking someone in our group (excluding player)
                 local isMobTargetingGroupMate = false
-
-                if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
-                    isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
+                local apiTarget = unitForAPI .. "target"
+                if UnitExists(apiTarget) and not UnitIsUnit(apiTarget, "player") then
+                    isMobTargetingGroupMate = IsInPlayerGroup(apiTarget)
                 end
-                
-                -- If it's targeting us, we don't set isMobTargetingGroupMate to true here.
-                -- This means if it was already tapped (but color detection failed), 
-                -- it will stay tapped even if attacking us, unless UnitIsTappedByPlayer says otherwise (handled by API check above).
-                
-                -- However, if it's NOT targeting a group mate AND it's not our tap, it's tapped by others.
-                -- But wait, if it's targeting US, isMobTargetingGroupMate is false.
-                -- If we are the one who tapped it, it shouldn't be here (ideally).
-                -- But Block 3 is a fallback for non-target plates where we don't have UnitIsTapped.
-                -- For non-target plates, if it's attacking us, we usually assume it's ours.
-                -- This is tricky. But if color detection (Block 1) didn't catch it as gray, 
-                -- it's probably NOT tapped by someone else, or the color hasn't updated.
-                
-                -- Let's stick to the user request: "shouldn't change any color if I aggro it".
-                -- If it was gray, Block 1 should catch it.
-                -- If Block 1 caught it, isTappedByOthers is true, and Block 2 & 3 don't run.
-                
-                -- If it's attacking us, we'll keep the existing logic for now but be careful.
-                local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
-                isTappedByOthers = not isMobTargetingGroup
+
+                if not isMobTargetingGroupMate then
+                    isTappedByOthers = true
+                end
             end
+        end
+
+        -- 3. Fallback for non-target plates
+        local originalIsGray = (r > 0.4 and r < 0.6 and g > 0.4 and g < 0.6 and b > 0.4 and b < 0.6)
+        if not isTappedByOthers and mobInCombat and (originalIsGray or (r < 0.1 and g < 0.1 and b < 0.1)) then
+            local isMobTargetingGroupMate = false
+
+            if mobTargetUnit and UnitExists(mobTargetUnit) and not UnitIsUnit(mobTargetUnit, "player") then
+                isMobTargetingGroupMate = IsInPlayerGroup(mobTargetUnit)
+            end
+
+            local isMobTargetingGroup = isMobTargetingGroupMate or isAttackingPlayer or hasAggroGlow
+            isTappedByOthers = not isMobTargetingGroup
         end
 
         -- Apply color based on state (priority order: TAPPED -> STUNNED -> NEUTRAL -> THREAT COLORS)
@@ -1511,8 +1472,7 @@ local function UpdateNamePlate(frame)
         if hasValidGUID and GudaPlates_Debuffs then
             -- We can check our own timers for this unit
             -- Stun types in WoW: Stun, Incapacitate, Fear? User specifically asked for "Stun color"
-            local stuns = { "Cheap Shot", "Kidney Shot", "Bash", "Hammer of Justice", "Charge Stun", "Intercept Stun", "Concussion Blow", "Gouge", "Sap", "Pounce" }
-            for _, stunName in ipairs(stuns) do
+            for _, stunName in ipairs(STUN_EFFECTS) do
                 if GudaPlates_Debuffs.timers[unitstr .. "_" .. stunName] or GudaPlates_Debuffs.timers[plateName .. "_" .. stunName] then
                     isStunned = true
                     break
@@ -2075,12 +2035,18 @@ GudaPlates:SetScript("OnUpdate", function()
     -- Our own scanning logic
     parentcount = WorldFrame:GetNumChildren()
 
-    local childs = { WorldFrame:GetChildren() }
+    -- Only refresh cached children when count changes (reduces garbage)
+    if parentcount ~= cachedWorldChildCount then
+        cachedWorldChildren = { WorldFrame:GetChildren() }
+        cachedWorldChildCount = parentcount
+    end
+
+    -- Only scan for new nameplates (not already in registry)
     for i = 1, parentcount do
-        local plate = childs[i]
-        if plate then
+        local plate = cachedWorldChildren[i]
+        if plate and not registry[plate] then
             local isPlate = IsNamePlate(plate)
-            if isPlate and not registry[plate] then
+            if isPlate then
                 HandleNamePlate(plate)
             end
         end
@@ -2116,10 +2082,10 @@ GudaPlates:SetScript("OnUpdate", function()
     end
 end)
 
--- Helper function to match combat log patterns (ShaguPlates-style cmatch)
+-- Combat log parsing functions (castIcons, ParseCastStart, ParseAttackHit) moved to GudaPlates_CombatLog.lua
+-- cmatch kept here due to load order (needed before CombatLog loads)
 local function cmatch(str, pattern)
     if not str or not pattern then return nil end
-    -- Convert WoW format strings to Lua patterns
     local pat = string_gsub(pattern, "%%%d?%$?s", "(.+)")
     pat = string_gsub(pat, "%%%d?%$?d", "(%d+)")
     for a, b, c, d in string_gfind(str, pat) do
@@ -2128,173 +2094,11 @@ local function cmatch(str, pattern)
     return nil
 end
 
-
--- Cast icons lookup table
-local castIcons = {
-    ["Fireball"] = "Interface\\Icons\\Spell_Fire_FlameBolt",
-    ["Frostbolt"] = "Interface\\Icons\\Spell_Frost_FrostBolt02",
-    ["Shadow Bolt"] = "Interface\\Icons\\Spell_Shadow_ShadowBolt",
-    ["Greater Heal"] = "Interface\\Icons\\Spell_Holy_GreaterHeal",
-    ["Flash Heal"] = "Interface\\Icons\\Spell_Holy_FlashHeal",
-    ["Lightning Bolt"] = "Interface\\Icons\\Spell_Nature_Lightning",
-    ["Chain Lightning"] = "Interface\\Icons\\Spell_Nature_ChainLightning",
-    ["Earthbind Totem"] = "Interface\\Icons\\Spell_Nature_StrengthOfEarthTotem02",
-    ["Healing Wave"] = "Interface\\Icons\\Spell_Nature_MagicImmunity",
-    ["Fear"] = "Interface\\Icons\\Spell_Shadow_Possession",
-    ["Polymorph"] = "Interface\\Icons\\Spell_Nature_Polymorph",
-    ["Scorching Totem"] = "Interface\\Icons\\Spell_Fire_ScorchingTotem",
-    ["Slowing Poison"] = "Interface\\Icons\\Ability_PoisonSting",
-    ["Web"] = "Interface\\Icons\\Ability_Ensnare",
-    ["Cursed Blood"] = "Interface\\Icons\\Spell_Shadow_RitualOfSacrifice",
-    ["Shrink"] = "Interface\\Icons\\Spell_Shadow_AntiShadow",
-    ["Shadow Weaving"] = "Interface\\Icons\\Spell_Shadow_BlackPlague",
-    ["Smite"] = "Interface\\Icons\\Spell_Holy_HolySmite",
-    ["Mind Blast"] = "Interface\\Icons\\Spell_Shadow_UnholyFrenzy",
-    ["Holy Light"] = "Interface\\Icons\\Spell_Holy_HolyLight",
-    ["Starfire"] = "Interface\\Icons\\Spell_Arcane_StarFire",
-    ["Wrath"] = "Interface\\Icons\\Spell_Nature_AbolishMagic",
-    ["Entangling Roots"] = "Interface\\Icons\\Spell_Nature_StrangleVines",
-    ["Moonfire"] = "Interface\\Icons\\Spell_Nature_StarFall",
-    ["Regrowth"] = "Interface\\Icons\\Spell_Nature_ResistNature",
-    ["Rejuvenation"] = "Interface\\Icons\\Spell_Nature_Rejuvenation",
-}
-
--- Helper function to parse cast starts from combat log
-local function ParseCastStart(msg)
-    if not msg then return end
-
-    local unit, spell = nil, nil
-
-    -- Try "begins to cast"
-    for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
-        unit, spell = u, s
-    end
-
-    -- Try "begins to perform"
-    if not unit then
-        for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
-            unit, spell = u, s
-        end
-    end
-
-    if unit and spell then
-        local duration = 2000 -- Default 2 seconds
-
-        if not castTracker[unit] then castTracker[unit] = {} end
-
-        local newCast = {
-            spell = spell,
-            startTime = GetTime(),
-            duration = duration,
-            icon = castIcons[spell],
-        }
-
-        table.insert(castTracker[unit], newCast)
-    end
-
-    -- Check for interrupts/failures
-    local interruptedUnit = nil
-    for u in string_gfind(msg, "(.+)'s .+ is interrupted%.") do interruptedUnit = u end
-    if not interruptedUnit then
-        for u in string_gfind(msg, "(.+)'s .+ fails%.") do interruptedUnit = u end
-    end
-
-    if interruptedUnit and castTracker[interruptedUnit] then
-        table.remove(castTracker[interruptedUnit], 1)
-    end
-end
-
-local function ParseAttackHit(msg)
-    if not msg or not SpellDB then return end
-
-    local attacker, victim = nil, nil
-    -- Patterns for melee hits (English)
-    -- You hit X for Y.
-    for v in string_gfind(msg, "You hit (.-) for %d+%.") do
-        attacker = "You"
-        victim = v
-        break
-    end
-    if not victim then
-    -- You crit X for Y.
-        for v in string_gfind(msg, "You crit (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X hits Y for Z.
-        for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X crits Y for Z.
-        for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-
-    -- Patterns for ranged hits
-    if not victim then
-    -- Your ranged attack hits X for Y.
-        for v in string_gfind(msg, "Your ranged attack hits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- Your ranged attack crits X for Y.
-        for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack hits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack crits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-
-    if attacker == "You" and victim then
-        recentMeleeHits[victim] = GetTime()
-        -- Also store by GUID if available
-        if superwow_active and UnitExists("target") and UnitName("target") == victim then
-            local guid = UnitGUID and UnitGUID("target")
-            if guid then
-                recentMeleeHits[guid] = GetTime()
-            end
-        end
-    end
-
-    if attacker and victim and GudaPlates_Debuffs then
-        GudaPlates_Debuffs:SealHandler(attacker, victim)
-    end
-end
-
 GudaPlates:SetScript("OnEvent", function()
     -- Parse cast starts for ALL combat log events first
     -- Using lookup tables instead of string.find for better performance
     if arg1 and SPELL_EVENTS[event] then
-        ParseCastStart(arg1)
+        if GudaPlates.ParseCastStart then GudaPlates.ParseCastStart(arg1) end
         -- Also check for spell damage that might refresh debuffs (like Thunderfury)
         if SpellDB and SPELL_DAMAGE_EVENTS[event] then
             -- Patterns for player and others
@@ -2375,7 +2179,7 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
     elseif arg1 and COMBAT_EVENTS[event] then
-        ParseAttackHit(arg1)
+        if GudaPlates.ParseAttackHit then GudaPlates.ParseAttackHit(arg1) end
     end
 
     if event == "ADDON_LOADED" then
@@ -2412,74 +2216,11 @@ GudaPlates:SetScript("OnEvent", function()
             end
         end
 
-    -- SuperWoW UNIT_CASTEVENT handler (ShaguPlates-style)
-    -- This provides exact GUID of caster for accurate per-mob cast tracking
+    -- SuperWoW UNIT_CASTEVENT handler (moved to GudaPlates_Castbar.lua)
     elseif event == "UNIT_CASTEVENT" then
-        local guid = arg1      -- GUID of the caster
-        local target = arg2    -- target GUID (can be empty)
-        local eventType = arg3 -- "START", "CAST", "CHANNEL", "FAIL"
-        local spellId = arg4   -- spell ID
-        local timer = arg5     -- duration in milliseconds
-
-        if eventType == "START" or eventType == "CAST" or eventType == "CHANNEL" then
-            -- Get spell info from SpellInfo if available
-            local spell, icon
-            if SpellInfo and spellId then
-                spell, _, icon = SpellInfo(spellId)
-            end
-
-            -- Fallback values
-            spell = spell or "Casting"
-            icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark"
-
-            -- Update SpellDB with debuff info if it's a known debuff
-            if SpellDB and eventType == "CAST" and target and target ~= "" then
-                local duration = SpellDB:GetDuration(spell, 0)
-                if duration and duration > 0 then
-                    local isOwn = (guid == (UnitGUID and UnitGUID("player")))
-                    SpellDB:RefreshEffect(target, 0, spell, duration, isOwn)
-                    
-                    -- Also handle Thunderfury double-refresh if one of them procs
-                    if spell == "Thunderfury" or spell == "Thunderfury's Blessing" then
-                        SpellDB:RefreshEffect(target, 0, "Thunderfury", duration, isOwn)
-                        SpellDB:RefreshEffect(target, 0, "Thunderfury's Blessing", duration, isOwn)
-                        if GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
-                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury"] = nil
-                            GudaPlates_Debuffs.timers[target .. "_" .. "Thunderfury's Blessing"] = nil
-                            
-                            -- Also clear by name if we can find it
-                            local targetName = UnitName("target")
-                            if targetName and (UnitGUID and UnitGUID("target") == target) then
-                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury"] = nil
-                                GudaPlates_Debuffs.timers[targetName .. "_" .. "Thunderfury's Blessing"] = nil
-                            end
-                        end
-                    elseif GudaPlates_Debuffs and GudaPlates_Debuffs.timers then
-                        GudaPlates_Debuffs.timers[target .. "_" .. spell] = nil
-                    end
-                end
-            end
-
-            -- Skip buff procs during cast (same logic as ShaguPlates)
-            if eventType == "CAST" then
-                if castDB[guid] and castDB[guid].spell ~= spell then
-                    return
-                end
-            end
-
-            -- Store cast by GUID
-            castDB[guid] = {
-                spell = spell,
-                startTime = GetTime(),
-                duration = timer or 2000,
-                icon = icon,
-                channel = (eventType == "CHANNEL")
-            }
-        elseif eventType == "FAIL" then
-            -- Remove cast entry for this GUID
-            if castDB[guid] then
-                castDB[guid] = nil
-            end
+        if GudaPlates.HandleUnitCastEvent then
+            local shouldReturn = GudaPlates.HandleUnitCastEvent(arg1, arg2, arg3, arg4, arg5)
+            if shouldReturn then return end
         end
 
     -- ShaguPlates-style event handlers
