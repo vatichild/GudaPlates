@@ -2203,7 +2203,7 @@ GudaPlates:SetScript("OnEvent", function()
 
     elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and arg1 then
         -- Remove pending spell on failure
-        if SpellDB then
+        if SpellDB and REMOVE_PENDING_PATTERNS then
             for _, pattern in pairs(REMOVE_PENDING_PATTERNS) do
                 local effect = cmatch(arg1, pattern)
                 if effect and SpellDB.pending[3] == effect then
