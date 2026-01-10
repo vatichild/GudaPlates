@@ -5,14 +5,41 @@
 --------------------------------------------------------------------------------
 
 -- Local upvalue aliases for exposed globals from main file
+-- Note: Settings/THREAT_COLORS are tables that exist from Settings file load
 local Settings = GudaPlates.Settings
 local THREAT_COLORS = GudaPlates.THREAT_COLORS
-local registry = GudaPlates.registry
-local SaveSettings = GudaPlates.SaveSettings
-local UpdateNamePlate = GudaPlates.UpdateNamePlate
-local UpdateNamePlateDimensions = GudaPlates.UpdateNamePlateDimensions
-local fontOptions = GudaPlates.fontOptions
-local Print = GudaPlates.Print
+
+-- These are set during main file execution, access via GudaPlates table to ensure they exist
+-- Using wrapper functions to defer the lookup until call time
+local function SaveSettings()
+    if GudaPlates.SaveSettings then
+        GudaPlates.SaveSettings()
+    end
+end
+
+local function UpdateNamePlate(plate)
+    if GudaPlates.UpdateNamePlate then
+        GudaPlates.UpdateNamePlate(plate)
+    end
+end
+
+local function UpdateNamePlateDimensions(plate)
+    if GudaPlates.UpdateNamePlateDimensions then
+        GudaPlates.UpdateNamePlateDimensions(plate)
+    end
+end
+
+local function Print(msg)
+    if GudaPlates.Print then
+        GudaPlates.Print(msg)
+    end
+end
+
+-- Registry is a table reference, should be safe
+local registry = GudaPlates.registry or {}
+local fontOptions = GudaPlates.fontOptions or {}
+
+-- Lua built-ins
 local math_floor = math.floor
 local pairs = pairs
 local ipairs = ipairs

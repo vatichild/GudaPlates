@@ -156,6 +156,9 @@ local parentcount = 0
 local platecount = 0
 local registry = {}
 GudaPlates.registry = registry  -- Expose for Options module
+
+-- Forward declarations for functions used before they're defined
+local LoadSettings
 local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
 -- Track combat state per nameplate frame to avoid issues with same-named mobs
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
@@ -3021,7 +3024,8 @@ local function SaveSettings()
 end
 GudaPlates.SaveSettings = SaveSettings  -- Expose for Options module
 
-local function LoadSettings()
+-- LoadSettings is forward-declared at the top of the file
+LoadSettings = function()
     if GudaPlatesDB.playerRole then
         playerRole = GudaPlatesDB.playerRole
     end
@@ -3185,12 +3189,16 @@ loadFrame:SetScript("OnEvent", function()
         GudaPlatesOptionsFrame.UpdateBackdrop()
     end
     -- Update font dropdown to reflect loaded setting
-    UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, Settings.textFont)
-    -- Also update the displayed text (fontOptions is now in GudaPlates table)
-    for _, opt in ipairs(GudaPlates.fontOptions) do
-        if opt.value == Settings.textFont then
-            UIDropDownMenu_SetText(opt.text, GudaPlatesFontDropdown)
-            break
+    if GudaPlatesFontDropdown then
+        UIDropDownMenu_SetSelectedValue(GudaPlatesFontDropdown, Settings.textFont)
+        -- Also update the displayed text (fontOptions is now in GudaPlates table)
+        if GudaPlates.fontOptions then
+            for _, opt in ipairs(GudaPlates.fontOptions) do
+                if opt.value == Settings.textFont then
+                    UIDropDownMenu_SetText(opt.text, GudaPlatesFontDropdown)
+                    break
+                end
+            end
         end
     end
     Print("Settings loaded.")

@@ -170,6 +170,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Blackout"] = {[0]=3},
 	["Mana Burn"] = {[0]=0}, -- instant
 	["Touch of Weakness"] = {[0]=120},
+	["Mind Soothe"] = {[0]=15},
 
 	-- HUNTER
 	["Serpent Sting"] = {[1]=15, [2]=15, [3]=15, [4]=15, [5]=15, [6]=15, [7]=15, [8]=15, [9]=15, [0]=15},
@@ -287,6 +288,7 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Shadow Vulnerability"] = "PRIEST", -- Can also be Warlock, but primarily Priest
 	["Silence"] = "PRIEST",
 	["Touch of Weakness"] = "PRIEST",
+	["Mind Soothe"] = "PRIEST",
 	-- Warlock
 	["Curse of Weakness"] = "WARLOCK",
 	["Curse of Recklessness"] = "WARLOCK",
