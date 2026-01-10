@@ -370,23 +370,29 @@ if SpellDB then
 	SpellDB:InitScanner()
 end
 
+-- Helper to check if a region is the nameplate border
+local function CheckRegionForBorder(r)
+    if r and r.GetObjectType and r:GetObjectType() == "Texture" and r.GetTexture then
+        return r:GetTexture() == "Interface\\Tooltips\\Nameplate-Border"
+    end
+    return false
+end
+
 local function IsNamePlate(frame)
     if not frame then return nil end
     local objType = frame:GetObjectType()
     if objType ~= "Frame" and objType ~= "Button" then return nil end
 
-    -- Check ALL regions for the nameplate border texture
-    local regions = { frame:GetRegions() }
-    for _, r in ipairs(regions) do
-        if r and r.GetObjectType and r:GetObjectType() == "Texture" then
-            if r.GetTexture then
-                local tex = r:GetTexture()
-                if tex == "Interface\\Tooltips\\Nameplate-Border" then
-                    return true
-                end
-            end
-        end
-    end
+    -- Check regions for nameplate border texture (no table allocation)
+    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
+
+    if CheckRegionForBorder(r1) then return true end
+    if CheckRegionForBorder(r2) then return true end
+    if CheckRegionForBorder(r3) then return true end
+    if CheckRegionForBorder(r4) then return true end
+    if CheckRegionForBorder(r5) then return true end
+    if CheckRegionForBorder(r6) then return true end
+
     return nil
 end
 
@@ -448,6 +454,14 @@ GudaPlatesEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 GudaPlatesEventFrame:RegisterEvent("UNIT_AURA")
 GudaPlatesEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 GudaPlatesEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+-- Combat state for garbage collection optimization
+GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
+GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
+
+-- Garbage collection throttling
+local lastGCTime = 0
+local GC_INTERVAL = 1  -- Run incremental GC every 1 second out of combat
+local playerInCombat = UnitAffectingCombat and UnitAffectingCombat("player") or false
 
 -- Patterns for removing pending spells (from Settings)
 local REMOVE_PENDING_PATTERNS = GudaPlates.REMOVE_PENDING_PATTERNS
@@ -766,7 +780,9 @@ local function HandleNamePlate(frame)
     -- Cache these for performance (avoid creating tables every frame in UpdateNamePlate)
     local regions = {frame:GetRegions()}
     nameplate.cachedRegions = regions
+    nameplate.cachedRegionsCount = table.getn(regions)
     nameplate.cachedChildren = {frame:GetChildren()}
+    nameplate.cachedChildCount = frame:GetNumChildren()
 
     for i, region in ipairs(regions) do
         if region and region.GetObjectType then
@@ -793,7 +809,9 @@ local function HandleNamePlate(frame)
     -- Also check frame.new (ShaguTweaks creates this)
     if frame.new then
         nameplate.cachedNewRegions = {frame.new:GetRegions()}
-        for _, region in ipairs(nameplate.cachedNewRegions) do
+        nameplate.cachedNewRegionsCount = table.getn(nameplate.cachedNewRegions)
+        for i = 1, nameplate.cachedNewRegionsCount do
+            local region = nameplate.cachedNewRegions[i]
             if region and region.GetObjectType then
                 local rtype = region:GetObjectType()
                 if rtype == "FontString" then
@@ -1097,30 +1115,38 @@ local function UpdateNamePlate(frame)
     -- Hide regions on main frame (but NOT the raid icon - it's reparented to us)
     -- Use cached regions to avoid creating new table every frame
     local cachedRegions = nameplate.cachedRegions
-    if cachedRegions then
-        for i, region in ipairs(cachedRegions) do
-            if region and region.GetObjectType then
-                local otype = region:GetObjectType()
-                if otype == "Texture" then
-                -- Skip raid icons - we reparented them
-                    if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
-                        region:SetAlpha(0)
-                    end
-                elseif otype == "FontString" then
+    local regionsCount = nameplate.cachedRegionsCount or 0
+    for i = 1, regionsCount do
+        local region = cachedRegions[i]
+        if region and region.GetObjectType then
+            local otype = region:GetObjectType()
+            if otype == "Texture" then
+            -- Skip raid icons - we reparented them
+                if region ~= nameplate.original.raidicon and region ~= frame.raidicon then
                     region:SetAlpha(0)
                 end
+            elseif otype == "FontString" then
+                region:SetAlpha(0)
             end
         end
     end
 
     -- Hide all other children frames (like Blizzard or SuperWoW castbars)
-    -- Re-fetch children each frame since SuperWoW may add castbar dynamically
-    local children = {frame:GetChildren()}
-    for i, child in ipairs(children) do
-        if child and child ~= nameplate and child ~= original.healthbar then
-            -- Hide any child that's not our custom nameplate or the healthbar
-            if child.SetAlpha then child:SetAlpha(0) end
-            if child.Hide then child:Hide() end
+    -- Cache children and only refresh when child count changes
+    local childCount = frame:GetNumChildren()
+    if childCount ~= nameplate.cachedChildCount then
+        nameplate.cachedChildCount = childCount
+        nameplate.cachedChildren = {frame:GetChildren()}
+    end
+    local children = nameplate.cachedChildren
+    if children then
+        for i = 1, childCount do
+            local child = children[i]
+            if child and child ~= nameplate and child ~= original.healthbar then
+                -- Hide any child that's not our custom nameplate or the healthbar
+                if child.SetAlpha then child:SetAlpha(0) end
+                if child.Hide then child:Hide() end
+            end
         end
     end
 
@@ -1129,14 +1155,14 @@ local function UpdateNamePlate(frame)
         frame.new:SetAlpha(0)
         -- Use cached new regions to avoid creating new table every frame
         local cachedNewRegions = nameplate.cachedNewRegions
-        if cachedNewRegions then
-            for _, region in ipairs(cachedNewRegions) do
-                if region and region ~= frame.raidicon then
-                    if region.SetTexture then region:SetTexture("") end
-                    if region.SetAlpha then region:SetAlpha(0) end
-                    if region.SetWidth and region.GetObjectType and region:GetObjectType() == "FontString" then
-                        region:SetWidth(0.001)
-                    end
+        local newRegionsCount = nameplate.cachedNewRegionsCount or 0
+        for i = 1, newRegionsCount do
+            local region = cachedNewRegions[i]
+            if region and region ~= frame.raidicon then
+                if region.SetTexture then region:SetTexture("") end
+                if region.SetAlpha then region:SetAlpha(0) end
+                if region.SetWidth and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    region:SetWidth(0.001)
                 end
             end
         end
@@ -1175,9 +1201,7 @@ local function UpdateNamePlate(frame)
         nameplate.cachedIsFriendly = isFriendly
     end
 
-    -- Format health text based on settings
-    local hpText = ""
-
+    -- Format health text based on settings (only when HP changes to avoid string garbage)
     local hTextFormat
     if isFriendly then
         hTextFormat = Settings.friendHealthTextFormat
@@ -1185,63 +1209,70 @@ local function UpdateNamePlate(frame)
         hTextFormat = Settings.healthTextFormat
     end
 
-    if hTextFormat ~= 0 then
-        local perc = (hp / hpmax) * 100
-        local format = hTextFormat
-        local name = ""
-        if original.name and original.name.GetText then
-            name = original.name:GetText() or ""
-        end
+    -- Only update health text when HP or hpmax changed
+    if hp ~= nameplate.lastHP or hpmax ~= nameplate.lastHPMax then
+        nameplate.lastHP = hp
+        nameplate.lastHPMax = hpmax
 
-        if format == 1 then
-            -- Percent only
-            hpText = string_format("%.0f%%", perc)
-        elseif format == 2 then
-            -- Current HP only
-            if hp > 1000 then
-                hpText = string_format("%.1fK", hp / 1000)
-            else
-                hpText = string_format("%d", hp)
+        local hpText = ""
+        if hTextFormat ~= 0 then
+            local perc = (hp / hpmax) * 100
+            local format = hTextFormat
+            local name = ""
+            if original.name and original.name.GetText then
+                name = original.name:GetText() or ""
             end
-        elseif format == 3 then
-            -- Health (percentage%)
-            if hp > 1000 then
-                hpText = string_format("%.1fK (%.0f%%)", hp / 1000, perc)
-            else
-                hpText = string_format("%d (%.0f%%)", hp, perc)
+
+            if format == 1 then
+                -- Percent only
+                hpText = string_format("%.0f%%", perc)
+            elseif format == 2 then
+                -- Current HP only
+                if hp > 1000 then
+                    hpText = string_format("%.1fK", hp / 1000)
+                else
+                    hpText = string_format("%d", hp)
+                end
+            elseif format == 3 then
+                -- Health (percentage%)
+                if hp > 1000 then
+                    hpText = string_format("%.1fK (%.0f%%)", hp / 1000, perc)
+                else
+                    hpText = string_format("%d (%.0f%%)", hp, perc)
+                end
+            elseif format == 4 then
+                -- Current HP - Max HP
+                if hpmax > 1000 then
+                    hpText = string_format("%.1fK - %.1fK", hp / 1000, hpmax / 1000)
+                else
+                    hpText = string_format("%d - %d", hp, hpmax)
+                end
+            elseif format == 5 then
+                -- Current HP - Max HP (Percentage %)
+                if hpmax > 1000 then
+                    hpText = string_format("%.1fK - %.1fK (%.0f%%)", hp / 1000, hpmax / 1000, perc)
+                else
+                    hpText = string_format("%d - %d (%.0f%%)", hp, hpmax, perc)
+                end
+            elseif format == 6 then
+                -- Name - %
+                hpText = string_format("%s - %.0f%%", name, perc)
+            elseif format == 7 then
+                -- Name - HP(%)
+                local hpStr
+                if hp > 1000 then
+                    hpStr = string_format("%.1fK", hp / 1000)
+                else
+                    hpStr = string_format("%d", hp)
+                end
+                hpText = string_format("%s - %s (%.0f%%)", name, hpStr, perc)
+            elseif format == 8 then
+                -- Name
+                hpText = name
             end
-        elseif format == 4 then
-            -- Current HP - Max HP
-            if hpmax > 1000 then
-                hpText = string_format("%.1fK - %.1fK", hp / 1000, hpmax / 1000)
-            else
-                hpText = string_format("%d - %d", hp, hpmax)
-            end
-        elseif format == 5 then
-            -- Current HP - Max HP (Percentage %)
-            if hpmax > 1000 then
-                hpText = string_format("%.1fK - %.1fK (%.0f%%)", hp / 1000, hpmax / 1000, perc)
-            else
-                hpText = string_format("%d - %d (%.0f%%)", hp, hpmax, perc)
-            end
-        elseif format == 6 then
-            -- Name - %
-            hpText = string_format("%s - %.0f%%", name, perc)
-        elseif format == 7 then
-            -- Name - HP(%)
-            local hpStr
-            if hp > 1000 then
-                hpStr = string_format("%.1fK", hp / 1000)
-            else
-                hpStr = string_format("%d", hp)
-            end
-            hpText = string_format("%s - %s (%.0f%%)", name, hpStr, perc)
-        elseif format == 8 then
-            -- Name
-            hpText = name
         end
+        nameplate.healthtext:SetText(hpText)
     end
-    nameplate.healthtext:SetText(hpText)
 
     -- Apply name color if Name-integrated format is selected, otherwise use health text color
     local nameColor = Settings.nameColor or {1, 1, 1, 1}
@@ -1298,8 +1329,14 @@ local function UpdateNamePlate(frame)
     end
 
     -- SuperWoW method: use GUID to check mob's target directly (real-time, per-plate)
+    -- Cache the target string to avoid concatenation garbage every frame
+    local mobTarget
     if hasValidGUID then
-        local mobTarget = unitstr .. "target"
+        if nameplate.cachedUnitStr ~= unitstr then
+            nameplate.cachedUnitStr = unitstr
+            nameplate.cachedMobTarget = unitstr .. "target"
+        end
+        mobTarget = nameplate.cachedMobTarget
         -- This check works regardless of what player is targeting
         if UnitIsUnit(mobTarget, "player") then
             isAttackingPlayer = true
@@ -1950,65 +1987,125 @@ GudaPlates.UpdateNamePlate = UpdateNamePlate  -- Expose for Options module
 -- in an unnamed frame context, causing pfDebug to show <unnamed>:OnUpdate().
 -- Instead, we always use our own scanner which runs in GudaPlatesFrame:OnUpdate().
 
-local scanCount = 0
-local lastChildCount = 0
--- Throttle for debuff timer cleanup
+-- Throttle for debuff timer cleanup (once per second)
 local lastDebuffCleanup = 0
+local CLEANUP_INTERVAL = 1
+-- Throttle plate updates when out of combat
+local lastPlateUpdate = 0
+local PLATE_UPDATE_INTERVAL = 0.5 -- 2x per second when out of combat
+-- Track initialized children count (ShaguPlates-style: only scan NEW children)
+local initializedChildren = 0
+-- Idle detection - disable OnUpdate when nothing to do
+local idleFrames = 0
+local IDLE_THRESHOLD = 30 -- After 30 frames of no work, go idle
+local onUpdateEnabled = true
 
-GudaPlatesEventFrame:SetScript("OnUpdate", function()
-    if GudaPlates_Debuffs then
+-- The actual OnUpdate logic (separate function so we can enable/disable)
+local function GudaPlates_OnUpdate()
+    local now = GetTime()
+    local didWork = false
+
+    -- Garbage collection when out of combat (reduces GC stutters)
+    if not playerInCombat and now - lastGCTime > GC_INTERVAL then
+        lastGCTime = now
+        collectgarbage()
+    end
+
+    -- Throttle debuff timer cleanup to once per second
+    if GudaPlates_Debuffs and now - lastDebuffCleanup > CLEANUP_INTERVAL then
+        lastDebuffCleanup = now
         GudaPlates_Debuffs:CleanupTimers()
     end
 
-    -- Scanning logic (always use our own scanner for proper frame attribution in pfDebug)
+    -- Scanning logic (ShaguPlates-style: only scan NEW children)
     parentcount = WorldFrame:GetNumChildren()
 
-    -- Only refresh cached children when count changes (reduces garbage)
-    if parentcount ~= cachedWorldChildCount then
+    -- Only scan if there are NEW children we haven't seen before
+    if initializedChildren < parentcount then
+        didWork = true
+        -- Refresh cached children only when needed
         cachedWorldChildren = { WorldFrame:GetChildren() }
-        cachedWorldChildCount = parentcount
-    end
 
-    -- Only scan for new nameplates (not already in registry)
-    for i = 1, parentcount do
-        local plate = cachedWorldChildren[i]
-        if plate and not registry[plate] then
-            local isPlate = IsNamePlate(plate)
-            if isPlate then
-                HandleNamePlate(plate)
-            end
-        end
-    end
-
-    for plate, nameplate in pairs(registry) do
-        if plate:IsShown() then
-            UpdateNamePlate(plate)
-
-            -- Apply overlap/stacking setting
-            if nameplateOverlap then
-            -- Overlapping: disable parent mouse and shrink to 1px
-            -- This prevents game's collision avoidance from moving nameplates
-                plate:EnableMouse(false)
-
-                if plate:GetWidth() > 1 then
-                    plate:SetWidth(1)
-                    plate:SetHeight(1)
+        -- Only scan the NEW children (from initialized+1 to parentcount)
+        for i = initializedChildren + 1, parentcount do
+            local plate = cachedWorldChildren[i]
+            if plate and not registry[plate] then
+                local isPlate = IsNamePlate(plate)
+                if isPlate then
+                    HandleNamePlate(plate)
                 end
-
-                -- Z-index is handled in UpdateNamePlate (target > attacking > others)
-                -- Enable clicking on nameplate itself if click-through is disabled
-                nameplate:EnableMouse(not clickThrough)
-            else
-            -- Stacking: restore parent frame size so game stacks them
-                plate:EnableMouse(not clickThrough)
-                nameplate:EnableMouse(false)
             end
+        end
 
-            -- Ensure dimensions are correct
-            UpdateNamePlateDimensions(plate)
+        initializedChildren = parentcount
+    end
+
+    -- Throttle plate updates when out of combat (2x/sec instead of 60x/sec)
+    local shouldUpdatePlates = playerInCombat or (now - lastPlateUpdate > PLATE_UPDATE_INTERVAL)
+
+    if shouldUpdatePlates then
+        didWork = true
+        if not playerInCombat then
+            lastPlateUpdate = now
+        end
+
+        -- Use next() instead of pairs() to avoid iterator garbage
+        local plate, nameplate = next(registry)
+        while plate do
+            if plate:IsShown() then
+                UpdateNamePlate(plate)
+
+                -- Apply overlap/stacking setting (only once per show)
+                if not nameplate.overlapApplied then
+                    nameplate.overlapApplied = true
+                    if nameplateOverlap then
+                        -- Overlapping: disable parent mouse and shrink to 1px
+                        plate:EnableMouse(false)
+                        if plate:GetWidth() > 1 then
+                            plate:SetWidth(1)
+                            plate:SetHeight(1)
+                        end
+                        nameplate:EnableMouse(not clickThrough)
+                    else
+                        -- Stacking: restore parent frame size
+                        plate:EnableMouse(not clickThrough)
+                        nameplate:EnableMouse(false)
+                    end
+                    -- Only update dimensions when plate first shows
+                    UpdateNamePlateDimensions(plate)
+                end
+            else
+                -- Reset flag when plate hides so we reapply on next show
+                nameplate.overlapApplied = nil
+            end
+            plate, nameplate = next(registry, plate)
         end
     end
-end)
+
+    -- Idle detection: if no work done for IDLE_THRESHOLD frames, disable OnUpdate
+    if not didWork and not playerInCombat then
+        idleFrames = idleFrames + 1
+        if idleFrames > IDLE_THRESHOLD then
+            onUpdateEnabled = false
+            GudaPlatesEventFrame:SetScript("OnUpdate", nil)
+        end
+    else
+        idleFrames = 0
+    end
+end
+
+-- Function to re-enable OnUpdate (called from events)
+local function EnableOnUpdate()
+    if not onUpdateEnabled then
+        onUpdateEnabled = true
+        idleFrames = 0
+        GudaPlatesEventFrame:SetScript("OnUpdate", GudaPlates_OnUpdate)
+    end
+end
+GudaPlates.EnableOnUpdate = EnableOnUpdate
+
+-- Set initial OnUpdate
+GudaPlatesEventFrame:SetScript("OnUpdate", GudaPlates_OnUpdate)
 
 -- Combat log parsing functions (castIcons, ParseCastStart, ParseAttackHit) moved to GudaPlates_CombatLog.lua
 -- cmatch kept here due to load order (needed before CombatLog loads)
@@ -2491,7 +2588,21 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                 end
             end
         end
+
+    -- Combat state tracking for garbage collection
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        -- Entering combat - wake up OnUpdate
+        playerInCombat = true
+        EnableOnUpdate()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Leaving combat - run full garbage collection
+        playerInCombat = false
+        collectgarbage()
     end
+
+    -- Wake up OnUpdate for any event that might need nameplate updates
+    -- (combat log events, target changes, etc. are already handled above)
+    EnableOnUpdate()
 end)
 
 -- Slash command to toggle role
