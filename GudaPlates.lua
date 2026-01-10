@@ -63,6 +63,7 @@ local UnitGUID = UnitGUID
 
 -- Performance: Throttle intervals
 local DEBUFF_UPDATE_INTERVAL = 0.1  -- Update debuffs 10 times/sec instead of every frame
+GudaPlates.DEBUFF_UPDATE_INTERVAL = DEBUFF_UPDATE_INTERVAL
 
 -- Performance: Event lookup tables (faster than string.find)
 local SPELL_EVENTS = {
@@ -164,9 +165,15 @@ local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
 local twthreat_active = UnitThreat ~= nil -- TWThreat detection
 
+-- Expose for Core module
+GudaPlates.superwow_active = superwow_active
+GudaPlates.twthreat_active = twthreat_active
+GudaPlates.REGION_ORDER = REGION_ORDER
+
 -- Player class for debuff filtering
 local _, playerClass = UnitClass("player")
 playerClass = playerClass or ""
+GudaPlates.playerClass = playerClass
 
 -- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
 local castDB = {}
@@ -444,6 +451,7 @@ local function DisableObject(object)
     if not object then return end
     if object.SetAlpha then object:SetAlpha(0) end
 end
+GudaPlates.DisableObject = DisableObject
 
 local function HideVisual(object)
     if not object then return end
@@ -457,6 +465,12 @@ local function HideVisual(object)
         end
     end
 end
+GudaPlates.HideVisual = HideVisual
+GudaPlates.IsNamePlate = IsNamePlate
+
+-- Platecount getter/setter for Core module
+GudaPlates.getPlateCount = function() return platecount end
+GudaPlates.incPlateCount = function() platecount = platecount + 1; return platecount end
 
 local GudaPlates = CreateFrame("Frame", "GudaPlatesFrame", UIParent)
 GudaPlates:RegisterEvent("PLAYER_ENTERING_WORLD")
