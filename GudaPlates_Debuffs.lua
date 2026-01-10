@@ -7,6 +7,7 @@ local ipairs = ipairs
 local string_find = string.find
 local string_format = string.format
 local string_gsub = string.gsub
+local string_sub = string.sub
 local math_floor = math.floor
 local GetTime = GetTime
 local UnitDebuff = UnitDebuff
@@ -23,9 +24,10 @@ local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
 
 -- Performance: Pre-defined spell lists (avoid creating tables in hot paths)
+-- Note: Crusader Strike is NOT a judgement - it's a separate debuff
 local JUDGEMENT_EFFECTS = {
     "Judgement of Wisdom", "Judgement of Light", "Judgement of the Crusader",
-    "Judgement of Justice", "Judgement", "Crusader Strike"
+    "Judgement of Justice", "Judgement"
 }
 
 -- Debuff timer tracking: stores {startTime, duration} by "targetName_texture" key
@@ -74,37 +76,92 @@ function GudaPlates_Debuffs:IsDebuffRedundant(unit, effect, index)
     return false
 end
 
+-- Helper function to refresh judgements on the current target
+-- Only refreshes judgements that ALREADY EXIST on the target
+local function RefreshJudgementsOnTarget()
+    if playerClass ~= "PALADIN" then return end
+    if not UnitExists("target") then return end
+
+    local name = UnitName("target")
+    local level = UnitLevel("target") or 0
+    local guid = UnitGUID and UnitGUID("target")
+
+    for _, effect in ipairs(JUDGEMENT_EFFECTS) do
+        -- Only refresh if the judgement ALREADY EXISTS on the target
+        local data = GudaPlates_Debuffs:GetSpellData(guid, name, effect, level)
+        if data and data.start then
+            local duration = SpellDB:GetDuration(effect, 0)
+            if duration and duration > 0 then
+                SpellDB:RefreshEffect(name, level, effect, duration, true)
+                if guid then SpellDB:RefreshEffect(guid, level, effect, duration, true) end
+
+                -- Clear visual cache to force re-read
+                GudaPlates_Debuffs.timers[name .. "_" .. effect] = nil
+                if guid then GudaPlates_Debuffs.timers[guid .. "_" .. effect] = nil end
+
+                -- Handle icon variations (Seal of X icons for Judgement of X)
+                local iconVar = string_gsub(effect, "Judgement of", "Seal of")
+                if iconVar ~= effect then
+                    GudaPlates_Debuffs.timers[name .. "_" .. iconVar] = nil
+                    if guid then GudaPlates_Debuffs.timers[guid .. "_" .. iconVar] = nil end
+                end
+            end
+        end
+    end
+end
+
 -- Helper function to parse melee/ranged hits for Paladin Judgement refreshes
+-- Only refreshes judgements that ALREADY EXIST on the target (conservative approach)
 function GudaPlates_Debuffs:SealHandler(attacker, victim)
     if not attacker or not victim or playerClass ~= "PALADIN" then return end
     if victim == "you" then victim = "You" end
 
-    local isTarget = UnitExists("target") and (UnitName("target") == victim or (victim == "You" and UnitIsUnit("player", "target")))
     local isOwn = (attacker == "You" or attacker == UnitName("player"))
     if not isOwn then return end
 
+    local isTarget = UnitExists("target") and (UnitName("target") == victim or (victim == "You" and UnitIsUnit("player", "target")))
     local guid = isTarget and UnitGUID and UnitGUID("target")
+    local level = isTarget and UnitLevel("target") or 0
 
     for _, effect in ipairs(JUDGEMENT_EFFECTS) do
-        -- AGGRESSIVE REFRESH for current target or if it exists in DB
-        local data = self:GetSpellData(guid, victim, effect, 0)
-        if data or isTarget then
+        -- Only refresh if the judgement ALREADY EXISTS on the target
+        local data = self:GetSpellData(guid, victim, effect, level)
+        if data and data.start then
             local duration = SpellDB:GetDuration(effect, 0)
-            SpellDB:RefreshEffect(victim, 0, effect, duration, true)
-            if guid then SpellDB:RefreshEffect(guid, 0, effect, duration, true) end
+            if duration and duration > 0 then
+                SpellDB:RefreshEffect(victim, level, effect, duration, true)
+                if guid then SpellDB:RefreshEffect(guid, level, effect, duration, true) end
 
-            -- Clear visual cache
-            self.timers[victim .. "_" .. effect] = nil
-            if guid then self.timers[guid .. "_" .. effect] = nil end
+                -- Clear visual cache to force re-read
+                self.timers[victim .. "_" .. effect] = nil
+                if guid then self.timers[guid .. "_" .. effect] = nil end
 
-            -- Handle icon variations
-            local iconVar = string_gsub(effect, "Judgement of", "Seal of")
-            if iconVar ~= effect then
-                self.timers[victim .. "_" .. iconVar] = nil
-                if guid then self.timers[guid .. "_" .. iconVar] = nil end
+                -- Handle icon variations (Seal of X icons for Judgement of X)
+                local iconVar = string_gsub(effect, "Judgement of", "Seal of")
+                if iconVar ~= effect then
+                    self.timers[victim .. "_" .. iconVar] = nil
+                    if guid then self.timers[guid .. "_" .. iconVar] = nil end
+                end
             end
         end
     end
+end
+
+-- TurtleWoW: Holy Strike also refreshes judgements (custom Paladin ability)
+-- Called from CHAT_MSG_SPELL_SELF_DAMAGE when Holy Strike hits
+function GudaPlates_Debuffs:HolyStrikeHandler(msg)
+    if not msg or playerClass ~= "PALADIN" then return end
+
+    -- Check if this is a Holy Strike hit (pattern from ShaguPlates turtle-wow module)
+    -- "Your Holy Strike hits X for Y."
+    local holyStrike = string_find(string_sub(msg, 6, 17), "Holy Strike")
+    if not holyStrike then return end
+
+    -- Only refresh if the spell actually hit (not a miss/resist)
+    -- In the combat log, a successful hit will have damage in it
+    if not string_find(msg, "%d+") then return end
+
+    RefreshJudgementsOnTarget()
 end
 
 function GudaPlates_Debuffs:GetMaxDebuffs()

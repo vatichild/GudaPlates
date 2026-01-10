@@ -2570,9 +2570,13 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                         SpellDB:RefreshEffect(guid, unitlevel, "Thunderfury's Blessing", duration, isOwn)
                     end
                 end
-            elseif spell and victim and GudaPlates_Debuffs then
-                -- Check for Judgement refreshes from spells (e.g. Paladin Seal procs)
-                GudaPlates_Debuffs:SealHandler(attacker, victim)
+            end
+            -- Note: SealHandler for Paladin judgement refreshes is now called from ParseAttackHit
+            -- (melee attacks), not from spell events
+
+            -- TurtleWoW: Holy Strike also refreshes Paladin judgements
+            if GudaPlates_Debuffs and GudaPlates_Debuffs.HolyStrikeHandler then
+                GudaPlates_Debuffs:HolyStrikeHandler(arg1)
             end
         end
     elseif arg1 and COMBAT_EVENTS[event] then
