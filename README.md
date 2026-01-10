@@ -29,9 +29,12 @@ Without SuperWoW, GudaPlates will fall back to name-based tracking which may be 
 
 ## Installation
 
-1. Download and extract GudaPlates to your `Interface\AddOns\` folder
-2. The folder structure should be: `Interface\AddOns\GudaPlates\`
-3. Restart WoW or `/reload` if already in-game
+1. Download the ZIP from GitHub (Code → Download ZIP)
+2. Extract the ZIP file
+3. Rename the extracted folder from `GudaPlates-main` to `GudaPlates`
+4. Move the `GudaPlates` folder to your `Interface\AddOns\` directory
+5. Final path should be: `Interface\AddOns\GudaPlates\`
+6. Restart WoW or `/reload` if already in-game
 
 ## Slash Commands
 
