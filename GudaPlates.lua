@@ -2854,6 +2854,16 @@ end
 GudaPlatesDB = GudaPlatesDB or {}
 
 local function SaveSettings()
+    -- First, sync FROM global table (which Options UI updates) TO local variables
+    -- This ensures checkbox changes are captured before saving
+    if GudaPlates.nameplateOverlap ~= nil then
+        nameplateOverlap = GudaPlates.nameplateOverlap
+    end
+    if GudaPlates.nameplateClickThrough ~= nil then
+        clickThrough = GudaPlates.nameplateClickThrough
+    end
+
+    -- Now save the synced values to DB
     GudaPlatesDB.playerRole = playerRole
     GudaPlatesDB.THREAT_COLORS = THREAT_COLORS
     GudaPlatesDB.nameplateOverlap = nameplateOverlap
