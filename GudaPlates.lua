@@ -2862,6 +2862,9 @@ local function SaveSettings()
     if GudaPlates.nameplateClickThrough ~= nil then
         clickThrough = GudaPlates.nameplateClickThrough
     end
+    if GudaPlates.playerRole then
+        playerRole = GudaPlates.playerRole
+    end
 
     -- Now save the synced values to DB
     GudaPlatesDB.playerRole = playerRole
