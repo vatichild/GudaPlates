@@ -1083,8 +1083,8 @@ local function NamePlate_OnShow()
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
 
-    -- Show our custom nameplate
-    if not nameplate:IsShown() then
+    -- Show our custom nameplate (but respect showAfter delay for newly created plates)
+    if not nameplate.showAfter and not nameplate:IsShown() then
         nameplate:Show()
     end
 
@@ -1094,9 +1094,43 @@ local function NamePlate_OnShow()
     end
 end
 
+-- OnHide handler - hides our nameplate when original frame hides (prevents stale data flash)
+-- This is called when the nameplate parent frame is hidden (unit dies, out of range, etc.)
+local function NamePlate_OnHide()
+    local frame = this
+    local nameplate = registry[frame]
+    if not nameplate then return end
+
+    -- Hide our nameplate immediately to prevent stale cached appearance
+    nameplate:Hide()
+
+    -- Set showAfter delay so next OnShow waits for fresh data
+    nameplate.showAfter = GetTime() + 0.1  -- 100ms delay on reshow
+end
+
 local function HandleNamePlate(frame)
     if not frame then return end
     if registry[frame] then return end
+
+    -- IMMEDIATELY hide original nameplate elements to prevent white skeleton flash
+    -- This must happen BEFORE any other processing
+    local healthbar = frame.healthbar or frame:GetChildren()
+    if healthbar then
+        healthbar:SetAlpha(0)
+        healthbar:SetStatusBarTexture("")
+    end
+    -- Hide all regions immediately (border, glow, name, level, etc.)
+    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
+    if r1 and r1.SetAlpha then r1:SetAlpha(0) end
+    if r2 and r2.SetAlpha then r2:SetAlpha(0) end
+    if r3 and r3.SetAlpha then r3:SetAlpha(0) end
+    if r4 and r4.SetAlpha then r4:SetAlpha(0) end
+    if r5 and r5.SetAlpha then r5:SetAlpha(0) end
+    -- r6 is raid icon - don't hide it, we'll reparent it later
+    -- Hide ShaguTweaks .new frame if present
+    if frame.new and frame.new.SetAlpha then
+        frame.new:SetAlpha(0)
+    end
 
     platecount = platecount + 1
     local platename = "GudaPlate" .. platecount
@@ -1117,12 +1151,8 @@ local function HandleNamePlate(frame)
         end
     end)
 
-    -- Get healthbar - ShaguTweaks sets frame.healthbar directly
-    if frame.healthbar then
-        nameplate.original.healthbar = frame.healthbar
-    else
-        nameplate.original.healthbar = frame:GetChildren()
-    end
+    -- Get healthbar reference (already hidden above)
+    nameplate.original.healthbar = healthbar
 
     -- Find name and level from regions before hiding
     -- Get regions by index (vanilla nameplate order: border, glow, name, level, levelicon, raidicon)
@@ -1374,9 +1404,17 @@ local function HandleNamePlate(frame)
     frame.nameplate = nameplate
     registry[frame] = nameplate
 
+    -- Delayed show: Hide nameplate initially and show after short delay
+    -- This prevents white skeleton flash by ensuring nameplate is fully rendered before display
+    nameplate.showAfter = GetTime() + 0.15  -- 150ms delay
+    nameplate:Hide()
+
     -- Hook OnShow to immediately hide original elements when nameplate appears
     -- This prevents the brief flash of Blizzard nameplates before we process them
     HookScript(frame, "OnShow", NamePlate_OnShow)
+
+    -- Hook OnHide to hide our nameplate when original hides (prevents stale cached data flash)
+    HookScript(frame, "OnHide", NamePlate_OnHide)
 
     -- If frame is already visible, hide originals immediately
     if frame:IsShown() then
@@ -1466,6 +1504,17 @@ local function UpdateNamePlate(frame)
         frame:SetAlpha(1)
         nameplate.isCritterHidden = nil
     end
+
+    -- Delayed show: Only show after showAfter time has passed (prevents white skeleton flash)
+    if nameplate.showAfter then
+        if GetTime() < nameplate.showAfter then
+            -- Still waiting, keep hidden and keep originals hidden
+            return
+        end
+        -- Delay passed, clear flag and show
+        nameplate.showAfter = nil
+    end
+
     if not nameplate:IsShown() then
         nameplate:Show()
     end
@@ -2399,7 +2448,7 @@ local lastDebuffCleanup = 0
 local CLEANUP_INTERVAL = 1
 -- Throttle plate updates when out of combat
 local lastPlateUpdate = 0
-local PLATE_UPDATE_INTERVAL = 0.2
+local PLATE_UPDATE_INTERVAL = 0.5
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
 
