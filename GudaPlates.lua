@@ -1065,6 +1065,18 @@ local function NamePlate_OnShow()
         original.healthbar:SetAlpha(0)
     end
 
+    -- Hide original name and level visually (keep text - we read it for our nameplate)
+    if original.name then
+        if original.name.SetTextColor then original.name:SetTextColor(0, 0, 0, 0) end
+        if original.name.SetAlpha then original.name:SetAlpha(0) end
+        if original.name.Hide then original.name:Hide() end
+    end
+    if original.level then
+        if original.level.SetTextColor then original.level:SetTextColor(0, 0, 0, 0) end
+        if original.level.SetAlpha then original.level:SetAlpha(0) end
+        if original.level.Hide then original.level:Hide() end
+    end
+
     -- Hide all cached regions (textures/fontstrings except raid icon)
     local cachedRegions = nameplate.cachedRegions
     local regionsCount = nameplate.cachedRegionsCount or 0
@@ -1072,12 +1084,26 @@ local function NamePlate_OnShow()
         local region = cachedRegions[i]
         if region and region ~= original.raidicon and region ~= frame.raidicon then
             if region.SetAlpha then region:SetAlpha(0) end
+            if region.SetTextColor then region:SetTextColor(0, 0, 0, 0) end
+            if region.Hide then region:Hide() end
         end
     end
 
-    -- Hide ShaguTweaks .new frame if present
+    -- Hide ShaguTweaks .new frame if present (visually only)
     if frame.new then
         frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+        local newRegions = nameplate.cachedNewRegions
+        if newRegions then
+            for i = 1, nameplate.cachedNewRegionsCount or 0 do
+                local region = newRegions[i]
+                if region then
+                    if region.SetTextColor then region:SetTextColor(0, 0, 0, 0) end
+                    if region.SetAlpha then region:SetAlpha(0) end
+                    if region.Hide then region:Hide() end
+                end
+            end
+        end
     end
 
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
@@ -1101,8 +1127,35 @@ local function NamePlate_OnHide()
     local nameplate = registry[frame]
     if not nameplate then return end
 
+    local original = nameplate.original
+
     -- Hide our nameplate immediately to prevent stale cached appearance
     nameplate:Hide()
+
+    -- Clear our text elements to prevent stale text flash on next show
+    if nameplate.name then nameplate.name:SetText("") end
+    if nameplate.level then nameplate.level:SetText("") end
+    if nameplate.healthtext then nameplate.healthtext:SetText("") end
+
+    -- Hide original name/level visually (keep text - game will set new text on next show)
+    if original then
+        if original.name then
+            if original.name.SetTextColor then original.name:SetTextColor(0, 0, 0, 0) end
+            if original.name.SetAlpha then original.name:SetAlpha(0) end
+            if original.name.Hide then original.name:Hide() end
+        end
+        if original.level then
+            if original.level.SetTextColor then original.level:SetTextColor(0, 0, 0, 0) end
+            if original.level.SetAlpha then original.level:SetAlpha(0) end
+            if original.level.Hide then original.level:Hide() end
+        end
+    end
+
+    -- Hide ShaguTweaks .new frame
+    if frame.new then
+        if frame.new.SetAlpha then frame.new:SetAlpha(0) end
+        if frame.new.Hide then frame.new:Hide() end
+    end
 
     -- Set showAfter delay so next OnShow waits for fresh data
     nameplate.showAfter = GetTime() + 0.1  -- 100ms delay on reshow
@@ -1120,16 +1173,34 @@ local function HandleNamePlate(frame)
         healthbar:SetStatusBarTexture("")
     end
     -- Hide all regions immediately (border, glow, name, level, etc.)
+    -- Vanilla order: border(1), glow(2), name(3), level(4), levelicon(5), raidicon(6)
     local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
     if r1 and r1.SetAlpha then r1:SetAlpha(0) end
     if r2 and r2.SetAlpha then r2:SetAlpha(0) end
-    if r3 and r3.SetAlpha then r3:SetAlpha(0) end
-    if r4 and r4.SetAlpha then r4:SetAlpha(0) end
+    -- r3 is name FontString - hide visually but keep text (we read it for our nameplate)
+    if r3 then
+        if r3.SetAlpha then r3:SetAlpha(0) end
+        if r3.SetTextColor then r3:SetTextColor(0, 0, 0, 0) end
+        if r3.Hide then r3:Hide() end
+    end
+    -- r4 is level FontString - hide visually but keep text
+    if r4 then
+        if r4.SetAlpha then r4:SetAlpha(0) end
+        if r4.SetTextColor then r4:SetTextColor(0, 0, 0, 0) end
+        if r4.Hide then r4:Hide() end
+    end
     if r5 and r5.SetAlpha then r5:SetAlpha(0) end
     -- r6 is raid icon - don't hide it, we'll reparent it later
-    -- Hide ShaguTweaks .new frame if present
+    -- Hide ShaguTweaks .new frame if present (visually only, keep text)
     if frame.new and frame.new.SetAlpha then
         frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+        -- Also hide any text in .new frame visually
+        local nr1, nr2, nr3, nr4 = frame.new:GetRegions()
+        if nr1 and nr1.SetTextColor then nr1:SetTextColor(0, 0, 0, 0) end
+        if nr2 and nr2.SetTextColor then nr2:SetTextColor(0, 0, 0, 0) end
+        if nr3 and nr3.SetTextColor then nr3:SetTextColor(0, 0, 0, 0) end
+        if nr4 and nr4.SetTextColor then nr4:SetTextColor(0, 0, 0, 0) end
     end
 
     platecount = platecount + 1
