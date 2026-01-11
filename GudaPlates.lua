@@ -3,6 +3,43 @@
 
 GudaPlates = GudaPlates or {}
 
+-- ============================================
+-- ShaguTweaks Compatibility Layer
+-- ============================================
+-- ShaguTweaks' libnameplate.lua also scans WorldFrame for nameplates and hooks
+-- OnShow/OnUpdate scripts. This causes conflicts with GudaPlates because:
+-- 1. Both addons try to modify the same nameplate frames
+-- 2. Script chaining breaks due to vanilla Lua's `this` global vs `self` parameter
+-- 3. Frame structure changes invalidate captured script references
+--
+-- Solution: Disable ShaguTweaks' nameplate processing when GudaPlates is active.
+-- ShaguTweaks nameplate modules check `if ShaguPlates then return end` to avoid
+-- conflicts with ShaguPlates. We hook this same pattern.
+
+-- Function to disable ShaguTweaks nameplate handling (called on ADDON_LOADED)
+local function DisableShaguTweaksNameplates()
+    if ShaguTweaks and ShaguTweaks.libnameplate then
+        -- Disable the OnUpdate scanner that looks for new nameplates
+        ShaguTweaks.libnameplate:SetScript("OnUpdate", nil)
+
+        -- Clear the callback tables to prevent any registered functions from running
+        ShaguTweaks.libnameplate.OnInit = {}
+        ShaguTweaks.libnameplate.OnShow = {}
+        ShaguTweaks.libnameplate.OnUpdate = {}
+
+        -- Mark as handled so modules know not to register new callbacks
+        ShaguTweaks.libnameplate.disabled_by_gudaplates = true
+
+        return true
+    end
+    return false
+end
+GudaPlates.DisableShaguTweaksNameplates = DisableShaguTweaksNameplates
+
+-- Try immediately in case ShaguTweaks loaded before us
+-- (Also called in main ADDON_LOADED handler for proper timing)
+DisableShaguTweaksNameplates()
+
 -- Ensure Settings exists with defaults (fallback if Settings file didn't load)
 if not GudaPlates.Settings then
     GudaPlates.Settings = {
@@ -337,8 +374,24 @@ GudaPlates.GP_Threats = GP_Threats
 local GP_TankPlayers = {}  -- Table of player names who have Tank Mode enabled
 local GP_ADDON_PREFIX = "GudaPlates"
 
+-- Debounce for Tank Mode broadcast (5 seconds)
+local TANK_BROADCAST_DEBOUNCE = 5
+local lastTankBroadcast = 0
+
 -- Broadcast our Tank Mode setting to group
-local function BroadcastTankMode()
+-- @param force: if true, ignore debounce (used for group join/zone events)
+local function BroadcastTankMode(force)
+    local now = GetTime()
+
+    -- Debounce check (skip if called too recently, unless forced)
+    if not force and (now - lastTankBroadcast) < TANK_BROADCAST_DEBOUNCE then
+        if DEBUG_THREAT then
+            Print(string_format("[TankMode] Broadcast debounced (%.1fs remaining)",
+                TANK_BROADCAST_DEBOUNCE - (now - lastTankBroadcast)))
+        end
+        return
+    end
+
     local isTank = (playerRole == "TANK")
     local msg = isTank and "TM=1" or "TM=0"
 
@@ -350,8 +403,10 @@ local function BroadcastTankMode()
 
     if UnitInRaid("player") then
         SendAddonMessage(GP_ADDON_PREFIX, msg, "RAID")
+        lastTankBroadcast = now
     elseif UnitInParty() then
         SendAddonMessage(GP_ADDON_PREFIX, msg, "PARTY")
+        lastTankBroadcast = now
     end
 
     if DEBUG_THREAT then
@@ -393,8 +448,8 @@ GP_TankModeFrame:SetScript("OnEvent", function()
         end
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE"
            or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
-        -- Broadcast our Tank Mode setting when group changes or we zone
-        BroadcastTankMode()
+        -- Broadcast our Tank Mode setting when group changes or we zone (forced, no debounce)
+        BroadcastTankMode(true)
     end
 end)
 
@@ -728,9 +783,7 @@ GudaPlatesEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
 
--- Garbage collection throttling
-local lastGCTime = 0
-local GC_INTERVAL = 1  -- Run incremental GC every 1 second out of combat
+-- Combat state tracking
 local playerInCombat = UnitAffectingCombat and UnitAffectingCombat("player") or false
 
 -- Patterns for removing pending spells (from Settings)
@@ -1030,6 +1083,18 @@ local function NamePlate_OnShow()
         original.healthbar:SetAlpha(0)
     end
 
+    -- Hide original name and level visually (keep text - we read it for our nameplate)
+    if original.name then
+        if original.name.SetTextColor then original.name:SetTextColor(0, 0, 0, 0) end
+        if original.name.SetAlpha then original.name:SetAlpha(0) end
+        if original.name.Hide then original.name:Hide() end
+    end
+    if original.level then
+        if original.level.SetTextColor then original.level:SetTextColor(0, 0, 0, 0) end
+        if original.level.SetAlpha then original.level:SetAlpha(0) end
+        if original.level.Hide then original.level:Hide() end
+    end
+
     -- Hide all cached regions (textures/fontstrings except raid icon)
     local cachedRegions = nameplate.cachedRegions
     local regionsCount = nameplate.cachedRegionsCount or 0
@@ -1037,19 +1102,33 @@ local function NamePlate_OnShow()
         local region = cachedRegions[i]
         if region and region ~= original.raidicon and region ~= frame.raidicon then
             if region.SetAlpha then region:SetAlpha(0) end
+            if region.SetTextColor then region:SetTextColor(0, 0, 0, 0) end
+            if region.Hide then region:Hide() end
         end
     end
 
-    -- Hide ShaguTweaks .new frame if present
+    -- Hide ShaguTweaks .new frame if present (visually only)
     if frame.new then
         frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+        local newRegions = nameplate.cachedNewRegions
+        if newRegions then
+            for i = 1, nameplate.cachedNewRegionsCount or 0 do
+                local region = newRegions[i]
+                if region then
+                    if region.SetTextColor then region:SetTextColor(0, 0, 0, 0) end
+                    if region.SetAlpha then region:SetAlpha(0) end
+                    if region.Hide then region:Hide() end
+                end
+            end
+        end
     end
 
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
 
-    -- Show our custom nameplate
-    if not nameplate:IsShown() then
+    -- Show our custom nameplate (but respect showAfter delay for newly created plates)
+    if not nameplate.showAfter and not nameplate:IsShown() then
         nameplate:Show()
     end
 
@@ -1059,13 +1138,125 @@ local function NamePlate_OnShow()
     end
 end
 
+-- OnHide handler - hides our nameplate when original frame hides (prevents stale data flash)
+-- This is called when the nameplate parent frame is hidden (unit dies, out of range, etc.)
+local function NamePlate_OnHide()
+    local frame = this
+    local nameplate = registry[frame]
+    if not nameplate then return end
+
+    local original = nameplate.original
+
+    -- Hide our nameplate immediately to prevent stale cached appearance
+    nameplate:Hide()
+
+    -- Clear cached values to force text update on next show
+    nameplate.lastHP = nil
+    nameplate.lastHPMax = nil
+    nameplate.lastHTextFormat = nil
+    nameplate.lastLevelText = nil
+    nameplate.lastNameText = nil
+
+    -- Hide original name/level visually (keep text - game will set new text on next show)
+    if original then
+        if original.name then
+            if original.name.SetTextColor then original.name:SetTextColor(0, 0, 0, 0) end
+            if original.name.SetAlpha then original.name:SetAlpha(0) end
+            if original.name.Hide then original.name:Hide() end
+        end
+        if original.level then
+            if original.level.SetTextColor then original.level:SetTextColor(0, 0, 0, 0) end
+            if original.level.SetAlpha then original.level:SetAlpha(0) end
+            if original.level.Hide then original.level:Hide() end
+        end
+    end
+
+    -- Hide ShaguTweaks .new frame
+    if frame.new then
+        if frame.new.SetAlpha then frame.new:SetAlpha(0) end
+        if frame.new.Hide then frame.new:Hide() end
+    end
+
+    -- Set showAfter delay so next OnShow waits for fresh data
+    nameplate.showAfter = GetTime() + 0.1  -- 100ms delay on reshow
+end
+
 local function HandleNamePlate(frame)
     if not frame then return end
     if registry[frame] then return end
 
+    -- IMMEDIATELY hide original nameplate elements to prevent white skeleton flash
+    -- This must happen BEFORE any other processing
+    local healthbar = frame.healthbar or frame:GetChildren()
+    if healthbar then
+        healthbar:SetAlpha(0)
+        healthbar:SetStatusBarTexture("")
+    end
+    -- Hide all regions immediately (border, glow, name, level, etc.)
+    -- Vanilla order: border(1), glow(2), name(3), level(4), levelicon(5), raidicon(6)
+    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
+    if r1 and r1.SetAlpha then r1:SetAlpha(0) end
+    if r2 and r2.SetAlpha then r2:SetAlpha(0) end
+    -- r3 is name FontString - hide visually but keep text (we read it for our nameplate)
+    if r3 then
+        if r3.SetAlpha then r3:SetAlpha(0) end
+        if r3.SetTextColor then r3:SetTextColor(0, 0, 0, 0) end
+        if r3.Hide then r3:Hide() end
+    end
+    -- r4 is level FontString - hide visually but keep text
+    if r4 then
+        if r4.SetAlpha then r4:SetAlpha(0) end
+        if r4.SetTextColor then r4:SetTextColor(0, 0, 0, 0) end
+        if r4.Hide then r4:Hide() end
+    end
+    if r5 and r5.SetAlpha then r5:SetAlpha(0) end
+    -- r6 is raid icon - don't hide it, we'll reparent it later
+    -- Hide ShaguTweaks .new frame if present (visually only, keep text)
+    if frame.new and frame.new.SetAlpha then
+        frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+        -- Also hide any text in .new frame visually
+        local nr1, nr2, nr3, nr4 = frame.new:GetRegions()
+        if nr1 and nr1.SetTextColor then nr1:SetTextColor(0, 0, 0, 0) end
+        if nr2 and nr2.SetTextColor then nr2:SetTextColor(0, 0, 0, 0) end
+        if nr3 and nr3.SetTextColor then nr3:SetTextColor(0, 0, 0, 0) end
+        if nr4 and nr4.SetTextColor then nr4:SetTextColor(0, 0, 0, 0) end
+    end
+
+    -- Check for existing GudaPlates overlay (from before zone transition)
+    -- Reuse it instead of creating a duplicate
+    local existingOverlay = nil
+    local numChildren = frame:GetNumChildren()
+    if numChildren > 1 then
+        local children = { frame:GetChildren() }
+        for i = 1, numChildren do
+            local child = children[i]
+            if child and child.platename and string.find(child.platename, "GudaPlate") then
+                existingOverlay = child
+                break
+            end
+        end
+    end
+
+    if existingOverlay then
+        -- Reuse existing overlay - just re-register it and clear cached values
+        local nameplate = existingOverlay
+        -- Clear cached values to force text refresh
+        nameplate.lastHP = nil
+        nameplate.lastHPMax = nil
+        nameplate.lastHTextFormat = nil
+        nameplate.lastLevelText = nil
+        nameplate.lastNameText = nil
+        nameplate.showAfter = GetTime() + 0.1  -- Delay show for fresh data
+        nameplate:Hide()  -- Hide until fresh data is ready
+        -- Re-register in registry
+        registry[frame] = nameplate
+        return
+    end
+
+    -- Create new overlay
     platecount = platecount + 1
     local platename = "GudaPlate" .. platecount
-
     local nameplate = CreateFrame("Button", platename, frame)
     nameplate.platename = platename
     nameplate:EnableMouse(false)
@@ -1082,12 +1273,8 @@ local function HandleNamePlate(frame)
         end
     end)
 
-    -- Get healthbar - ShaguTweaks sets frame.healthbar directly
-    if frame.healthbar then
-        nameplate.original.healthbar = frame.healthbar
-    else
-        nameplate.original.healthbar = frame:GetChildren()
-    end
+    -- Get healthbar reference (already hidden above)
+    nameplate.original.healthbar = healthbar
 
     -- Find name and level from regions before hiding
     -- Get regions by index (vanilla nameplate order: border, glow, name, level, levelicon, raidicon)
@@ -1339,9 +1526,17 @@ local function HandleNamePlate(frame)
     frame.nameplate = nameplate
     registry[frame] = nameplate
 
+    -- Delayed show: Hide nameplate initially and show after short delay
+    -- This prevents white skeleton flash by ensuring nameplate is fully rendered before display
+    nameplate.showAfter = GetTime() + 0.15  -- 150ms delay
+    nameplate:Hide()
+
     -- Hook OnShow to immediately hide original elements when nameplate appears
     -- This prevents the brief flash of Blizzard nameplates before we process them
     HookScript(frame, "OnShow", NamePlate_OnShow)
+
+    -- Hook OnHide to hide our nameplate when original hides (prevents stale cached data flash)
+    HookScript(frame, "OnHide", NamePlate_OnHide)
 
     -- If frame is already visible, hide originals immediately
     if frame:IsShown() then
@@ -1431,7 +1626,20 @@ local function UpdateNamePlate(frame)
         frame:SetAlpha(1)
         nameplate.isCritterHidden = nil
     end
-    if not nameplate:IsShown() then
+
+    -- Delayed show: Only show after showAfter time has passed (prevents white skeleton flash)
+    local waitingForDelay = false
+    if nameplate.showAfter then
+        if GetTime() < nameplate.showAfter then
+            -- Still waiting, keep hidden but continue to update data
+            waitingForDelay = true
+        else
+            -- Delay passed, clear flag
+            nameplate.showAfter = nil
+        end
+    end
+
+    if not waitingForDelay and not nameplate:IsShown() then
         nameplate:Show()
     end
 
@@ -1497,7 +1705,10 @@ local function UpdateNamePlate(frame)
 
     local hp = original.healthbar:GetValue() or 0
     local hpmin, hpmax = original.healthbar:GetMinMaxValues()
+    hpmin = hpmin or 0
     if not hpmax or hpmax == 0 then hpmax = 1 end
+    if hp < 0 then hp = 0 end
+    if hp > hpmax then hp = hpmax end
 
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
@@ -1536,13 +1747,14 @@ local function UpdateNamePlate(frame)
         hTextFormat = Settings.healthTextFormat
     end
 
-    -- Only update health text when HP or hpmax changed
-    if hp ~= nameplate.lastHP or hpmax ~= nameplate.lastHPMax then
+    -- Only update health text when HP, hpmax, or format changed
+    if hp ~= nameplate.lastHP or hpmax ~= nameplate.lastHPMax or hTextFormat ~= nameplate.lastHTextFormat then
         nameplate.lastHP = hp
         nameplate.lastHPMax = hpmax
+        nameplate.lastHTextFormat = hTextFormat
 
         local hpText = ""
-        if hTextFormat ~= 0 then
+        if hTextFormat ~= 0 and hpmax and hpmax > 0 then
             local perc = (hp / hpmax) * 100
             local format = hTextFormat
             local name = ""
@@ -2368,9 +2580,68 @@ local PLATE_UPDATE_INTERVAL = 0.5
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
 
+-- Helper function to hide original nameplate elements on a frame
+-- Used to prevent classic nameplates from showing during zone transitions
+local function HideOriginalNameplateElements(frame)
+    if not frame then return end
+
+    -- Hide healthbar
+    local healthbar = frame.healthbar or frame:GetChildren()
+    if healthbar and healthbar.SetAlpha then
+        healthbar:SetAlpha(0)
+    end
+
+    -- Hide all regions (border, glow, name, level, levelicon, raidicon)
+    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
+    if r1 and r1.SetAlpha then r1:SetAlpha(0) end
+    if r2 and r2.SetAlpha then r2:SetAlpha(0) end
+    if r3 then
+        if r3.SetAlpha then r3:SetAlpha(0) end
+        if r3.SetTextColor then r3:SetTextColor(0, 0, 0, 0) end
+        if r3.Hide then r3:Hide() end
+    end
+    if r4 then
+        if r4.SetAlpha then r4:SetAlpha(0) end
+        if r4.SetTextColor then r4:SetTextColor(0, 0, 0, 0) end
+        if r4.Hide then r4:Hide() end
+    end
+    if r5 and r5.SetAlpha then r5:SetAlpha(0) end
+    -- r6 is raid icon - hide it too during zone transition
+    if r6 and r6.SetAlpha then r6:SetAlpha(0) end
+
+    -- Hide ShaguTweaks .new frame if present
+    if frame.new and frame.new.SetAlpha then
+        frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+    end
+end
+
 -- Helper function to reset nameplate scanning state (called on zone change)
 -- Defined here to capture locals without adding upvalues to event handler
 local function ResetNameplateScanning()
+    -- First hide all GudaPlates overlays and original elements for registered plates
+    for frame, nameplate in pairs(registry) do
+        if nameplate and nameplate.Hide then
+            nameplate:Hide()
+        end
+        -- Also hide original elements immediately
+        HideOriginalNameplateElements(frame)
+    end
+
+    -- Then scan ALL WorldFrame children and hide any nameplate elements
+    -- This catches nameplates that weren't registered yet
+    local numChildren = WorldFrame:GetNumChildren()
+    if numChildren > 0 then
+        local children = { WorldFrame:GetChildren() }
+        for i = 1, numChildren do
+            local frame = children[i]
+            if frame and IsNamePlate(frame) then
+                HideOriginalNameplateElements(frame)
+            end
+        end
+    end
+
+    -- Now clear the registry and reset scanning
     initializedChildren = 0
     for k in pairs(registry) do registry[k] = nil end
     cachedWorldChildCount = 0
@@ -2385,12 +2656,6 @@ local onUpdateEnabled = true
 local function GudaPlates_OnUpdate()
     local now = GetTime()
     local didWork = false
-
-    -- Garbage collection when out of combat (reduces GC stutters)
-    if not playerInCombat and now - lastGCTime > GC_INTERVAL then
-        lastGCTime = now
-        collectgarbage()
-    end
 
     -- Throttle debuff timer cleanup to once per second
     if GudaPlates_Debuffs and now - lastDebuffCleanup > CLEANUP_INTERVAL then
@@ -2601,15 +2866,35 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
             LoadSettings()
             -- Also try to disable pfUI nameplates when our addon is loaded
             DisablePfUINameplates()
+            -- Disable ShaguTweaks nameplate processing
+            if GudaPlates.DisableShaguTweaksNameplates then
+                GudaPlates.DisableShaguTweaksNameplates()
+            end
         elseif arg1 == "pfUI" then
             -- pfUI just loaded, disable its nameplates
             if DisablePfUINameplates() then
                 Print("Disabled pfUI nameplates module")
             end
+        elseif arg1 == "ShaguTweaks" or arg1 == "ShaguTweaks-tbc" then
+            -- ShaguTweaks just loaded, disable its nameplate processing
+            if GudaPlates.DisableShaguTweaksNameplates then
+                -- Delay one frame to let ShaguTweaks initialize libnameplate
+                local delayFrame = CreateFrame("Frame")
+                delayFrame:SetScript("OnUpdate", function()
+                    this:SetScript("OnUpdate", nil)
+                    if GudaPlates.DisableShaguTweaksNameplates() then
+                        Print("Disabled ShaguTweaks nameplate modules (using GudaPlates instead)")
+                    end
+                end)
+            end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
         DisablePfUINameplates()
+        -- Also disable ShaguTweaks nameplates
+        if GudaPlates.DisableShaguTweaksNameplates then
+            GudaPlates.DisableShaguTweaksNameplates()
+        end
 
         -- Clear trackers on zone/load (clear contents, don't reassign to preserve references)
         for k in pairs(debuffTracker) do debuffTracker[k] = nil end
