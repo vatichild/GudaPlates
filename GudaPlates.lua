@@ -3,6 +3,43 @@
 
 GudaPlates = GudaPlates or {}
 
+-- ============================================
+-- ShaguTweaks Compatibility Layer
+-- ============================================
+-- ShaguTweaks' libnameplate.lua also scans WorldFrame for nameplates and hooks
+-- OnShow/OnUpdate scripts. This causes conflicts with GudaPlates because:
+-- 1. Both addons try to modify the same nameplate frames
+-- 2. Script chaining breaks due to vanilla Lua's `this` global vs `self` parameter
+-- 3. Frame structure changes invalidate captured script references
+--
+-- Solution: Disable ShaguTweaks' nameplate processing when GudaPlates is active.
+-- ShaguTweaks nameplate modules check `if ShaguPlates then return end` to avoid
+-- conflicts with ShaguPlates. We hook this same pattern.
+
+-- Function to disable ShaguTweaks nameplate handling (called on ADDON_LOADED)
+local function DisableShaguTweaksNameplates()
+    if ShaguTweaks and ShaguTweaks.libnameplate then
+        -- Disable the OnUpdate scanner that looks for new nameplates
+        ShaguTweaks.libnameplate:SetScript("OnUpdate", nil)
+
+        -- Clear the callback tables to prevent any registered functions from running
+        ShaguTweaks.libnameplate.OnInit = {}
+        ShaguTweaks.libnameplate.OnShow = {}
+        ShaguTweaks.libnameplate.OnUpdate = {}
+
+        -- Mark as handled so modules know not to register new callbacks
+        ShaguTweaks.libnameplate.disabled_by_gudaplates = true
+
+        return true
+    end
+    return false
+end
+GudaPlates.DisableShaguTweaksNameplates = DisableShaguTweaksNameplates
+
+-- Try immediately in case ShaguTweaks loaded before us
+-- (Also called in main ADDON_LOADED handler for proper timing)
+DisableShaguTweaksNameplates()
+
 -- Ensure Settings exists with defaults (fallback if Settings file didn't load)
 if not GudaPlates.Settings then
     GudaPlates.Settings = {
@@ -2593,15 +2630,35 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
             LoadSettings()
             -- Also try to disable pfUI nameplates when our addon is loaded
             DisablePfUINameplates()
+            -- Disable ShaguTweaks nameplate processing
+            if GudaPlates.DisableShaguTweaksNameplates then
+                GudaPlates.DisableShaguTweaksNameplates()
+            end
         elseif arg1 == "pfUI" then
             -- pfUI just loaded, disable its nameplates
             if DisablePfUINameplates() then
                 Print("Disabled pfUI nameplates module")
             end
+        elseif arg1 == "ShaguTweaks" or arg1 == "ShaguTweaks-tbc" then
+            -- ShaguTweaks just loaded, disable its nameplate processing
+            if GudaPlates.DisableShaguTweaksNameplates then
+                -- Delay one frame to let ShaguTweaks initialize libnameplate
+                local delayFrame = CreateFrame("Frame")
+                delayFrame:SetScript("OnUpdate", function()
+                    this:SetScript("OnUpdate", nil)
+                    if GudaPlates.DisableShaguTweaksNameplates() then
+                        Print("Disabled ShaguTweaks nameplate modules (using GudaPlates instead)")
+                    end
+                end)
+            end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Also try to disable pfUI nameplates on world enter (in case it loaded before us)
         DisablePfUINameplates()
+        -- Also disable ShaguTweaks nameplates
+        if GudaPlates.DisableShaguTweaksNameplates then
+            GudaPlates.DisableShaguTweaksNameplates()
+        end
 
         -- Clear trackers on zone/load (clear contents, don't reassign to preserve references)
         for k in pairs(debuffTracker) do debuffTracker[k] = nil end
