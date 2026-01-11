@@ -1409,11 +1409,16 @@ tankCheckbox:SetScript("OnClick", function()
     end
     SaveSettings()
     Print("Role set to " .. GudaPlates.playerRole)
+    -- Broadcast to raid/party (with 5 sec debounce to prevent spam)
+    if GudaPlates.BroadcastTankMode then
+        GudaPlates.BroadcastTankMode()
+    end
 end)
 tankCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:AddLine("Tank Mode")
     GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
+    GameTooltip:AddLine("Setting is shared with raid/party members.", 0.7, 0.7, 0.7, 1)
     GameTooltip:Show()
 end)
 tankCheckbox:SetScript("OnLeave", function()

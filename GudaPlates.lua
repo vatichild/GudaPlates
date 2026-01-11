@@ -374,8 +374,24 @@ GudaPlates.GP_Threats = GP_Threats
 local GP_TankPlayers = {}  -- Table of player names who have Tank Mode enabled
 local GP_ADDON_PREFIX = "GudaPlates"
 
+-- Debounce for Tank Mode broadcast (5 seconds)
+local TANK_BROADCAST_DEBOUNCE = 5
+local lastTankBroadcast = 0
+
 -- Broadcast our Tank Mode setting to group
-local function BroadcastTankMode()
+-- @param force: if true, ignore debounce (used for group join/zone events)
+local function BroadcastTankMode(force)
+    local now = GetTime()
+
+    -- Debounce check (skip if called too recently, unless forced)
+    if not force and (now - lastTankBroadcast) < TANK_BROADCAST_DEBOUNCE then
+        if DEBUG_THREAT then
+            Print(string_format("[TankMode] Broadcast debounced (%.1fs remaining)",
+                TANK_BROADCAST_DEBOUNCE - (now - lastTankBroadcast)))
+        end
+        return
+    end
+
     local isTank = (playerRole == "TANK")
     local msg = isTank and "TM=1" or "TM=0"
 
@@ -387,8 +403,10 @@ local function BroadcastTankMode()
 
     if UnitInRaid("player") then
         SendAddonMessage(GP_ADDON_PREFIX, msg, "RAID")
+        lastTankBroadcast = now
     elseif UnitInParty() then
         SendAddonMessage(GP_ADDON_PREFIX, msg, "PARTY")
+        lastTankBroadcast = now
     end
 
     if DEBUG_THREAT then
@@ -430,8 +448,8 @@ GP_TankModeFrame:SetScript("OnEvent", function()
         end
     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE"
            or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
-        -- Broadcast our Tank Mode setting when group changes or we zone
-        BroadcastTankMode()
+        -- Broadcast our Tank Mode setting when group changes or we zone (forced, no debounce)
+        BroadcastTankMode(true)
     end
 end)
 
@@ -1132,10 +1150,12 @@ local function NamePlate_OnHide()
     -- Hide our nameplate immediately to prevent stale cached appearance
     nameplate:Hide()
 
-    -- Clear our text elements to prevent stale text flash on next show
-    if nameplate.name then nameplate.name:SetText("") end
-    if nameplate.level then nameplate.level:SetText("") end
-    if nameplate.healthtext then nameplate.healthtext:SetText("") end
+    -- Clear cached values to force text update on next show
+    nameplate.lastHP = nil
+    nameplate.lastHPMax = nil
+    nameplate.lastHTextFormat = nil
+    nameplate.lastLevelText = nil
+    nameplate.lastNameText = nil
 
     -- Hide original name/level visually (keep text - game will set new text on next show)
     if original then
@@ -1203,9 +1223,40 @@ local function HandleNamePlate(frame)
         if nr4 and nr4.SetTextColor then nr4:SetTextColor(0, 0, 0, 0) end
     end
 
+    -- Check for existing GudaPlates overlay (from before zone transition)
+    -- Reuse it instead of creating a duplicate
+    local existingOverlay = nil
+    local numChildren = frame:GetNumChildren()
+    if numChildren > 1 then
+        local children = { frame:GetChildren() }
+        for i = 1, numChildren do
+            local child = children[i]
+            if child and child.platename and string.find(child.platename, "GudaPlate") then
+                existingOverlay = child
+                break
+            end
+        end
+    end
+
+    if existingOverlay then
+        -- Reuse existing overlay - just re-register it and clear cached values
+        local nameplate = existingOverlay
+        -- Clear cached values to force text refresh
+        nameplate.lastHP = nil
+        nameplate.lastHPMax = nil
+        nameplate.lastHTextFormat = nil
+        nameplate.lastLevelText = nil
+        nameplate.lastNameText = nil
+        nameplate.showAfter = GetTime() + 0.1  -- Delay show for fresh data
+        nameplate:Hide()  -- Hide until fresh data is ready
+        -- Re-register in registry
+        registry[frame] = nameplate
+        return
+    end
+
+    -- Create new overlay
     platecount = platecount + 1
     local platename = "GudaPlate" .. platecount
-
     local nameplate = CreateFrame("Button", platename, frame)
     nameplate.platename = platename
     nameplate:EnableMouse(false)
@@ -1577,16 +1628,18 @@ local function UpdateNamePlate(frame)
     end
 
     -- Delayed show: Only show after showAfter time has passed (prevents white skeleton flash)
+    local waitingForDelay = false
     if nameplate.showAfter then
         if GetTime() < nameplate.showAfter then
-            -- Still waiting, keep hidden and keep originals hidden
-            return
+            -- Still waiting, keep hidden but continue to update data
+            waitingForDelay = true
+        else
+            -- Delay passed, clear flag
+            nameplate.showAfter = nil
         end
-        -- Delay passed, clear flag and show
-        nameplate.showAfter = nil
     end
 
-    if not nameplate:IsShown() then
+    if not waitingForDelay and not nameplate:IsShown() then
         nameplate:Show()
     end
 
@@ -1652,7 +1705,10 @@ local function UpdateNamePlate(frame)
 
     local hp = original.healthbar:GetValue() or 0
     local hpmin, hpmax = original.healthbar:GetMinMaxValues()
+    hpmin = hpmin or 0
     if not hpmax or hpmax == 0 then hpmax = 1 end
+    if hp < 0 then hp = 0 end
+    if hp > hpmax then hp = hpmax end
 
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
@@ -1691,13 +1747,14 @@ local function UpdateNamePlate(frame)
         hTextFormat = Settings.healthTextFormat
     end
 
-    -- Only update health text when HP or hpmax changed
-    if hp ~= nameplate.lastHP or hpmax ~= nameplate.lastHPMax then
+    -- Only update health text when HP, hpmax, or format changed
+    if hp ~= nameplate.lastHP or hpmax ~= nameplate.lastHPMax or hTextFormat ~= nameplate.lastHTextFormat then
         nameplate.lastHP = hp
         nameplate.lastHPMax = hpmax
+        nameplate.lastHTextFormat = hTextFormat
 
         local hpText = ""
-        if hTextFormat ~= 0 then
+        if hTextFormat ~= 0 and hpmax and hpmax > 0 then
             local perc = (hp / hpmax) * 100
             local format = hTextFormat
             local name = ""
@@ -2523,9 +2580,68 @@ local PLATE_UPDATE_INTERVAL = 0.5
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
 
+-- Helper function to hide original nameplate elements on a frame
+-- Used to prevent classic nameplates from showing during zone transitions
+local function HideOriginalNameplateElements(frame)
+    if not frame then return end
+
+    -- Hide healthbar
+    local healthbar = frame.healthbar or frame:GetChildren()
+    if healthbar and healthbar.SetAlpha then
+        healthbar:SetAlpha(0)
+    end
+
+    -- Hide all regions (border, glow, name, level, levelicon, raidicon)
+    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
+    if r1 and r1.SetAlpha then r1:SetAlpha(0) end
+    if r2 and r2.SetAlpha then r2:SetAlpha(0) end
+    if r3 then
+        if r3.SetAlpha then r3:SetAlpha(0) end
+        if r3.SetTextColor then r3:SetTextColor(0, 0, 0, 0) end
+        if r3.Hide then r3:Hide() end
+    end
+    if r4 then
+        if r4.SetAlpha then r4:SetAlpha(0) end
+        if r4.SetTextColor then r4:SetTextColor(0, 0, 0, 0) end
+        if r4.Hide then r4:Hide() end
+    end
+    if r5 and r5.SetAlpha then r5:SetAlpha(0) end
+    -- r6 is raid icon - hide it too during zone transition
+    if r6 and r6.SetAlpha then r6:SetAlpha(0) end
+
+    -- Hide ShaguTweaks .new frame if present
+    if frame.new and frame.new.SetAlpha then
+        frame.new:SetAlpha(0)
+        if frame.new.Hide then frame.new:Hide() end
+    end
+end
+
 -- Helper function to reset nameplate scanning state (called on zone change)
 -- Defined here to capture locals without adding upvalues to event handler
 local function ResetNameplateScanning()
+    -- First hide all GudaPlates overlays and original elements for registered plates
+    for frame, nameplate in pairs(registry) do
+        if nameplate and nameplate.Hide then
+            nameplate:Hide()
+        end
+        -- Also hide original elements immediately
+        HideOriginalNameplateElements(frame)
+    end
+
+    -- Then scan ALL WorldFrame children and hide any nameplate elements
+    -- This catches nameplates that weren't registered yet
+    local numChildren = WorldFrame:GetNumChildren()
+    if numChildren > 0 then
+        local children = { WorldFrame:GetChildren() }
+        for i = 1, numChildren do
+            local frame = children[i]
+            if frame and IsNamePlate(frame) then
+                HideOriginalNameplateElements(frame)
+            end
+        end
+    end
+
+    -- Now clear the registry and reset scanning
     initializedChildren = 0
     for k in pairs(registry) do registry[k] = nil end
     cachedWorldChildCount = 0
