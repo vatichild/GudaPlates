@@ -728,9 +728,7 @@ GudaPlatesEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
 
--- Garbage collection throttling
-local lastGCTime = 0
-local GC_INTERVAL = 1  -- Run incremental GC every 1 second out of combat
+-- Combat state tracking
 local playerInCombat = UnitAffectingCombat and UnitAffectingCombat("player") or false
 
 -- Patterns for removing pending spells (from Settings)
@@ -2385,12 +2383,6 @@ local onUpdateEnabled = true
 local function GudaPlates_OnUpdate()
     local now = GetTime()
     local didWork = false
-
-    -- Garbage collection when out of combat (reduces GC stutters)
-    if not playerInCombat and now - lastGCTime > GC_INTERVAL then
-        lastGCTime = now
-        collectgarbage()
-    end
 
     -- Throttle debuff timer cleanup to once per second
     if GudaPlates_Debuffs and now - lastDebuffCleanup > CLEANUP_INTERVAL then
