@@ -212,16 +212,70 @@ local _, playerClass = UnitClass("player")
 playerClass = playerClass or ""
 GudaPlates.playerClass = playerClass
 
+-- Cache for player class lookups by name (cleared on zone change)
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.playerClassCache = {}
+
+-- Helper function to get player class by name (scans raid/party roster)
+-- Returns class token (e.g., "WARRIOR", "PRIEST") or nil if not found
+local function GetPlayerClassByName(name)
+    if not name then return nil end
+
+    local cache = GudaPlates.playerClassCache
+
+    -- Check cache first
+    if cache[name] then
+        return cache[name]
+    end
+
+    -- Check if it's the player
+    local playerName = UnitName("player")
+    if name == playerName then
+        cache[name] = playerClass
+        return playerClass
+    end
+
+    -- Scan raid
+    local numRaid = GetNumRaidMembers()
+    if numRaid > 0 then
+        for i = 1, numRaid do
+            local raidName, _, _, _, _, raidClass = GetRaidRosterInfo(i)
+            if raidName == name then
+                cache[name] = raidClass
+                return raidClass
+            end
+        end
+    else
+        -- Scan party
+        local numParty = GetNumPartyMembers()
+        for i = 1, numParty do
+            local partyUnit = "party" .. i
+            if UnitExists(partyUnit) then
+                local partyName = UnitName(partyUnit)
+                if partyName == name then
+                    local _, partyClass = UnitClass(partyUnit)
+                    cache[name] = partyClass
+                    return partyClass
+                end
+            end
+        end
+    end
+
+    return nil
+end
+GudaPlates.GetPlayerClassByName = GetPlayerClassByName
+
 -- Cast tracking database (keyed by GUID when SuperWoW, or by name otherwise)
-local castDB = {}
-GudaPlates.castDB = castDB  -- Expose for Castbar module
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.castDB = GudaPlates.castDB or {}
 
 -- Cast tracking for non-SuperWoW
-local castTracker = {}
-GudaPlates.castTracker = castTracker  -- Expose for CombatLog module
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.castTracker = GudaPlates.castTracker or {}
 
 -- Debuff tracking (for aura fade detection)
-local debuffTracker = {}
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.debuffTracker = {}
 
 -- Settings and other variables from GudaPlates_Settings.lua
 local Settings = GudaPlates.Settings or {}
@@ -566,12 +620,12 @@ if not SpellDB then
 end
 
 -- Melee crit tracker for Deep Wound heuristic
--- Stores recent melee crits: recentMeleeCrits[targetName] = timestamp
-local recentMeleeCrits = {}
-GudaPlates.recentMeleeCrits = recentMeleeCrits  -- Expose for CombatLog module
+-- Stores recent melee crits: GudaPlates.recentMeleeCrits[targetName] = timestamp
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.recentMeleeCrits = GudaPlates.recentMeleeCrits or {}
 -- Melee hit tracker for procs (Vindication)
-local recentMeleeHits = {}
-GudaPlates.recentMeleeHits = recentMeleeHits  -- Expose for CombatLog module
+-- Stored in GudaPlates table to reduce upvalue count
+GudaPlates.recentMeleeHits = GudaPlates.recentMeleeHits or {}
 
 -- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
@@ -1995,11 +2049,36 @@ local function UpdateNamePlate(frame)
 
     -- Determine color based on role and threat
     if isFriendly then
-        -- Only override to our custom green if it was standard green or blue
-        if (r < 0.2 and g > 0.9 and b < 0.2) or (r < 0.2 and g < 0.2 and b > 0.9) then
+        -- Check if this is a player (for class colors)
+        local isPlayer = false
+        local friendlyClass = nil
+
+        -- Method 1: SuperWoW - use UnitIsPlayer
+        if hasValidGUID and UnitIsPlayer then
+            isPlayer = UnitIsPlayer(unitstr)
+            if isPlayer then
+                local _, classToken = UnitClass(unitstr)
+                friendlyClass = classToken
+            end
+        end
+
+        -- Method 2: Fallback - check raid/party roster by name
+        if not isPlayer and plateName then
+            friendlyClass = GetPlayerClassByName(plateName)
+            if friendlyClass then
+                isPlayer = true
+            end
+        end
+
+        -- Apply color: class color for players, custom green for NPCs
+        if isPlayer and friendlyClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[friendlyClass] then
+            local classColor = RAID_CLASS_COLORS[friendlyClass]
+            nameplate.health:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+        elseif (r < 0.2 and g > 0.9 and b < 0.2) or (r < 0.2 and g < 0.2 and b > 0.9) then
+            -- Standard green or blue NPC - use custom green
             nameplate.health:SetStatusBarColor(0.27, 0.63, 0.27, 1)
         else
-            -- Keep original color (e.g. class colors)
+            -- Keep original color
             nameplate.health:SetStatusBarColor(r, g, b, 1)
         end
     else
@@ -2372,6 +2451,7 @@ local function UpdateNamePlate(frame)
     local now = GetTime()
 
     -- Method 1: Check castDB by GUID (SuperWoW UNIT_CASTEVENT - most accurate)
+    local castDB = GudaPlates.castDB
     if hasValidGUID and castDB[unitstr] then
         local cast = castDB[unitstr]
         -- Check if cast is still active
@@ -2412,6 +2492,7 @@ local function UpdateNamePlate(frame)
 
     -- Method 3: Fallback to castTracker (combat log based, name-based)
     -- Only used when SuperWoW GUID-based methods didn't find a cast
+    local castTracker = GudaPlates.castTracker
     if not casting and plateName and castTracker[plateName] and not hasValidGUID then
         -- Clean up expired casts first
         local i = 1
@@ -2897,11 +2978,12 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         end
 
         -- Clear trackers on zone/load (clear contents, don't reassign to preserve references)
-        for k in pairs(debuffTracker) do debuffTracker[k] = nil end
-        for k in pairs(castTracker) do castTracker[k] = nil end
-        for k in pairs(castDB) do castDB[k] = nil end
-        for k in pairs(recentMeleeCrits) do recentMeleeCrits[k] = nil end
-        for k in pairs(recentMeleeHits) do recentMeleeHits[k] = nil end
+        for k in pairs(GudaPlates.debuffTracker) do GudaPlates.debuffTracker[k] = nil end
+        for k in pairs(GudaPlates.castTracker) do GudaPlates.castTracker[k] = nil end
+        for k in pairs(GudaPlates.castDB) do GudaPlates.castDB[k] = nil end
+        for k in pairs(GudaPlates.recentMeleeCrits) do GudaPlates.recentMeleeCrits[k] = nil end
+        for k in pairs(GudaPlates.recentMeleeHits) do GudaPlates.recentMeleeHits[k] = nil end
+        for k in pairs(GudaPlates.playerClassCache) do GudaPlates.playerClassCache[k] = nil end
         if SpellDB then SpellDB.objects = {} end
         if SpellDB and SpellDB.ownerBoundCache then SpellDB.ownerBoundCache = {} end
 
@@ -3103,9 +3185,9 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                         local recentTime = nil
                         
                         if effect == "Deep Wound" then
-                            recentTime = recentMeleeCrits[unit]
+                            recentTime = GudaPlates.recentMeleeCrits[unit]
                         else
-                            recentTime = recentMeleeHits[unit]
+                            recentTime = GudaPlates.recentMeleeHits[unit]
                         end
 
                         -- Also check by GUID
@@ -3113,9 +3195,9 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                             local guid = UnitGUID and UnitGUID("target")
                             if guid then
                                 if effect == "Deep Wound" then
-                                    recentTime = recentMeleeCrits[guid]
+                                    recentTime = GudaPlates.recentMeleeCrits[guid]
                                 else
-                                    recentTime = recentMeleeHits[guid]
+                                    recentTime = GudaPlates.recentMeleeHits[guid]
                                 end
                             end
                         end
@@ -3221,13 +3303,13 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
 
             if unit then
                 -- Record that we crit this target recently
-                recentMeleeCrits[unit] = GetTime()
+                GudaPlates.recentMeleeCrits[unit] = GetTime()
 
                 -- Also store by GUID if available
                 if superwow_active and UnitExists("target") and UnitName("target") == unit then
                     local guid = UnitGUID and UnitGUID("target")
                     if guid then
-                        recentMeleeCrits[guid] = GetTime()
+                        GudaPlates.recentMeleeCrits[guid] = GetTime()
                     end
                 end
             end
@@ -3241,7 +3323,7 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                 -- Also strip stack count if present (Cursive/SuperWoW might add it)
                 for s, c in string_gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
 
-                debuffTracker[unit .. spell] = nil
+                GudaPlates.debuffTracker[unit .. spell] = nil
                 -- Remove from SpellDB objects (all levels)
                 if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
                     for level, effects in pairs(SpellDB.objects[unit]) do
@@ -3258,7 +3340,7 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
                 -- Also strip stack count if present
                 for s, c in string_gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
 
-                debuffTracker[unit .. spell] = nil
+                GudaPlates.debuffTracker[unit .. spell] = nil
                 if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end
