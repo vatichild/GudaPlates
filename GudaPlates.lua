@@ -2399,7 +2399,7 @@ local lastDebuffCleanup = 0
 local CLEANUP_INTERVAL = 1
 -- Throttle plate updates when out of combat
 local lastPlateUpdate = 0
-local PLATE_UPDATE_INTERVAL = 0.5
+local PLATE_UPDATE_INTERVAL = 0.2
 -- Track initialized children count (ShaguPlates-style: only scan NEW children)
 local initializedChildren = 0
 
