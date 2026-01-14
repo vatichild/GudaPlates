@@ -858,6 +858,22 @@ local function NamePlate_OnShow()
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
 
+    -- Reset skull icon and level state for reused nameplates
+    if nameplate.skullIcon then
+        nameplate.skullIcon:Hide()
+    end
+    if nameplate.level then
+        -- Reset level text from original (in case it was cleared for skull unit)
+        local levelText = nil
+        if original.level and original.level.GetText then
+            levelText = original.level:GetText()
+        end
+        if levelText and levelText ~= "" and levelText ~= "-1" and levelText ~= "??" then
+            nameplate.level:SetText(levelText)
+        end
+        nameplate.level:Show()
+    end
+
     -- IMMEDIATELY check for critter filtering BEFORE showing nameplate
     -- If critter, keep nameplate hidden and skip ALL processing
     if GudaPlates_Filter and GudaPlates_Filter.ShouldSkipNameplate then
@@ -1552,8 +1568,29 @@ local function UpdateNamePlate(frame)
         end
     end
 
-    -- Check for skull level (level -1 or empty/nil level text)
-    if not levelText or levelText == "" or levelText == "-1" then
+    -- Check for skull level using multiple detection methods
+    local isSkullLevel = false
+
+    -- Method 1: SuperWoW UnitLevel returns -1 for skull level units
+    -- Only check if unit exists (prevents stale data from reused nameplates)
+    if superwow_active and frame and frame.GetName then
+        local unitstr = frame:GetName(1)
+        if unitstr and unitstr ~= "" and UnitLevel and UnitExists(unitstr) then
+            local unitLevel = UnitLevel(unitstr)
+            if unitLevel and unitLevel == -1 then
+                isSkullLevel = true
+            end
+        end
+    end
+
+    -- Method 2: Check level text for skull indicators
+    if not isSkullLevel and levelText then
+        if levelText == "-1" or levelText == "??" then
+            isSkullLevel = true
+        end
+    end
+
+    if isSkullLevel then
         -- Skull level unit - show skull icon, hide level text
         nameplate.level:SetText("")
         nameplate.level:Hide()
@@ -1562,11 +1599,15 @@ local function UpdateNamePlate(frame)
         end
     else
         -- Normal level - show level text with elite suffix, hide skull icon
-        nameplate.level:SetText(levelText .. eliteSuffix)
-        nameplate.level:Show()
+        -- Always ensure skull icon is hidden and level is shown for non-skull units
         if nameplate.skullIcon then
             nameplate.skullIcon:Hide()
         end
+
+        -- Always set the level text (even if empty, to clear stale skull state)
+        local displayLevel = (levelText and levelText ~= "") and (levelText .. eliteSuffix) or ""
+        nameplate.level:SetText(displayLevel)
+        nameplate.level:Show()
     end
 
     -- Plater-style colors with threat support
