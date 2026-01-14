@@ -66,6 +66,9 @@ GudaPlates.Settings = {
     hideOptionsBorder = false,
     -- Filtering
     showCritterNameplates = false,  -- Hide critter/ambient mob nameplates by default
+    -- PvP Enemy Players
+    pvpEnemyAsFriendly = false,  -- Show PvP-tagged enemy players using friendly nameplate style
+    pvpEnemyNoClassColors = false,  -- Disable class colors for PvP-tagged enemy players
 }
 
 -- Critter names list (from ShaguPlates) for fallback detection

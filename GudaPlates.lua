@@ -533,8 +533,33 @@ local function UpdateNamePlateDimensions(frame)
         isFriendly = not isHostile and not isNeutral
     end
 
+    -- Check if hostile unit is a player (enemy faction player)
+    local isEnemyPlayer = false
+    local isEnemyPlayerPvP = false
+
+    if not isFriendly and superwow_active and frame and frame.GetName and UnitIsPlayer then
+        local unitstr = frame:GetName(1)
+        if unitstr and unitstr ~= "" and UnitExists(unitstr) then
+            isEnemyPlayer = UnitIsPlayer(unitstr)
+            if isEnemyPlayer and UnitIsPVP then
+                isEnemyPlayerPvP = UnitIsPVP(unitstr)
+            end
+            nameplate.cachedIsEnemyPlayer = isEnemyPlayer
+            nameplate.cachedIsEnemyPlayerPvP = isEnemyPlayerPvP
+        end
+    elseif nameplate.cachedIsEnemyPlayer ~= nil then
+        isEnemyPlayer = nameplate.cachedIsEnemyPlayer
+        isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
+    end
+
+    -- Use friendly (smaller) dimensions for:
+    -- - Friendly units
+    -- - Non-PvP enemy players (treat them like friendly players)
+    -- - PvP enemy players when pvpEnemyAsFriendly setting is enabled
+    local usePlayerDimensions = isFriendly or (isEnemyPlayer and not isEnemyPlayerPvP) or (isEnemyPlayerPvP and Settings.pvpEnemyAsFriendly)
+
     local hHeight, hWidth, hFontSize, hTextPos, lFontSize, nFontSize
-    if isFriendly then
+    if usePlayerDimensions then
         hHeight = Settings.friendHealthbarHeight
         hWidth = Settings.friendHealthbarWidth
         hFontSize = Settings.friendHealthFontSize
@@ -552,10 +577,10 @@ local function UpdateNamePlateDimensions(frame)
 
     nameplate.health:SetHeight(hHeight)
     nameplate.health:SetWidth(hWidth)
-    
+
     -- Update castbar dimensions
     local cHeight, cIndependent, cWidth
-    if isFriendly then
+    if usePlayerDimensions then
         cHeight = Settings.friendCastbarHeight
         cIndependent = Settings.friendCastbarIndependent
         cWidth = Settings.friendCastbarWidth
@@ -595,7 +620,7 @@ local function UpdateNamePlateDimensions(frame)
     -- Update mana bar dimensions and text position
     if nameplate.mana then
         local mManaHeight, mManaTextPos
-        if isFriendly then
+        if usePlayerDimensions then
             mManaHeight = Settings.friendManabarHeight
             mManaTextPos = Settings.friendManaTextPosition
         else
@@ -857,6 +882,14 @@ local function NamePlate_OnShow()
 
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
+
+    -- Reset cached unit type flags for reused nameplates
+    nameplate.cachedIsFriendly = nil
+    nameplate.cachedIsHostile = nil
+    nameplate.cachedIsNeutral = nil
+    nameplate.cachedIsEnemyPlayer = nil
+    nameplate.cachedIsEnemyPlayerPvP = nil
+    nameplate.cachedEnemyClass = nil
 
     -- Reset skull icon and level state for reused nameplates
     if nameplate.skullIcon then
@@ -1797,6 +1830,50 @@ local function UpdateNamePlate(frame)
         end
     else
         -- Hostile or Neutral
+        -- First check if this is an enemy player - apply class colors instead of threat colors
+        local isEnemyPlayer = false
+        local isEnemyPlayerPvP = false
+        local enemyClass = nil
+
+        if hasValidGUID and UnitIsPlayer then
+            isEnemyPlayer = UnitIsPlayer(unitstr)
+            if isEnemyPlayer then
+                local _, classToken = UnitClass(unitstr)
+                enemyClass = classToken
+                -- Check PvP status
+                if UnitIsPVP then
+                    isEnemyPlayerPvP = UnitIsPVP(unitstr)
+                end
+                -- Cache for reuse
+                nameplate.cachedEnemyClass = enemyClass
+            end
+        elseif nameplate.cachedIsEnemyPlayer then
+            isEnemyPlayer = true
+            isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
+            enemyClass = nameplate.cachedEnemyClass
+        end
+
+        -- Enemy players ONLY use class colors or red - no threat-based colors
+        if isEnemyPlayer then
+            -- Determine if we should use class colors
+            local useClassColor = true
+
+            -- If PvP-flagged AND "No class colors for PvP enemies" is enabled -> use red
+            if isEnemyPlayerPvP and Settings.pvpEnemyNoClassColors then
+                useClassColor = false
+            end
+
+            -- Apply color
+            if useClassColor and enemyClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[enemyClass] then
+                local classColor = RAID_CLASS_COLORS[enemyClass]
+                nameplate.health:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+            else
+                -- Simple hostile red for enemy players
+                nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
+            end
+        else
+            -- Not an enemy player (or couldn't detect class) - use standard hostile/mob coloring
+
         -- Check if mob is in combat (has a target)
         local mobInCombat = false
         local mobTargetUnit = nil
@@ -1985,6 +2062,7 @@ local function UpdateNamePlate(frame)
                 end
             end
         end
+        end -- End of else block for non-enemy-player
     end
 
     -- Update name from original
