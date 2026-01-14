@@ -9,6 +9,8 @@ GudaPlates_Settings.lua
 GudaPlates_SpellDB.lua
 GudaPlates_Debuffs.lua
 GudaPlates_Scanner.lua
+GudaPlates_Hide.lua
+GudaPlates_Filter.lua
 GudaPlates.lua
 GudaPlates_CombatLog.lua
 GudaPlates_Castbar.lua

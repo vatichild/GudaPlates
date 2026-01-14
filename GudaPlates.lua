@@ -755,24 +755,10 @@ local IsNamePlate = function(frame)
     return GudaPlates_Scanner.IsNamePlate(frame)
 end
 
-local function DisableObject(object)
-    if not object then return end
-    if object.SetAlpha then object:SetAlpha(0) end
-end
+-- DisableObject and HideVisual are now in GudaPlates_Hide module
+local DisableObject = GudaPlates_Hide.DisableObject
+local HideVisual = GudaPlates_Hide.HideVisual
 GudaPlates.DisableObject = DisableObject
-
-local function HideVisual(object)
-    if not object then return end
-    if object.SetAlpha then object:SetAlpha(0) end
-    if object.GetObjectType then
-        local otype = object:GetObjectType()
-        if otype == "Texture" then
-            object:SetTexture("")
-        elseif otype == "FontString" then
-            object:SetTextColor(0, 0, 0, 0)
-        end
-    end
-end
 GudaPlates.HideVisual = HideVisual
 GudaPlates.IsNamePlate = IsNamePlate
 
@@ -1160,6 +1146,16 @@ local function NamePlate_OnShow()
 
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
+
+    -- IMMEDIATELY check for critter filtering BEFORE showing nameplate
+    -- If critter, keep nameplate hidden and skip ALL processing
+    if GudaPlates_Filter and GudaPlates_Filter.ShouldSkipNameplate then
+        if GudaPlates_Filter.ShouldSkipNameplate(frame, nameplate, original, GudaPlates.Settings) then
+            -- Critter detected - keep nameplate hidden, skip everything
+            nameplate:Hide()
+            return
+        end
+    end
 
     -- Show our custom nameplate (but respect showAfter delay for newly created plates)
     if not nameplate.showAfter and not nameplate:IsShown() then
@@ -1593,72 +1589,13 @@ local function UpdateNamePlate(frame)
     local original = nameplate.original
     if not original.healthbar then return end
 
-    -- Critter filtering: Hide nameplates for critters/ambient mobs if setting is disabled
-    if Settings and not Settings.showCritterNameplates then
-        local isCritter = false
-
-        -- Get unit info for critter detection
-        local unitstr = nil
-        if superwow_active and frame and frame.GetName then
-            unitstr = frame:GetName(1)
-        end
-
-        -- Method 1: SuperWoW - use UnitCreatureType
-        if unitstr and UnitCreatureType then
-            local creatureType = UnitCreatureType(unitstr)
-            if creatureType == "Critter" then
-                isCritter = true
-            end
-        end
-
-        -- Method 2: Check name against Critters list
-        if not isCritter and GudaPlates.Critters then
-            local plateName = nameplate.name and nameplate.name:GetText()
-            if plateName and GudaPlates.Critters[string_lower(plateName)] then
-                isCritter = true
-            end
-        end
-
-        -- Method 3: Fallback - detect neutral units with level 1 and very low HP (typical critters)
-        if not isCritter and not unitstr then
-            local r, g, b = original.healthbar:GetStatusBarColor()
-            local isNeutral = r > 0.9 and g > 0.9 and b < 0.2
-
-            if isNeutral then
-                -- Check level
-                local levelText = nil
-                if original.level and original.level.GetText then
-                    levelText = original.level:GetText()
-                end
-                if not levelText and frame.level and frame.level.GetText then
-                    levelText = frame.level:GetText()
-                end
-
-                -- Check HP
-                local hp = original.healthbar:GetValue() or 0
-                local _, hpmax = original.healthbar:GetMinMaxValues()
-
-                -- Critters are typically level 1 with very low max HP (under 100)
-                if levelText == "1" and hpmax and hpmax > 0 and hpmax < 100 then
-                    isCritter = true
-                end
-            end
-        end
-
-        -- Hide the nameplate AND original frame if it's a critter
-        if isCritter then
+    -- Critter filtering - if critter, hide nameplate and skip ALL processing
+    -- No data updates, no element changes - just skip entirely
+    if GudaPlates_Filter and GudaPlates_Filter.ShouldSkipNameplate then
+        if GudaPlates_Filter.ShouldSkipNameplate(frame, nameplate, original, Settings) then
             nameplate:Hide()
-            -- Also hide original frame elements completely
-            frame:SetAlpha(0)
-            nameplate.isCritterHidden = true
-            return
+            return  -- Skip all processing for critters
         end
-    end
-
-    -- Ensure nameplate is shown (in case it was hidden as a critter before)
-    if nameplate.isCritterHidden then
-        frame:SetAlpha(1)
-        nameplate.isCritterHidden = nil
     end
 
     -- Delayed show: Only show after showAfter time has passed (prevents white skeleton flash)
@@ -2640,40 +2577,10 @@ local lastPlateUpdate = 0
 local PLATE_UPDATE_INTERVAL = 0.5
 -- Note: initializedChildren is now managed by GudaPlates_Scanner module
 
--- Helper function to hide original nameplate elements on a frame
--- Used to prevent classic nameplates from showing during zone transitions
+-- HideOriginalNameplateElements is now in GudaPlates_Hide module
+-- Local wrapper for backward compatibility (includes raid icon for zone transitions)
 local function HideOriginalNameplateElements(frame)
-    if not frame then return end
-
-    -- Hide healthbar
-    local healthbar = frame.healthbar or frame:GetChildren()
-    if healthbar and healthbar.SetAlpha then
-        healthbar:SetAlpha(0)
-    end
-
-    -- Hide all regions (border, glow, name, level, levelicon, raidicon)
-    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
-    if r1 and r1.SetAlpha then r1:SetAlpha(0) end
-    if r2 and r2.SetAlpha then r2:SetAlpha(0) end
-    if r3 then
-        if r3.SetAlpha then r3:SetAlpha(0) end
-        if r3.SetTextColor then r3:SetTextColor(0, 0, 0, 0) end
-        if r3.Hide then r3:Hide() end
-    end
-    if r4 then
-        if r4.SetAlpha then r4:SetAlpha(0) end
-        if r4.SetTextColor then r4:SetTextColor(0, 0, 0, 0) end
-        if r4.Hide then r4:Hide() end
-    end
-    if r5 and r5.SetAlpha then r5:SetAlpha(0) end
-    -- r6 is raid icon - hide it too during zone transition
-    if r6 and r6.SetAlpha then r6:SetAlpha(0) end
-
-    -- Hide ShaguTweaks .new frame if present
-    if frame.new and frame.new.SetAlpha then
-        frame.new:SetAlpha(0)
-        if frame.new.Hide then frame.new:Hide() end
-    end
+    GudaPlates_Hide.HideOriginalElements(frame, {skipRaidIcon = false})
 end
 
 -- Helper function to reset nameplate scanning state (called on zone change)
