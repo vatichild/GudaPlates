@@ -533,15 +533,8 @@ local function UpdateNamePlateDimensions(frame)
         isFriendly = not isHostile and not isNeutral
     end
 
-    -- Detect enemy player status (uses GudaPlates_Players module)
-    if not isFriendly and superwow_active and frame and frame.GetName then
-        local unitstr = frame:GetName(1)
-        if GudaPlates_Players and GudaPlates_Players.DetectEnemyPlayer then
-            GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
-        end
-    end
-
     -- Use friendly (smaller) dimensions for friendly units and eligible enemy players
+    -- Note: Enemy player detection is done in UpdateNamePlate which calls this function when PvP status changes
     local usePlayerDimensions = isFriendly
     if not usePlayerDimensions and GudaPlates_Players and GudaPlates_Players.ShouldUsePlayerDimensions then
         usePlayerDimensions = GudaPlates_Players.ShouldUsePlayerDimensions(nameplate, Settings, isFriendly)
@@ -1357,6 +1350,19 @@ local function UpdateNamePlate(frame)
         if GudaPlates_Filter.ShouldSkipNameplate(frame, nameplate, original, Settings) then
             nameplate:Hide()
             return  -- Skip all processing for critters
+        end
+    end
+
+    -- Check for PvP status changes on enemy players and update dimensions if needed
+    if superwow_active and GudaPlates_Players and frame.GetName then
+        local unitstr = frame:GetName(1)
+        if unitstr and unitstr ~= "" then
+            local prevPvP = nameplate.cachedIsEnemyPlayerPvP
+            GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
+            -- If PvP status changed, update dimensions
+            if prevPvP ~= nameplate.cachedIsEnemyPlayerPvP then
+                UpdateNamePlateDimensions(frame)
+            end
         end
     end
 

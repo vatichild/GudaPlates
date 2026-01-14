@@ -28,6 +28,7 @@ local HOSTILE_RED = {0.85, 0.2, 0.2, 1}
 -- =============================================================================
 
 -- Detect if a hostile unit is an enemy player and cache the results
+-- Note: PvP status is always checked fresh (not cached) since it can change dynamically
 -- Returns: isEnemyPlayer, isEnemyPlayerPvP, enemyClass
 function GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
     if not nameplate then return false, false, nil end
@@ -40,25 +41,32 @@ function GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
     if unitstr and unitstr ~= "" and UnitIsPlayer and UnitExists(unitstr) then
         isEnemyPlayer = UnitIsPlayer(unitstr)
         if isEnemyPlayer then
-            -- Get class
+            -- Get class (static - can be cached)
             local _, classToken = UnitClass(unitstr)
             enemyClass = classToken
 
-            -- Check PvP status
+            -- Check PvP status EVERY TIME (dynamic - can change without targeting)
             if UnitIsPVP then
                 isEnemyPlayerPvP = UnitIsPVP(unitstr)
             end
 
-            -- Cache results
+            -- Cache static data
             nameplate.cachedIsEnemyPlayer = isEnemyPlayer
-            nameplate.cachedIsEnemyPlayerPvP = isEnemyPlayerPvP
             nameplate.cachedEnemyClass = enemyClass
+            -- Always update PvP status (not truly cached, refreshed every check)
+            nameplate.cachedIsEnemyPlayerPvP = isEnemyPlayerPvP
+        else
+            -- Not a player - clear any stale cache
+            nameplate.cachedIsEnemyPlayer = false
+            nameplate.cachedIsEnemyPlayerPvP = false
+            nameplate.cachedEnemyClass = nil
         end
     elseif nameplate.cachedIsEnemyPlayer then
-        -- Use cached values
+        -- Use cached static values
         isEnemyPlayer = nameplate.cachedIsEnemyPlayer
-        isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
         enemyClass = nameplate.cachedEnemyClass
+        -- PvP status from cache (last known state when we had valid unitstr)
+        isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
     end
 
     return isEnemyPlayer, isEnemyPlayerPvP, enemyClass
