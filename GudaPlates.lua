@@ -196,6 +196,14 @@ GudaPlates.registry = registry  -- Expose for Options module
 -- Forward declarations for functions used before they're defined
 local LoadSettings
 local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
+
+-- Elite indicator strings (appended to level text)
+local ELITE_STRINGS = {
+    ["elite"] = "+",
+    ["rareelite"] = "R+",
+    ["rare"] = "R",
+    ["worldboss"] = "B"
+}
 -- Track combat state per nameplate frame to avoid issues with same-named mobs
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
 -- TWThreat detection - checked dynamically since TWT may load after us
@@ -1524,6 +1532,26 @@ local function UpdateNamePlate(frame)
         levelText = frame.level:GetText()
     end
 
+    -- Detect elite status
+    local eliteSuffix = ""
+    -- Method 1: SuperWoW UnitClassification (most accurate)
+    if superwow_active and UnitClassification and frame and frame.GetName then
+        local unitstr = frame:GetName(1)
+        if unitstr and unitstr ~= "" then
+            local classification = UnitClassification(unitstr)
+            if classification and ELITE_STRINGS[classification] then
+                eliteSuffix = ELITE_STRINGS[classification]
+            end
+        end
+    end
+    -- Method 2: Fallback - levelicon visibility (vanilla method)
+    if eliteSuffix == "" and original.levelicon then
+        if original.levelicon.IsShown and original.levelicon:IsShown() then
+            -- levelicon visible means elite/rare unit - show "+" as default
+            eliteSuffix = "+"
+        end
+    end
+
     -- Check for skull level (level -1 or empty/nil level text)
     if not levelText or levelText == "" or levelText == "-1" then
         -- Skull level unit - show skull icon, hide level text
@@ -1533,8 +1561,8 @@ local function UpdateNamePlate(frame)
             nameplate.skullIcon:Show()
         end
     else
-        -- Normal level - show level text, hide skull icon
-        nameplate.level:SetText(levelText)
+        -- Normal level - show level text with elite suffix, hide skull icon
+        nameplate.level:SetText(levelText .. eliteSuffix)
         nameplate.level:Show()
         if nameplate.skullIcon then
             nameplate.skullIcon:Hide()
