@@ -749,30 +749,10 @@ if SpellDB then
 	SpellDB:InitScanner()
 end
 
--- Helper to check if a region is the nameplate border
-local function CheckRegionForBorder(r)
-    if r and r.GetObjectType and r:GetObjectType() == "Texture" and r.GetTexture then
-        return r:GetTexture() == "Interface\\Tooltips\\Nameplate-Border"
-    end
-    return false
-end
-
-local function IsNamePlate(frame)
-    if not frame then return nil end
-    local objType = frame:GetObjectType()
-    if objType ~= "Frame" and objType ~= "Button" then return nil end
-
-    -- Check regions for nameplate border texture (no table allocation)
-    local r1, r2, r3, r4, r5, r6 = frame:GetRegions()
-
-    if CheckRegionForBorder(r1) then return true end
-    if CheckRegionForBorder(r2) then return true end
-    if CheckRegionForBorder(r3) then return true end
-    if CheckRegionForBorder(r4) then return true end
-    if CheckRegionForBorder(r5) then return true end
-    if CheckRegionForBorder(r6) then return true end
-
-    return nil
+-- IsNamePlate is now in GudaPlates_Scanner module
+-- Local reference for backward compatibility within this file
+local IsNamePlate = function(frame)
+    return GudaPlates_Scanner.IsNamePlate(frame)
 end
 
 local function DisableObject(object)
@@ -2658,8 +2638,7 @@ local CLEANUP_INTERVAL = 1
 -- Throttle plate updates when out of combat
 local lastPlateUpdate = 0
 local PLATE_UPDATE_INTERVAL = 0.5
--- Track initialized children count (ShaguPlates-style: only scan NEW children)
-local initializedChildren = 0
+-- Note: initializedChildren is now managed by GudaPlates_Scanner module
 
 -- Helper function to hide original nameplate elements on a frame
 -- Used to prevent classic nameplates from showing during zone transitions
@@ -2698,7 +2677,6 @@ local function HideOriginalNameplateElements(frame)
 end
 
 -- Helper function to reset nameplate scanning state (called on zone change)
--- Defined here to capture locals without adding upvalues to event handler
 local function ResetNameplateScanning()
     -- First hide all GudaPlates overlays and original elements for registered plates
     for frame, nameplate in pairs(registry) do
@@ -2716,15 +2694,15 @@ local function ResetNameplateScanning()
         local children = { WorldFrame:GetChildren() }
         for i = 1, numChildren do
             local frame = children[i]
-            if frame and IsNamePlate(frame) then
+            if frame and GudaPlates_Scanner.IsNamePlate(frame) then
                 HideOriginalNameplateElements(frame)
             end
         end
     end
 
-    -- Now clear the registry and reset scanning
-    initializedChildren = 0
+    -- Clear the registry and reset scanner state
     for k in pairs(registry) do registry[k] = nil end
+    GudaPlates_Scanner.Reset()
     cachedWorldChildCount = 0
 end
 GudaPlates.ResetNameplateScanning = ResetNameplateScanning
@@ -2744,27 +2722,9 @@ local function GudaPlates_OnUpdate()
         GudaPlates_Debuffs:CleanupTimers()
     end
 
-    -- Scanning logic (ShaguPlates-style: only scan NEW children)
-    parentcount = WorldFrame:GetNumChildren()
-
-    -- Only scan if there are NEW children we haven't seen before
-    if initializedChildren < parentcount then
+    -- Scanning logic (delegated to Scanner module)
+    if GudaPlates_Scanner.ScanForNewNameplates(registry, HandleNamePlate) then
         didWork = true
-        -- Refresh cached children only when needed
-        cachedWorldChildren = { WorldFrame:GetChildren() }
-
-        -- Only scan the NEW children (from initialized+1 to parentcount)
-        for i = initializedChildren + 1, parentcount do
-            local plate = cachedWorldChildren[i]
-            if plate and not registry[plate] then
-                local isPlate = IsNamePlate(plate)
-                if isPlate then
-                    HandleNamePlate(plate)
-                end
-            end
-        end
-
-        initializedChildren = parentcount
     end
 
     -- Throttle plate updates when out of combat (2x/sec instead of 60x/sec)
