@@ -533,30 +533,19 @@ local function UpdateNamePlateDimensions(frame)
         isFriendly = not isHostile and not isNeutral
     end
 
-    -- Check if hostile unit is a player (enemy faction player)
-    local isEnemyPlayer = false
-    local isEnemyPlayerPvP = false
-
-    if not isFriendly and superwow_active and frame and frame.GetName and UnitIsPlayer then
+    -- Detect enemy player status (uses GudaPlates_Players module)
+    if not isFriendly and superwow_active and frame and frame.GetName then
         local unitstr = frame:GetName(1)
-        if unitstr and unitstr ~= "" and UnitExists(unitstr) then
-            isEnemyPlayer = UnitIsPlayer(unitstr)
-            if isEnemyPlayer and UnitIsPVP then
-                isEnemyPlayerPvP = UnitIsPVP(unitstr)
-            end
-            nameplate.cachedIsEnemyPlayer = isEnemyPlayer
-            nameplate.cachedIsEnemyPlayerPvP = isEnemyPlayerPvP
+        if GudaPlates_Players and GudaPlates_Players.DetectEnemyPlayer then
+            GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
         end
-    elseif nameplate.cachedIsEnemyPlayer ~= nil then
-        isEnemyPlayer = nameplate.cachedIsEnemyPlayer
-        isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
     end
 
-    -- Use friendly (smaller) dimensions for:
-    -- - Friendly units
-    -- - Non-PvP enemy players (treat them like friendly players)
-    -- - PvP enemy players when pvpEnemyAsFriendly setting is enabled
-    local usePlayerDimensions = isFriendly or (isEnemyPlayer and not isEnemyPlayerPvP) or (isEnemyPlayerPvP and Settings.pvpEnemyAsFriendly)
+    -- Use friendly (smaller) dimensions for friendly units and eligible enemy players
+    local usePlayerDimensions = isFriendly
+    if not usePlayerDimensions and GudaPlates_Players and GudaPlates_Players.ShouldUsePlayerDimensions then
+        usePlayerDimensions = GudaPlates_Players.ShouldUsePlayerDimensions(nameplate, Settings, isFriendly)
+    end
 
     local hHeight, hWidth, hFontSize, hTextPos, lFontSize, nFontSize
     if usePlayerDimensions then
@@ -887,9 +876,11 @@ local function NamePlate_OnShow()
     nameplate.cachedIsFriendly = nil
     nameplate.cachedIsHostile = nil
     nameplate.cachedIsNeutral = nil
-    nameplate.cachedIsEnemyPlayer = nil
-    nameplate.cachedIsEnemyPlayerPvP = nil
-    nameplate.cachedEnemyClass = nil
+
+    -- Reset enemy player cache using module
+    if GudaPlates_Players and GudaPlates_Players.ResetCache then
+        GudaPlates_Players.ResetCache(nameplate)
+    end
 
     -- Reset skull icon and level state for reused nameplates
     if nameplate.skullIcon then
@@ -1830,45 +1821,21 @@ local function UpdateNamePlate(frame)
         end
     else
         -- Hostile or Neutral
-        -- First check if this is an enemy player - apply class colors instead of threat colors
-        local isEnemyPlayer = false
-        local isEnemyPlayerPvP = false
-        local enemyClass = nil
-
-        if hasValidGUID and UnitIsPlayer then
-            isEnemyPlayer = UnitIsPlayer(unitstr)
-            if isEnemyPlayer then
-                local _, classToken = UnitClass(unitstr)
-                enemyClass = classToken
-                -- Check PvP status
-                if UnitIsPVP then
-                    isEnemyPlayerPvP = UnitIsPVP(unitstr)
-                end
-                -- Cache for reuse
-                nameplate.cachedEnemyClass = enemyClass
-            end
-        elseif nameplate.cachedIsEnemyPlayer then
-            isEnemyPlayer = true
-            isEnemyPlayerPvP = nameplate.cachedIsEnemyPlayerPvP or false
-            enemyClass = nameplate.cachedEnemyClass
+        -- First check if this is an enemy player - detect and cache
+        if hasValidGUID and GudaPlates_Players and GudaPlates_Players.DetectEnemyPlayer then
+            GudaPlates_Players.DetectEnemyPlayer(frame, nameplate, unitstr)
         end
 
         -- Enemy players ONLY use class colors or red - no threat-based colors
+        local isEnemyPlayer = GudaPlates_Players and GudaPlates_Players.IsEnemyPlayer(nameplate)
+
         if isEnemyPlayer then
-            -- Determine if we should use class colors
-            local useClassColor = true
-
-            -- If PvP-flagged AND "No class colors for PvP enemies" is enabled -> use red
-            if isEnemyPlayerPvP and Settings.pvpEnemyNoClassColors then
-                useClassColor = false
-            end
-
-            -- Apply color
-            if useClassColor and enemyClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[enemyClass] then
-                local classColor = RAID_CLASS_COLORS[enemyClass]
-                nameplate.health:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+            -- Get color from Players module
+            local pr, pg, pb, pa = GudaPlates_Players.GetEnemyPlayerColor(nameplate, Settings)
+            if pr then
+                nameplate.health:SetStatusBarColor(pr, pg, pb, pa)
             else
-                -- Simple hostile red for enemy players
+                -- Fallback red
                 nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
             end
         else

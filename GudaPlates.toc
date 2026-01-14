@@ -12,6 +12,7 @@ GudaPlates_Scanner.lua
 GudaPlates_Hide.lua
 GudaPlates_Filter.lua
 GudaPlates_Threat.lua
+GudaPlates_Players.lua
 GudaPlates.lua
 GudaPlates_CombatLog.lua
 GudaPlates_Castbar.lua
