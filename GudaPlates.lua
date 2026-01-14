@@ -1024,6 +1024,9 @@ local function HandleNamePlate(frame)
             if i == 2 then
             -- 2nd region is glow texture
                 nameplate.original.glow = region
+            elseif i == 5 then
+            -- 5th region is level icon (skull for boss units)
+                nameplate.original.levelicon = region
             elseif i == 6 then
             -- 6th region is raid icon
                 nameplate.original.raidicon = region
@@ -1171,6 +1174,14 @@ local function HandleNamePlate(frame)
     nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
     nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
     nameplate.level:SetJustifyH("RIGHT")
+
+    -- Skull icon for boss/skull-level units (shown instead of level text)
+    nameplate.skullIcon = nameplate:CreateTexture(nil, "OVERLAY")
+    nameplate.skullIcon:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull")
+    nameplate.skullIcon:SetWidth(14)
+    nameplate.skullIcon:SetHeight(14)
+    nameplate.skullIcon:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 2, 2)
+    nameplate.skullIcon:Hide()
 
     -- Health text centered on bar
     nameplate.healthtext = nameplate.health:CreateFontString(nil, "OVERLAY")
@@ -1512,8 +1523,22 @@ local function UpdateNamePlate(frame)
     if not levelText and frame.level and frame.level.GetText then
         levelText = frame.level:GetText()
     end
-    if levelText then
+
+    -- Check for skull level (level -1 or empty/nil level text)
+    if not levelText or levelText == "" or levelText == "-1" then
+        -- Skull level unit - show skull icon, hide level text
+        nameplate.level:SetText("")
+        nameplate.level:Hide()
+        if nameplate.skullIcon then
+            nameplate.skullIcon:Show()
+        end
+    else
+        -- Normal level - show level text, hide skull icon
         nameplate.level:SetText(levelText)
+        nameplate.level:Show()
+        if nameplate.skullIcon then
+            nameplate.skullIcon:Hide()
+        end
     end
 
     -- Plater-style colors with threat support
