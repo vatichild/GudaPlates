@@ -53,8 +53,8 @@ local generalTabBg, healthbarTabBg, manaTabBg, castbarTabBg, colorsTabBg
 local function CreateOptionsFrame()
     local UpdateManaOptionsState, UpdateCastbarWidthSliderState
     optionsFrame = CreateFrame("Frame", "GudaPlatesOptionsFrame", UIParent)
-    optionsFrame:SetFrameStrata("DIALOG")
-    optionsFrame:SetFrameLevel(100)
+    optionsFrame:SetFrameStrata("MEDIUM")
+    optionsFrame:SetFrameLevel(20)
     optionsFrame:SetWidth(650)
     optionsFrame:SetHeight(580)
     optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -223,19 +223,6 @@ local function CreateOptionsFrame()
 
     -- Color picker helper
     local function ShowColorPicker(r, g, b, callback)
-        ColorPickerFrame:SetFrameStrata("TOOLTIP")
-        local level = optionsFrame:GetFrameLevel() + 20
-        ColorPickerFrame:SetFrameLevel(level)
-
-        -- Ensure buttons and other elements are above the frame itself
-        local children = {ColorPickerFrame:GetChildren()}
-        for _, child in ipairs(children) do
-            if child and child.SetFrameStrata then
-                child:SetFrameStrata("TOOLTIP")
-                child:SetFrameLevel(level + 1)
-            end
-        end
-
         ColorPickerFrame.func = function()
             local r, g, b = ColorPickerFrame:GetColorRGB()
             callback(r, g, b)
