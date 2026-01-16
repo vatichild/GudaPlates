@@ -869,6 +869,12 @@ local function NamePlate_OnShow()
     nameplate.cachedIsFriendly = nil
     nameplate.cachedIsHostile = nil
     nameplate.cachedIsNeutral = nil
+    nameplate.wasNeutral = nil  -- Track initial neutral state
+    nameplate.lastPlateName = nil  -- Reset name tracking for unit change detection
+    -- Reset color cache to force recalculation when nameplate reappears
+    nameplate.lastColorR = nil
+    nameplate.lastColorG = nil
+    nameplate.lastColorB = nil
 
     -- Reset enemy player cache using module
     if GudaPlates_Players and GudaPlates_Players.ResetCache then
@@ -1476,6 +1482,11 @@ local function UpdateNamePlate(frame)
         nameplate.cachedIsHostile = isHostile
         nameplate.cachedIsNeutral = isNeutral
         nameplate.cachedIsFriendly = isFriendly
+
+        -- Save initial neutral state (only on first detection after nameplate appears)
+        if nameplate.wasNeutral == nil then
+            nameplate.wasNeutral = isNeutral
+        end
     end
 
     -- Format health text based on settings (only when HP changes to avoid string garbage)
@@ -1648,6 +1659,13 @@ local function UpdateNamePlate(frame)
     local plateName = nil
     if original.name and original.name.GetText then
         plateName = original.name:GetText()
+    end
+
+    -- Detect if nameplate was reused for a different unit (name changed)
+    -- Reset wasNeutral to allow fresh detection for new unit
+    if plateName and plateName ~= nameplate.lastPlateName then
+        nameplate.lastPlateName = plateName
+        nameplate.wasNeutral = isNeutral
     end
 
     -- SuperWoW: get GUID for unit from the parent nameplate frame
@@ -1935,15 +1953,18 @@ local function UpdateNamePlate(frame)
         elseif isStunned then
         -- STUNNED: Unit is stunned
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.STUN))
-        elseif isNeutral and not isAttackingPlayer then
-        -- Neutral and not attacking - yellow
+        elseif (isNeutral or nameplate.wasNeutral) and not isAttackingPlayer then
+        -- Neutral and not attacking - yellow (wasNeutral persists even if WoW changes color)
             nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
         elseif not mobInCombat then
         -- Not in combat (and not neutral/tapped) - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif hasTWThreatData then
         -- Full threat-based coloring using TWThreat Tank Mode data (from addon messages)
-            if playerRole == "TANK" then
+            if nameplate.wasNeutral and not isAttackingPlayer then
+                -- Neutral mob not attacking - yellow (skip threat colors)
+                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+            elseif playerRole == "TANK" then
                 if playerHasAggro then
                     -- Tank has aggro - check if anyone else is close to pulling (on current target only)
                     if highestOtherPct > 80 then
@@ -1979,7 +2000,10 @@ local function UpdateNamePlate(frame)
         elseif hasValidGUID then
         -- Has GUID but no TWThreat - use targeting-based colors only
         -- Without threat data, we can only react to target changes
-            if playerRole == "TANK" then
+            if nameplate.wasNeutral and not isAttackingPlayer then
+                -- Neutral mob not attacking - yellow (skip threat colors)
+                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+            elseif playerRole == "TANK" then
                 if isAttackingPlayer then
                     -- Mob targeting player - tank has aggro
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
@@ -2006,7 +2030,10 @@ local function UpdateNamePlate(frame)
         else
         -- No GUID (no SuperWoW) - fallback with name-based detection
         -- Without threat data, we can only react to target changes
-            if playerRole == "TANK" then
+            if nameplate.wasNeutral and not isAttackingPlayer then
+                -- Neutral mob not attacking - yellow (skip threat colors)
+                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+            elseif playerRole == "TANK" then
                 if isAttackingPlayer then
                     -- Mob targeting player - tank has aggro
                     nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.TANK.AGGRO))
