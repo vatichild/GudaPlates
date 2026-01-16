@@ -865,16 +865,10 @@ local function NamePlate_OnShow()
     -- Reset overlapApplied flag so UpdateNamePlate applies settings
     nameplate.overlapApplied = nil
 
-    -- Reset cached unit type flags for reused nameplates
-    nameplate.cachedIsFriendly = nil
-    nameplate.cachedIsHostile = nil
-    nameplate.cachedIsNeutral = nil
-    nameplate.wasNeutral = nil  -- Track initial neutral state
-    nameplate.lastPlateName = nil  -- Reset name tracking for unit change detection
-    -- Reset color cache to force recalculation when nameplate reappears
-    nameplate.lastColorR = nil
-    nameplate.lastColorG = nil
-    nameplate.lastColorB = nil
+    -- Reset cached unit type and color data using module
+    if GudaPlates_Healthbar and GudaPlates_Healthbar.ResetCache then
+        GudaPlates_Healthbar.ResetCache(nameplate)
+    end
 
     -- Reset enemy player cache using module
     if GudaPlates_Players and GudaPlates_Players.ResetCache then
@@ -1458,35 +1452,16 @@ local function UpdateNamePlate(frame)
     nameplate.health:SetMinMaxValues(hpmin, hpmax)
     nameplate.health:SetValue(hp)
 
-    -- Cache unit type detection (hostile/neutral/friendly)
-    -- Only recalculate if color changed to avoid redundant checks
-    local r, g, b = original.healthbar:GetStatusBarColor()
-    local isHostile, isNeutral, isFriendly
-
-    -- Check if color changed since last frame
-    local lastR, lastG, lastB = nameplate.lastColorR, nameplate.lastColorG, nameplate.lastColorB
-    if r == lastR and g == lastG and b == lastB then
-        -- Use cached values
-        isHostile = nameplate.cachedIsHostile
-        isNeutral = nameplate.cachedIsNeutral
-        isFriendly = nameplate.cachedIsFriendly
+    -- Detect unit type using module (handles caching and neutral tracking)
+    local isHostile, isNeutral, isFriendly, r, g, b
+    if GudaPlates_Healthbar and GudaPlates_Healthbar.DetectUnitType then
+        isHostile, isNeutral, isFriendly, r, g, b = GudaPlates_Healthbar.DetectUnitType(nameplate, original)
     else
-        -- Recalculate and cache
+        -- Fallback if module not loaded
+        r, g, b = original.healthbar:GetStatusBarColor()
         isHostile = r > 0.9 and g < 0.2 and b < 0.2
         isNeutral = r > 0.9 and g > 0.9 and b < 0.2
         isFriendly = not isHostile and not isNeutral
-
-        nameplate.lastColorR = r
-        nameplate.lastColorG = g
-        nameplate.lastColorB = b
-        nameplate.cachedIsHostile = isHostile
-        nameplate.cachedIsNeutral = isNeutral
-        nameplate.cachedIsFriendly = isFriendly
-
-        -- Save initial neutral state (only on first detection after nameplate appears)
-        if nameplate.wasNeutral == nil then
-            nameplate.wasNeutral = isNeutral
-        end
     end
 
     -- Format health text based on settings (only when HP changes to avoid string garbage)
@@ -1662,10 +1637,8 @@ local function UpdateNamePlate(frame)
     end
 
     -- Detect if nameplate was reused for a different unit (name changed)
-    -- Reset wasNeutral to allow fresh detection for new unit
-    if plateName and plateName ~= nameplate.lastPlateName then
-        nameplate.lastPlateName = plateName
-        nameplate.wasNeutral = isNeutral
+    if GudaPlates_Healthbar and GudaPlates_Healthbar.CheckUnitChange then
+        GudaPlates_Healthbar.CheckUnitChange(nameplate, plateName, isNeutral)
     end
 
     -- SuperWoW: get GUID for unit from the parent nameplate frame
@@ -1953,17 +1926,17 @@ local function UpdateNamePlate(frame)
         elseif isStunned then
         -- STUNNED: Unit is stunned
             nameplate.health:SetStatusBarColor(unpack(THREAT_COLORS.STUN))
-        elseif (isNeutral or nameplate.wasNeutral) and not isAttackingPlayer then
+        elseif GudaPlates_Healthbar.ShouldShowNeutral(nameplate, isNeutral, isAttackingPlayer) then
         -- Neutral and not attacking - yellow (wasNeutral persists even if WoW changes color)
-            nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+            GudaPlates_Healthbar.ApplyNeutralColor(nameplate)
         elseif not mobInCombat then
         -- Not in combat (and not neutral/tapped) - default hostile red
             nameplate.health:SetStatusBarColor(0.85, 0.2, 0.2, 1)
         elseif hasTWThreatData then
         -- Full threat-based coloring using TWThreat Tank Mode data (from addon messages)
-            if nameplate.wasNeutral and not isAttackingPlayer then
+            if GudaPlates_Healthbar.WasNeutral(nameplate) and not isAttackingPlayer then
                 -- Neutral mob not attacking - yellow (skip threat colors)
-                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+                GudaPlates_Healthbar.ApplyNeutralColor(nameplate)
             elseif playerRole == "TANK" then
                 if playerHasAggro then
                     -- Tank has aggro - check if anyone else is close to pulling (on current target only)
@@ -2000,9 +1973,9 @@ local function UpdateNamePlate(frame)
         elseif hasValidGUID then
         -- Has GUID but no TWThreat - use targeting-based colors only
         -- Without threat data, we can only react to target changes
-            if nameplate.wasNeutral and not isAttackingPlayer then
+            if GudaPlates_Healthbar.WasNeutral(nameplate) and not isAttackingPlayer then
                 -- Neutral mob not attacking - yellow (skip threat colors)
-                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+                GudaPlates_Healthbar.ApplyNeutralColor(nameplate)
             elseif playerRole == "TANK" then
                 if isAttackingPlayer then
                     -- Mob targeting player - tank has aggro
@@ -2030,9 +2003,9 @@ local function UpdateNamePlate(frame)
         else
         -- No GUID (no SuperWoW) - fallback with name-based detection
         -- Without threat data, we can only react to target changes
-            if nameplate.wasNeutral and not isAttackingPlayer then
+            if GudaPlates_Healthbar.WasNeutral(nameplate) and not isAttackingPlayer then
                 -- Neutral mob not attacking - yellow (skip threat colors)
-                nameplate.health:SetStatusBarColor(0.9, 0.7, 0.0, 1)
+                GudaPlates_Healthbar.ApplyNeutralColor(nameplate)
             elseif playerRole == "TANK" then
                 if isAttackingPlayer then
                     -- Mob targeting player - tank has aggro
