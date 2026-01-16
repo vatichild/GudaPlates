@@ -490,19 +490,21 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
         end
 
-        -- Hunter traps: Always show regardless of "Only My Debuffs" setting
+        -- Hunter traps: Show for Hunter players only when "Only My Debuffs" is enabled
         -- Traps are placed on ground and triggered by enemies, so ownership can't be tracked reliably
         -- Check both effect name AND texture (texture-based detection for when tooltip scanning fails)
         local isHunterTrap = false
-        -- Check by effect name first
-        if effect and SpellDB.HUNTER_TRAPS and SpellDB.HUNTER_TRAPS[effect] then
-            isHunterTrap = true
-        -- Fallback: check by texture if effect name is missing or unknown
-        elseif texture and SpellDB.HUNTER_TRAP_TEXTURES and SpellDB.HUNTER_TRAP_TEXTURES[texture] then
-            isHunterTrap = true
-            -- Always use the correct effect name from texture mapping for timer tracking
-            -- This overrides potentially incorrect tooltip-scanned names
-            effect = SpellDB.HUNTER_TRAP_TEXTURES[texture]
+        if playerClass == "HUNTER" then
+            -- Check by effect name first
+            if effect and SpellDB.HUNTER_TRAPS and SpellDB.HUNTER_TRAPS[effect] then
+                isHunterTrap = true
+            -- Fallback: check by texture if effect name is missing or unknown
+            elseif texture and SpellDB.HUNTER_TRAP_TEXTURES and SpellDB.HUNTER_TRAP_TEXTURES[texture] then
+                isHunterTrap = true
+                -- Always use the correct effect name from texture mapping for timer tracking
+                -- This overrides potentially incorrect tooltip-scanned names
+                effect = SpellDB.HUNTER_TRAP_TEXTURES[texture]
+            end
         end
 
         -- Hunter stings: For Hunter players, ensure reliable display

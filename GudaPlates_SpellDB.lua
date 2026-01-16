@@ -305,11 +305,11 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
 	["Scare Beast"] = "HUNTER",
-	["Freezing Trap Effect"] = true,
-	["Immolation Trap Effect"] = true,
-	["Explosive Trap Effect"] = true,
-	["Frost Trap Aura"] = true,
-	["Entrapment"] = true,
+	["Freezing Trap Effect"] = "HUNTER",
+	["Immolation Trap Effect"] = "HUNTER",
+	["Explosive Trap Effect"] = "HUNTER",
+	["Frost Trap Aura"] = "HUNTER",
+	["Entrapment"] = "HUNTER",
 
 	-- Paladin
 	["Hammer of Justice"] = "PALADIN",
@@ -369,8 +369,8 @@ GudaPlates_SpellDB.ROGUE_POISON_TEXTURES = {
 	["Interface\\Icons\\INV_Misc_Herb_16"] = "Wound Poison",
 }
 
--- Hunter Traps - always show regardless of "Only My Debuffs" setting
--- These are placed on ground and triggered by enemies, so ownership can't be tracked
+-- Hunter Traps - show for Hunter players when "Only My Debuffs" is enabled
+-- These are placed on ground and triggered by enemies, so ownership can't be tracked reliably
 GudaPlates_SpellDB.HUNTER_TRAPS = {
 	["Freezing Trap Effect"] = true,
 	["Immolation Trap Effect"] = true,
