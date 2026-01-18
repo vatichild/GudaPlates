@@ -25,6 +25,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	-- Warlock
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
+	["Interface\\Icons\\Spell_Shadow_AbominationExplosion"] = "Corruption",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
 	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
@@ -882,11 +883,13 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 end
 
 -- Get spell name and rank from action bar slot by matching texture to spellbook
+-- Returns the HIGHEST rank spell that matches the texture (since all ranks share same texture)
 function GudaPlates_SpellDB:ScanAction(slot)
 	local actionTexture = GetActionTexture(slot)
 	if not actionTexture then return nil, nil end
 
-	-- Search through spellbook to find matching texture
+	-- Search through spellbook to find ALL matching textures and return highest rank
+	local bestName, bestRank, bestRankNum = nil, nil, -1
 	local i = 1
 	while true do
 		local spellName, spellRank = GetSpellName(i, "spell")
@@ -894,9 +897,27 @@ function GudaPlates_SpellDB:ScanAction(slot)
 
 		local spellTexture = GetSpellTexture(i, "spell")
 		if spellTexture and spellTexture == actionTexture then
-			return spellName, spellRank
+			-- Parse rank number from "Rank X" string
+			local rankNum = 0
+			if spellRank then
+				for num in string.gfind(spellRank, "(%d+)") do
+					rankNum = tonumber(num) or 0
+					break
+				end
+			end
+			-- Keep track of highest rank found
+			if rankNum > bestRankNum then
+				bestName = spellName
+				bestRank = spellRank
+				bestRankNum = rankNum
+			end
 		end
 		i = i + 1
+	end
+
+	-- Return highest rank if found
+	if bestName then
+		return bestName, bestRank
 	end
 
 	-- If not found in spellbook, try tooltip as fallback
