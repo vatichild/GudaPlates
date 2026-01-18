@@ -522,6 +522,21 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             end
         end
 
+        -- Warlock curses: For Warlock players, ensure reliable display
+        -- Since only Warlocks can apply curses, treat any visible curse as "mine"
+        local isWarlockCurse = false
+        if playerClass == "WARLOCK" then
+            -- Check by effect name first
+            if effect and SpellDB.WARLOCK_CURSES and SpellDB.WARLOCK_CURSES[effect] then
+                isWarlockCurse = true
+            -- Fallback: check by texture if effect name is missing or unknown
+            elseif texture and SpellDB.WARLOCK_CURSE_TEXTURES and SpellDB.WARLOCK_CURSE_TEXTURES[texture] then
+                isWarlockCurse = true
+                -- Always use the correct effect name from texture mapping for timer tracking
+                effect = SpellDB.WARLOCK_CURSE_TEXTURES[texture]
+            end
+        end
+
         -- Determine ownership
         local isMyDebuff = false
         local duration, timeleft = nil, nil
@@ -538,6 +553,12 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
 
         -- Force Hunter stings as "mine" for Hunter players - ensures reliable display
         if isHunterSting then
+            isMyDebuff = true
+        end
+
+        -- Force Warlock curses as "mine" for Warlock players - ensures reliable display
+        -- Only Warlocks can apply curses, so any visible curse is from the player
+        if isWarlockCurse then
             isMyDebuff = true
         end
 

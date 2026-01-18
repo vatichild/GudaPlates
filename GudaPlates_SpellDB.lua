@@ -26,6 +26,15 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Shadow_LifeDrain"] = "Tainted Blood Effect",
 	["Interface\\Icons\\Spell_Shadow_SoulLeech"] = "Dark Harvest",
 	["Interface\\Icons\\Spell_Shadow_AbominationExplosion"] = "Corruption",
+	["Interface\\Icons\\Spell_Shadow_CurseOfSargeras"] = "Curse of Agony",
+	["Interface\\Icons\\Spell_Shadow_CurseOfMannoroth"] = "Curse of Weakness",
+	["Interface\\Icons\\Spell_Shadow_UnholyStrength"] = "Curse of Recklessness",
+	["Interface\\Icons\\Spell_Shadow_CurseOfTounges"] = "Curse of Tongues",
+	["Interface\\Icons\\Spell_Shadow_ChillTouch"] = "Curse of the Elements",
+	["Interface\\Icons\\Spell_Shadow_CurseOfAchimonde"] = "Curse of Shadow",
+	["Interface\\Icons\\Spell_Shadow_GrimWard"] = "Curse of Exhaustion",
+	["Interface\\Icons\\Spell_Shadow_AuraOfDarkness"] = "Curse of Doom",
+	["Interface\\Icons\\Spell_Shadow_MindRot"] = "Curse of Idiocy",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
 	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
@@ -294,7 +303,8 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Silence"] = "PRIEST",
 	["Touch of Weakness"] = "PRIEST",
 	["Mind Soothe"] = "PRIEST",
-	-- Warlock
+	-- Warlock (curses are shared, but Malediction allows CoA + long curse)
+	["Curse of Agony"] = "WARLOCK",
 	["Curse of Weakness"] = "WARLOCK",
 	["Curse of Recklessness"] = "WARLOCK",
 	["Curse of Tongues"] = "WARLOCK",
@@ -302,6 +312,7 @@ GudaPlates_SpellDB.SHARED_DEBUFFS = {
 	["Curse of Shadow"] = "WARLOCK",
 	["Curse of Exhaustion"] = "WARLOCK",
 	["Curse of Doom"] = "WARLOCK",
+	["Curse of Idiocy"] = "WARLOCK",
 	-- Hunter
 	["Hunter's Mark"] = "HUNTER",
 	["Scorpid Sting"] = "HUNTER",
@@ -398,6 +409,118 @@ GudaPlates_SpellDB.HUNTER_STINGS = {
 	["Wyvern Sting"] = true,
 }
 
+-- ============================================
+-- WARLOCK MALEDICTION SUPPORT (TurtleWoW)
+-- Malediction talent allows 2 curses: 1 long curse + Curse of Agony
+-- ============================================
+
+-- All Warlock curses - for detection when "Only My Debuffs" is enabled
+-- Since only Warlocks can apply curses, treat any visible curse as "mine"
+GudaPlates_SpellDB.WARLOCK_CURSES = {
+	["Curse of Agony"] = true,
+	["Curse of Weakness"] = true,
+	["Curse of Recklessness"] = true,
+	["Curse of Tongues"] = true,
+	["Curse of the Elements"] = true,
+	["Curse of Shadow"] = true,
+	["Curse of Exhaustion"] = true,
+	["Curse of Doom"] = true,
+	["Curse of Idiocy"] = true,
+}
+
+-- Warlock Curse TEXTURES - for icon-based detection when tooltip scanning fails
+GudaPlates_SpellDB.WARLOCK_CURSE_TEXTURES = {
+	["Interface\\Icons\\Spell_Shadow_CurseOfSargeras"] = "Curse of Agony",
+	["Interface\\Icons\\Spell_Shadow_CurseOfMannoroth"] = "Curse of Weakness",
+	["Interface\\Icons\\Spell_Shadow_UnholyStrength"] = "Curse of Recklessness",
+	["Interface\\Icons\\Spell_Shadow_CurseOfTounges"] = "Curse of Tongues",
+	["Interface\\Icons\\Spell_Shadow_ChillTouch"] = "Curse of the Elements",
+	["Interface\\Icons\\Spell_Shadow_CurseOfAchimonde"] = "Curse of Shadow",
+	["Interface\\Icons\\Spell_Shadow_GrimWard"] = "Curse of Exhaustion",
+	["Interface\\Icons\\Spell_Shadow_AuraOfDarkness"] = "Curse of Doom",
+	["Interface\\Icons\\Spell_Shadow_MindRot"] = "Curse of Idiocy",
+}
+
+-- Long curses that can coexist with Curse of Agony when Malediction is active
+GudaPlates_SpellDB.WARLOCK_LONG_CURSES = {
+	["Curse of Weakness"] = true,
+	["Curse of Recklessness"] = true,
+	["Curse of Tongues"] = true,
+	["Curse of the Elements"] = true,
+	["Curse of Shadow"] = true,
+	["Curse of Exhaustion"] = true,
+	["Curse of Doom"] = true,
+	["Curse of Idiocy"] = true,
+}
+
+-- Curse of Agony (short curse that can coexist with long curses under Malediction)
+GudaPlates_SpellDB.WARLOCK_AGONY_CURSE = "Curse of Agony"
+
+-- Cache for Malediction talent check
+GudaPlates_SpellDB.maledictionCache = {
+	hasChecked = false,
+	hasMalediction = false,
+	lastCheck = 0,
+}
+
+-- Check if player has Malediction talent (TurtleWoW Affliction tree)
+-- Malediction is in Affliction tree (tree 1) - typically around tier 5-6
+function GudaPlates_SpellDB:HasMalediction()
+	local now = GetTime()
+	local cache = self.maledictionCache
+
+	-- Cache result for 5 seconds to avoid excessive talent queries
+	if cache.hasChecked and (now - cache.lastCheck) < 5 then
+		return cache.hasMalediction
+	end
+
+	-- Only check for Warlocks
+	local _, playerClass = UnitClass("player")
+	if playerClass ~= "WARLOCK" then
+		cache.hasChecked = true
+		cache.hasMalediction = false
+		cache.lastCheck = now
+		return false
+	end
+
+	-- Search Affliction tree (tree 1) for Malediction talent
+	-- TurtleWoW places it around tier 5-6, we scan all talents to be safe
+	for i = 1, 20 do
+		local name, _, _, _, rank = GetTalentInfo(1, i)
+		if name and name == "Malediction" and rank and rank > 0 then
+			cache.hasChecked = true
+			cache.hasMalediction = true
+			cache.lastCheck = now
+			return true
+		end
+	end
+
+	cache.hasChecked = true
+	cache.hasMalediction = false
+	cache.lastCheck = now
+	return false
+end
+
+-- Check if two curses can coexist (Malediction allows long curse + Curse of Agony)
+function GudaPlates_SpellDB:CanCursesCoexist(curse1, curse2)
+	if not self:HasMalediction() then
+		return false
+	end
+
+	-- One must be Curse of Agony, the other must be a long curse
+	local isAgony1 = (curse1 == self.WARLOCK_AGONY_CURSE)
+	local isAgony2 = (curse2 == self.WARLOCK_AGONY_CURSE)
+	local isLong1 = self.WARLOCK_LONG_CURSES[curse1]
+	local isLong2 = self.WARLOCK_LONG_CURSES[curse2]
+
+	return (isAgony1 and isLong2) or (isAgony2 and isLong1)
+end
+
+-- Check if a curse is a warlock curse (for shared debuff handling)
+function GudaPlates_SpellDB:IsWarlockCurse(effect)
+	return effect == self.WARLOCK_AGONY_CURSE or self.WARLOCK_LONG_CURSES[effect]
+end
+
 -- Hunter Sting TEXTURES - for icon-based detection when tooltip scanning fails
 GudaPlates_SpellDB.HUNTER_STING_TEXTURES = {
 	["Interface\\Icons\\Ability_Hunter_Quickshot"] = "Serpent Sting",
@@ -416,6 +539,14 @@ GudaPlates_SpellDB.OWNER_BOUND_DEBUFFS = {
 	["Immolate"] = true,
 	["Corruption"] = true,
 	["Curse of Agony"] = true,
+	["Curse of Weakness"] = true,
+	["Curse of Recklessness"] = true,
+	["Curse of Tongues"] = true,
+	["Curse of the Elements"] = true,
+	["Curse of Shadow"] = true,
+	["Curse of Exhaustion"] = true,
+	["Curse of Doom"] = true,
+	["Curse of Idiocy"] = true,
 	["Siphon Life"] = true,
 
 	-- Priest
@@ -572,6 +703,9 @@ end
 -- Store recent casts by spell name for combat log fallback
 GudaPlates_SpellDB.recentCasts = {}
 
+-- Secondary pending slot for Malediction dual-curse support
+GudaPlates_SpellDB.pendingCurse = {}
+
 function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 	if not unit or not effect then return end
 	if not self.DEBUFFS[effect] then return end
@@ -583,7 +717,6 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 		time = GetTime()
 	}
 
-	-- Always overwrite pending for tracked debuff spells
 	-- Try to get GUID for unique identification (SuperWoW)
 	local unitKey = unit
 	if UnitGUID and UnitExists("target") and UnitName("target") == unit then
@@ -591,6 +724,25 @@ function GudaPlates_SpellDB:AddPending(unit, unitlevel, effect, duration)
 		if guid then unitKey = guid end
 	end
 
+	-- Malediction dual-curse handling: use separate pending slots for curses
+	local isNewCurse = self:IsWarlockCurse(effect)
+	local isExistingCurse = self.pending[3] and self:IsWarlockCurse(self.pending[3])
+
+	if isNewCurse and isExistingCurse and self:HasMalediction() then
+		-- Both are curses and Malediction is active
+		-- Check if they can coexist (one long curse + Curse of Agony)
+		if self:CanCursesCoexist(effect, self.pending[3]) then
+			-- Store the new curse in secondary pending slot
+			self.pendingCurse[1] = unitKey
+			self.pendingCurse[2] = unitlevel or 0
+			self.pendingCurse[3] = effect
+			self.pendingCurse[4] = duration
+			self.pendingCurse[5] = unit
+			return  -- Don't overwrite primary pending
+		end
+	end
+
+	-- Standard pending: overwrite previous
 	self.pending[1] = unitKey
 	self.pending[2] = unitlevel or 0
 	self.pending[3] = effect
@@ -606,20 +758,48 @@ function GudaPlates_SpellDB:RemovePending()
 	self.pending[5] = nil
 end
 
-function GudaPlates_SpellDB:PersistPending(effect)
-	if not self.pending[3] then return end
+-- Clear secondary curse pending slot (Malediction support)
+function GudaPlates_SpellDB:RemovePendingCurse()
+	self.pendingCurse[1] = nil
+	self.pendingCurse[2] = nil
+	self.pendingCurse[3] = nil
+	self.pendingCurse[4] = nil
+	self.pendingCurse[5] = nil
+end
 
-	if self.pending[3] == effect or (effect == nil and self.pending[3]) then
-	-- Store by GUID (pending[1]) for accurate per-mob tracking
-	-- Mark as isOwn = true since this is the player's own debuff
-		self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4], true)
-		-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
-		if self.pending[5] and self.pending[5] ~= self.pending[1] then
-			self:RefreshEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4], true)
+function GudaPlates_SpellDB:PersistPending(effect)
+	local persisted = false
+
+	-- Check primary pending slot
+	if self.pending[3] then
+		if self.pending[3] == effect or (effect == nil and self.pending[3]) then
+			-- Store by GUID (pending[1]) for accurate per-mob tracking
+			-- Mark as isOwn = true since this is the player's own debuff
+			self:RefreshEffect(self.pending[1], self.pending[2], self.pending[3], self.pending[4], true)
+			-- Also store by name (pending[5]) as fallback for non-SuperWoW lookups
+			if self.pending[5] and self.pending[5] ~= self.pending[1] then
+				self:RefreshEffect(self.pending[5], self.pending[2], self.pending[3], self.pending[4], true)
+			end
+			persisted = true
+			self:RemovePending()
 		end
 	end
 
-	self:RemovePending()
+	-- Check secondary curse pending slot (Malediction dual-curse support)
+	if self.pendingCurse[3] then
+		if self.pendingCurse[3] == effect or (effect == nil and self.pendingCurse[3]) then
+			-- Store by GUID for accurate per-mob tracking
+			self:RefreshEffect(self.pendingCurse[1], self.pendingCurse[2], self.pendingCurse[3], self.pendingCurse[4], true)
+			-- Also store by name as fallback
+			if self.pendingCurse[5] and self.pendingCurse[5] ~= self.pendingCurse[1] then
+				self:RefreshEffect(self.pendingCurse[5], self.pendingCurse[2], self.pendingCurse[3], self.pendingCurse[4], true)
+			end
+			persisted = true
+			self:RemovePendingCurse()
+		end
+	end
+
+	return persisted
 end
 
 -- ============================================
