@@ -1605,6 +1605,34 @@ CreateColorSwatch(colorsTab, 320, -250, "Mana Text", Settings, "manaTextColor")
 CreateColorSwatch(colorsTab, 320, -275, "Name", Settings, "nameColor")
 CreateColorSwatch(colorsTab, 320, -300, "Level", Settings, "levelColor")
 
+-- Level difficulty colors checkbox
+local levelDiffColorsCheckbox = CreateFrame("CheckButton", "GudaPlatesLevelDiffColorsCheckbox", colorsTab, "UICheckButtonTemplate")
+levelDiffColorsCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -330)
+local levelDiffColorsLabel = getglobal(levelDiffColorsCheckbox:GetName().."Text")
+levelDiffColorsLabel:SetText("Level Difficulty Colors")
+levelDiffColorsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+levelDiffColorsCheckbox:SetScript("OnClick", function()
+    Settings.useLevelDiffColors = this:GetChecked() == 1
+    SaveSettings()
+    for plate, _ in pairs(registry) do
+        UpdateNamePlate(plate)
+    end
+end)
+levelDiffColorsCheckbox:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Level Difficulty Colors")
+    GameTooltip:AddLine("Colors level text based on difficulty:", 1, 1, 1)
+    GameTooltip:AddLine("|cff999999Grey|r = Trivial (much lower level)", 0.6, 0.6, 0.6)
+    GameTooltip:AddLine("|cff00ff00Green|r = Easy (lower level)", 0.1, 1.0, 0.1)
+    GameTooltip:AddLine("|cffffff00Yellow|r = Normal (same level)", 1.0, 1.0, 0)
+    GameTooltip:AddLine("|cffff8000Orange|r = Difficult (higher level)", 1.0, 0.5, 0)
+    GameTooltip:AddLine("|cffff1a1aRed|r = Very Difficult (5+ levels higher)", 1.0, 0.1, 0.1)
+    GameTooltip:Show()
+end)
+levelDiffColorsCheckbox:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
 end
 
 -- OnShow handler
@@ -1630,6 +1658,7 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesDebuffSizeSlider"):SetValue(Settings.debuffIconSize)
     getglobal("GudaPlatesDebuffSizeSliderText"):SetText("Debuff Icon Size: " .. Settings.debuffIconSize .. " px")
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
+    getglobal("GudaPlatesLevelDiffColorsCheckbox"):SetChecked(Settings.useLevelDiffColors)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
     -- Health/Mana tab
     getglobal("GudaPlatesPvPNoClassColorsCheckbox"):SetChecked(Settings.pvpEnemyNoClassColors)
@@ -1759,6 +1788,7 @@ resetButton:SetScript("OnClick", function()
     Settings.healthTextColor = {1, 1, 1, 1}
     Settings.manaTextColor = {1, 1, 1, 1}
     Settings.levelColor = {1, 1, 0.6, 1}
+    Settings.useLevelDiffColors = true
     SaveSettings()
     Print("Settings reset to defaults.")
     -- Update color swatches

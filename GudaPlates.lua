@@ -60,6 +60,7 @@ if not GudaPlates.Settings then
         debuffIconSize = 16,
         nameColor = {1, 1, 1, 1}, healthTextColor = {1, 1, 1, 1},
         manaTextColor = {1, 1, 1, 1}, levelColor = {1, 1, 0.6, 1},
+        useLevelDiffColors = true,
         optionsBgAlpha = 0.9, hideOptionsBorder = false,
         showCritterNameplates = false,
     }
@@ -197,13 +198,6 @@ GudaPlates.registry = registry  -- Expose for Options module
 local LoadSettings
 local REGION_ORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
 
--- Elite indicator strings (appended to level text)
-local ELITE_STRINGS = {
-    ["elite"] = "+",
-    ["rareelite"] = "R+",
-    ["rare"] = "R",
-    ["worldboss"] = "B"
-}
 -- Track combat state per nameplate frame to avoid issues with same-named mobs
 local superwow_active = (SpellInfo ~= nil) or (UnitGUID ~= nil) or (SUPERWOW_VERSION ~= nil) -- SuperWoW detection
 -- TWThreat detection - checked dynamically since TWT may load after us
@@ -510,6 +504,7 @@ GudaPlatesEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 GudaPlatesEventFrame:RegisterEvent("UNIT_AURA")
 GudaPlatesEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 GudaPlatesEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+GudaPlatesEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 -- Combat state for garbage collection optimization
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
 GudaPlatesEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
@@ -668,7 +663,11 @@ local function UpdateNamePlateDimensions(frame)
 
     -- Apply text colors from settings
     nameplate.name:SetTextColor(Settings.nameColor[1], Settings.nameColor[2], Settings.nameColor[3], Settings.nameColor[4])
-    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    -- Apply level color using Level module
+    if GudaPlates_Level then
+        local levelText = nameplate.original.level and nameplate.original.level:GetText()
+        GudaPlates_Level.ApplyLevelColor(nameplate, levelText)
+    end
     nameplate.healthtext:SetTextColor(Settings.healthTextColor[1], Settings.healthTextColor[2], Settings.healthTextColor[3], Settings.healthTextColor[4])
     if nameplate.mana and nameplate.mana.text then
         nameplate.mana.text:SetTextColor(Settings.manaTextColor[1], Settings.manaTextColor[2], Settings.manaTextColor[3], Settings.manaTextColor[4])
@@ -1213,7 +1212,12 @@ local function HandleNamePlate(frame)
     nameplate.level = nameplate:CreateFontString(nil, "OVERLAY")
     nameplate.level:SetFont(Settings.textFont, 9, "OUTLINE")
     nameplate.level:SetPoint("BOTTOMRIGHT", nameplate.health, "TOPRIGHT", 0, 2)
-    nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    -- Apply level color using Level module
+    if GudaPlates_Level then
+        GudaPlates_Level.InitializeLevel(nameplate, nameplate.original)
+    else
+        nameplate.level:SetTextColor(Settings.levelColor[1], Settings.levelColor[2], Settings.levelColor[3], Settings.levelColor[4])
+    end
     nameplate.level:SetJustifyH("RIGHT")
 
     -- Skull icon for boss/skull-level units (shown instead of level text)
@@ -1554,76 +1558,9 @@ local function UpdateNamePlate(frame)
         nameplate.name:Show()
     end
 
-    -- Update level from original or ShaguTweaks
-    local levelText = nil
-    if original.level and original.level.GetText then
-        levelText = original.level:GetText()
-    end
-    -- ShaguTweaks stores level on frame.level
-    if not levelText and frame.level and frame.level.GetText then
-        levelText = frame.level:GetText()
-    end
-
-    -- Detect elite status
-    local eliteSuffix = ""
-    -- Method 1: SuperWoW UnitClassification (most accurate)
-    if superwow_active and UnitClassification and frame and frame.GetName then
-        local unitstr = frame:GetName(1)
-        if unitstr and unitstr ~= "" then
-            local classification = UnitClassification(unitstr)
-            if classification and ELITE_STRINGS[classification] then
-                eliteSuffix = ELITE_STRINGS[classification]
-            end
-        end
-    end
-    -- Method 2: Fallback - levelicon visibility (vanilla method)
-    if eliteSuffix == "" and original.levelicon then
-        if original.levelicon.IsShown and original.levelicon:IsShown() then
-            -- levelicon visible means elite/rare unit - show "+" as default
-            eliteSuffix = "+"
-        end
-    end
-
-    -- Check for skull level using multiple detection methods
-    local isSkullLevel = false
-
-    -- Method 1: SuperWoW UnitLevel returns -1 for skull level units
-    -- Only check if unit exists (prevents stale data from reused nameplates)
-    if superwow_active and frame and frame.GetName then
-        local unitstr = frame:GetName(1)
-        if unitstr and unitstr ~= "" and UnitLevel and UnitExists(unitstr) then
-            local unitLevel = UnitLevel(unitstr)
-            if unitLevel and unitLevel == -1 then
-                isSkullLevel = true
-            end
-        end
-    end
-
-    -- Method 2: Check level text for skull indicators
-    if not isSkullLevel and levelText then
-        if levelText == "-1" or levelText == "??" then
-            isSkullLevel = true
-        end
-    end
-
-    if isSkullLevel then
-        -- Skull level unit - show skull icon, hide level text
-        nameplate.level:SetText("")
-        nameplate.level:Hide()
-        if nameplate.skullIcon then
-            nameplate.skullIcon:Show()
-        end
-    else
-        -- Normal level - show level text with elite suffix, hide skull icon
-        -- Always ensure skull icon is hidden and level is shown for non-skull units
-        if nameplate.skullIcon then
-            nameplate.skullIcon:Hide()
-        end
-
-        -- Always set the level text (even if empty, to clear stale skull state)
-        local displayLevel = (levelText and levelText ~= "") and (levelText .. eliteSuffix) or ""
-        nameplate.level:SetText(displayLevel)
-        nameplate.level:Show()
+    -- Update level display using Level module
+    if GudaPlates_Level then
+        GudaPlates_Level.UpdateLevel(nameplate, original, frame, superwow_active)
     end
 
     -- Plater-style colors with threat support
@@ -2718,6 +2655,17 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
             if Settings.showDebuffTimers then
                 Print("Debuff countdowns enabled")
             end
+        end
+
+        -- Update cached player level on world enter
+        if GudaPlates_Level then
+            GudaPlates_Level.UpdatePlayerLevel()
+        end
+
+    elseif event == "PLAYER_LEVEL_UP" then
+        -- Update cached player level for difficulty colors
+        if GudaPlates_Level then
+            GudaPlates_Level.UpdatePlayerLevel()
         end
 
     -- SuperWoW UNIT_CASTEVENT handler (moved to GudaPlates_Castbar.lua)

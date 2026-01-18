@@ -61,6 +61,7 @@ GudaPlates.Settings = {
     healthTextColor = {1, 1, 1, 1},
     manaTextColor = {1, 1, 1, 1},
     levelColor = {1, 1, 0.6, 1},
+    useLevelDiffColors = true,  -- Color level text based on difficulty (grey/green/yellow/orange/red)
     -- UI Settings
     optionsBgAlpha = 0.9,
     hideOptionsBorder = false,
