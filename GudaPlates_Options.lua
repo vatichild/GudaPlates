@@ -56,7 +56,7 @@ local function CreateOptionsFrame()
     optionsFrame:SetFrameStrata("MEDIUM")
     optionsFrame:SetFrameLevel(20)
     optionsFrame:SetWidth(650)
-    optionsFrame:SetHeight(580)
+    optionsFrame:SetHeight(660)
     optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 
     local function UpdateOptionsBackdrop()
@@ -487,12 +487,81 @@ debuffSizeSlider:SetScript("OnValueChanged", function()
     end
 end)
 
+-- Combo Points Section (only for Rogue/Druid)
+local _, playerClass = UnitClass("player")
+local isComboClass = (playerClass == "ROGUE" or playerClass == "DRUID")
+
+local comboPointsHeader
+local comboPointsCheckbox
+local comboPointsSizeSlider
+local comboSeparator
+
+if isComboClass then
+    comboSeparator = generalTab:CreateTexture(nil, "ARTWORK")
+    comboSeparator:SetTexture(1, 1, 1, 0.2)
+    comboSeparator:SetHeight(1)
+    comboSeparator:SetWidth(580)
+    comboSeparator:SetPoint("TOPLEFT", debuffSizeSlider, "BOTTOMLEFT", 0, -20)
+
+    comboPointsHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    comboPointsHeader:SetPoint("TOPLEFT", comboSeparator, "BOTTOMLEFT", 0, -15)
+    comboPointsHeader:SetText("Combo Points (Rogue/Druid)")
+
+    comboPointsCheckbox = CreateFrame("CheckButton", "GudaPlatesComboPointsCheckbox", generalTab, "UICheckButtonTemplate")
+    comboPointsCheckbox:SetPoint("TOPLEFT", comboPointsHeader, "BOTTOMLEFT", 0, -10)
+    local comboPointsLabel = getglobal(comboPointsCheckbox:GetName().."Text")
+    comboPointsLabel:SetText("Show Combo Points")
+    comboPointsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+    comboPointsCheckbox:SetScript("OnClick", function()
+        Settings.showComboPoints = this:GetChecked() == 1
+        SaveSettings()
+        for plate, _ in pairs(registry) do
+            UpdateNamePlate(plate)
+        end
+    end)
+
+    local comboRoundedCheckbox = CreateFrame("CheckButton", "GudaPlatesComboRoundedCheckbox", generalTab, "UICheckButtonTemplate")
+    comboRoundedCheckbox:SetPoint("TOPLEFT", comboPointsCheckbox, "TOPLEFT", 180, 0)
+    local comboRoundedLabel = getglobal(comboRoundedCheckbox:GetName().."Text")
+    comboRoundedLabel:SetText("Rounded")
+    comboRoundedLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
+    comboRoundedCheckbox:SetScript("OnClick", function()
+        Settings.comboPointsRounded = this:GetChecked() == 1
+        SaveSettings()
+        for plate, _ in pairs(registry) do
+            UpdateNamePlate(plate)
+        end
+    end)
+
+    comboPointsSizeSlider = CreateFrame("Slider", "GudaPlatesComboSizeSlider", generalTab, "OptionsSliderTemplate")
+    comboPointsSizeSlider:SetPoint("TOPLEFT", comboPointsCheckbox, "BOTTOMLEFT", 0, -35)
+    comboPointsSizeSlider:SetWidth(580)
+    comboPointsSizeSlider:SetMinMaxValues(8, 20)
+    comboPointsSizeSlider:SetValueStep(1)
+    local comboSizeText = getglobal(comboPointsSizeSlider:GetName() .. "Text")
+    comboSizeText:SetFont("Fonts\\FRIZQT__.TTF", 12)
+    getglobal(comboPointsSizeSlider:GetName() .. "Low"):SetText("8")
+    getglobal(comboPointsSizeSlider:GetName() .. "High"):SetText("20")
+    comboPointsSizeSlider:SetScript("OnValueChanged", function()
+        Settings.comboPointsSize = this:GetValue()
+        getglobal(this:GetName() .. "Text"):SetText("Combo Point Size: " .. math_floor(this:GetValue()) .. " px")
+        SaveSettings()
+        for plate, _ in pairs(registry) do
+            UpdateNamePlate(plate)
+        end
+    end)
+end
+
 -- Separator 2
 local separator2 = generalTab:CreateTexture(nil, "ARTWORK")
 separator2:SetTexture(1, 1, 1, 0.2)
 separator2:SetHeight(1)
 separator2:SetWidth(580)
-separator2:SetPoint("TOPLEFT", debuffSizeSlider, "BOTTOMLEFT", 0, -20)
+if isComboClass and comboPointsSizeSlider then
+    separator2:SetPoint("TOPLEFT", comboPointsSizeSlider, "BOTTOMLEFT", 0, -20)
+else
+    separator2:SetPoint("TOPLEFT", debuffSizeSlider, "BOTTOMLEFT", 0, -20)
+end
 
 -- Font Section
 local fontHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -1657,6 +1726,17 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
     getglobal("GudaPlatesDebuffSizeSlider"):SetValue(Settings.debuffIconSize)
     getglobal("GudaPlatesDebuffSizeSliderText"):SetText("Debuff Icon Size: " .. Settings.debuffIconSize .. " px")
+    -- Combo points (only for Rogue/Druid)
+    if getglobal("GudaPlatesComboPointsCheckbox") then
+        getglobal("GudaPlatesComboPointsCheckbox"):SetChecked(Settings.showComboPoints)
+    end
+    if getglobal("GudaPlatesComboRoundedCheckbox") then
+        getglobal("GudaPlatesComboRoundedCheckbox"):SetChecked(Settings.comboPointsRounded)
+    end
+    if getglobal("GudaPlatesComboSizeSlider") then
+        getglobal("GudaPlatesComboSizeSlider"):SetValue(Settings.comboPointsSize or 12)
+        getglobal("GudaPlatesComboSizeSliderText"):SetText("Combo Point Size: " .. (Settings.comboPointsSize or 12) .. " px")
+    end
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
     getglobal("GudaPlatesLevelDiffColorsCheckbox"):SetChecked(Settings.useLevelDiffColors)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFontDropdown"), Settings.textFont)
@@ -1756,6 +1836,9 @@ resetButton:SetScript("OnClick", function()
     Settings.friendHealthTextPosition = "CENTER"
     Settings.friendHealthTextFormat = 1
     Settings.debuffIconSize = 16
+    Settings.showComboPoints = true
+    Settings.comboPointsRounded = true
+    Settings.comboPointsSize = 15
     Settings.showManaBar = false
     Settings.manaTextFormat = 1
     Settings.manaTextPosition = "CENTER"

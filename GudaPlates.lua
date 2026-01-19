@@ -1310,6 +1310,11 @@ local function HandleNamePlate(frame)
         GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
     end
 
+    -- Combo points (Rogue/Druid)
+    if GudaPlates_ComboPoints and GudaPlates_ComboPoints:CanUseComboPoints() then
+        GudaPlates_ComboPoints:CreateComboPointFrames(nameplate)
+    end
+
     UpdateNamePlateDimensions(frame)
 
     frame.nameplate = nameplate
@@ -2334,18 +2339,25 @@ local function UpdateNamePlate(frame)
 
     -- Debuff logic is now handled by GudaPlates_Debuffs module
     -- Throttle debuff updates to DEBUFF_UPDATE_INTERVAL (default 0.1s = 10 updates/sec)
+    local numDebuffs = 0
     if GudaPlates_Debuffs then
         local lastDebuffUpdate = nameplate.lastDebuffUpdate or 0
         if now - lastDebuffUpdate >= DEBUFF_UPDATE_INTERVAL then
             nameplate.lastDebuffUpdate = now
-            local numDebuffs = GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarget, hasValidGUID, superwow_active)
+            numDebuffs = GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarget, hasValidGUID, superwow_active)
             nameplate.lastDebuffCount = numDebuffs
             GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
         else
             -- Still update positions in case nameplate moved, using cached count
-            local numDebuffs = nameplate.lastDebuffCount or 0
+            numDebuffs = nameplate.lastDebuffCount or 0
             GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
         end
+    end
+
+    -- Combo points (Rogue/Druid) - update on every frame for responsiveness
+    if GudaPlates_ComboPoints and GudaPlates_ComboPoints:CanUseComboPoints() then
+        GudaPlates_ComboPoints:UpdateComboPoints(nameplate, isTarget)
+        GudaPlates_ComboPoints:UpdateComboPointPositions(nameplate, numDebuffs)
     end
 end
 GudaPlates.UpdateNamePlate = UpdateNamePlate  -- Expose for Options module
