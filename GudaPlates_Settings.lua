@@ -58,8 +58,8 @@ GudaPlates.Settings = {
     debuffIconSize = 16,
     -- Combo Points (Rogue/Druid)
     showComboPoints = true,
-    comboPointsRounded = false,
-    comboPointsSize = 12,
+    comboPointsRounded = true,
+    comboPointsSize = 15,
     -- Text Colors
     nameColor = {1, 1, 1, 1},
     healthTextColor = {1, 1, 1, 1},

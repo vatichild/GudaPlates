@@ -13,7 +13,7 @@ local Settings = GudaPlates.Settings
 
 -- Constants
 local MAX_COMBO_POINTS = 5
-local COMBO_POINT_SIZE = 12
+local COMBO_POINT_SIZE = 15
 
 -- Combo point colors (yellow to red gradient as points increase)
 local COMBO_COLORS = {
