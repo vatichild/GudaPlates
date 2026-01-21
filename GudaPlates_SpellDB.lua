@@ -37,7 +37,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Shadow_MindRot"] = "Curse of Idiocy",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
-	["Interface\\Icons\\Ability_Druid_Disruption"] = "Rake",
+	["Interface\\Icons\\Ability_Druid_Disembowel"] = "Rake",
 	["Interface\\Icons\\Ability_Druid_Rip"] = "Rip",
 	["Interface\\Icons\\Ability_Druid_Bash"] = "Bash",
 	["Interface\\Icons\\Ability_Druid_SupriseAttack"] = "Pounce Bleed",
@@ -58,6 +58,8 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
 	-- Hunter
 	["Interface\\Icons\\spell_lacerate_1C"] = "Lacerate",
+	["Interface\\Icons\\Ability_Druid_Cower"] = "Scare Beast",
+	["Interface\\Icons\\Ability_Rogue_Trip"] = "Wing Clip",
 	["Interface\\Icons\\Spell_Frost_ChainsOfIce"] = "Freezing Trap Effect",
 	["Interface\\Icons\\Spell_Fire_FlameShock"] = "Immolation Trap Effect",
 	["Interface\\Icons\\Spell_Fire_SelfDestruct"] = "Explosive Trap Effect",
@@ -213,7 +215,7 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Faerie Fire"] = {[0]=40},
 	["Faerie Fire (Feral)"] = {[0]=40},
 	["Rake"] = {[1]=9, [2]=9, [3]=9, [4]=9, [0]=9},
-	["Rip"] = {[1]=12, [2]=12, [3]=12, [4]=12, [5]=12, [0]=12},
+	["Rip"] = {[0]=8}, -- +2s per combo point, handled dynamically
 	["Pounce Bleed"] = {[0]=18},
 	["Pounce"] = {[0]=3}, -- stun component
 	["Insect Swarm"] = {[0]=12},
@@ -255,12 +257,14 @@ GudaPlates_SpellDB.DEBUFFS = {
 GudaPlates_SpellDB.COMBO_POINT_DEBUFFS = {
 	["Kidney Shot"] = true,
 	["Rupture"] = true,
+	["Rip"] = true,
 }
 
 -- Dynamic debuffs that scale with talents
 GudaPlates_SpellDB.DYN_DEBUFFS = {
 	["Rupture"] = "Rupture",
 	["Kidney Shot"] = "Kidney Shot",
+	["Rip"] = "Rip",
 	["Rend"] = "Rend",
 	["Shadow Word: Pain"] = "Shadow Word: Pain",
 	["Demoralizing Shout"] = "Demoralizing Shout",
@@ -661,6 +665,9 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 	elseif effect == self.DYN_DEBUFFS["Kidney Shot"] then
 	-- Kidney Shot: +1 sec per combo point
 		duration = duration + (GetComboPoints("player", "target") or 0) * 1
+	elseif effect == self.DYN_DEBUFFS["Rip"] then
+	-- Rip: +2 sec per combo point (8 base + 2*CP = 10/12/14/16/18)
+		duration = duration + (GetComboPoints("player", "target") or 0) * 2
 	elseif effect == self.DYN_DEBUFFS["Demoralizing Shout"] then
 	-- Booming Voice: 10% per talent
 		local _,_,_,_,count = GetTalentInfo(2, 1)
