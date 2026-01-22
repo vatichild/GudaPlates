@@ -3364,6 +3364,7 @@ LoadSettings = function()
     -- Update global GudaPlates table to reflect loaded settings
     GudaPlates.playerRole = playerRole
     GudaPlates.nameplateOverlap = nameplateOverlap
+    GudaPlates.nameplateClickThrough = clickThrough
     GudaPlates.minimapAngle = minimapAngle
     GudaPlates.Settings = Settings
     GudaPlates.THREAT_COLORS = THREAT_COLORS
