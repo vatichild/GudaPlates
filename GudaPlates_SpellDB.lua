@@ -35,6 +35,7 @@ GudaPlates_SpellDB.textureToSpell = {
 	["Interface\\Icons\\Spell_Shadow_GrimWard"] = "Curse of Exhaustion",
 	["Interface\\Icons\\Spell_Shadow_AuraOfDarkness"] = "Curse of Doom",
 	["Interface\\Icons\\Spell_Shadow_MindRot"] = "Curse of Idiocy",
+	["Interface\\Icons\\Spell_Fire_Immolation"] = "Immolate",
 	-- Druid
 	["Interface\\Icons\\Spell_Nature_FaerieFire"] = "Faerie Fire",
 	["Interface\\Icons\\Ability_Druid_Disembowel"] = "Rake",
