@@ -7,6 +7,8 @@
 -- Upvalue Lua functions for performance
 local string_gsub = string.gsub
 local string_gfind = string.gfind
+local string_find = string.find
+local string_sub = string.sub
 local table = table
 local GetTime = GetTime
 local UnitExists = UnitExists
@@ -80,15 +82,20 @@ local function ParseCastStart(msg)
 
     local unit, spell = nil, nil
 
-    -- Try "begins to cast"
-    for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
-        unit, spell = u, s
-    end
-
-    -- Try "begins to perform"
-    if not unit then
-        for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
+    -- Early-exit: cheap plain-text check before expensive regex
+    -- Most combat log messages won't contain "begins to" so we reject them fast
+    local hasBeginsTo = string_find(msg, "begins to ", 1, true)
+    if hasBeginsTo then
+        -- Try "begins to cast"
+        for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
             unit, spell = u, s
+        end
+
+        -- Try "begins to perform"
+        if not unit then
+            for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
+                unit, spell = u, s
+            end
         end
     end
 
@@ -107,10 +114,12 @@ local function ParseCastStart(msg)
         table.insert(castTracker[unit], newCast)
     end
 
-    -- Check for interrupts/failures
+    -- Check for interrupts/failures (with cheap prefix check)
     local interruptedUnit = nil
-    for u in string_gfind(msg, "(.+)'s .+ is interrupted%.") do interruptedUnit = u end
-    if not interruptedUnit then
+    if string_find(msg, "interrupted", 1, true) then
+        for u in string_gfind(msg, "(.+)'s .+ is interrupted%.") do interruptedUnit = u end
+    end
+    if not interruptedUnit and string_find(msg, "fails", 1, true) then
         for u in string_gfind(msg, "(.+)'s .+ fails%.") do interruptedUnit = u end
     end
 
@@ -172,54 +181,56 @@ local function ParseAttackHit(msg)
             end
         end
     end
-    if not victim then
-    -- X hits Y for Z.
-        for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
+    -- Only run expensive regex patterns if message contains " for " (all hit/crit messages do)
+    if not victim and string_find(msg, " for ", 1, true) then
+        -- Check for "hits" or "crits" keyword before running regex
+        if string_find(msg, " hits ", 1, true) then
+            -- X hits Y for Z.
+            for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
+                attacker = a
+                victim = v
+                break
+            end
+            -- Ranged: Your ranged attack hits X for Y.
+            if not victim and string_find(msg, "ranged", 1, true) then
+                for v in string_gfind(msg, "Your ranged attack hits (.-) for %d+%.") do
+                    attacker = "You"
+                    victim = v
+                    break
+                end
+            end
+            if not victim then
+                -- X's ranged attack hits Y for Z.
+                for a, v in string_gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
+                    attacker = a
+                    victim = v
+                    break
+                end
+            end
         end
-    end
-    if not victim then
-    -- X crits Y for Z.
-        for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-
-    -- Patterns for ranged hits
-    if not victim then
-    -- Your ranged attack hits X for Y.
-        for v in string_gfind(msg, "Your ranged attack hits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- Your ranged attack crits X for Y.
-        for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
-            attacker = "You"
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack hits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
-        end
-    end
-    if not victim then
-    -- X's ranged attack crits Y for Z.
-        for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
-            attacker = a
-            victim = v
-            break
+        if not victim and string_find(msg, " crits ", 1, true) then
+            -- X crits Y for Z.
+            for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
+                attacker = a
+                victim = v
+                break
+            end
+            -- Ranged: Your ranged attack crits X for Y.
+            if not victim and string_find(msg, "ranged", 1, true) then
+                for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
+                    attacker = "You"
+                    victim = v
+                    break
+                end
+            end
+            if not victim then
+                -- X's ranged attack crits Y for Z.
+                for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
+                    attacker = a
+                    victim = v
+                    break
+                end
+            end
         end
     end
 

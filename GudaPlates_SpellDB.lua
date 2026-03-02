@@ -11,6 +11,40 @@ local GetTime = GetTime
 
 GudaPlates_SpellDB = {}
 GudaPlates_SpellDB.scanner = nil
+
+-- Performance: Cached talent point counts for dynamic duration calculations
+-- Refreshed on CHARACTER_POINTS_CHANGED / PLAYER_ENTERING_WORLD
+local talentCache = {}
+local talentCacheValid = false
+
+local function RefreshTalentCache()
+	local _, pClass = UnitClass("player")
+	pClass = pClass or ""
+	-- Only cache talents relevant to the player's class
+	if pClass == "WARRIOR" then
+		local _,_,_,_,count = GetTalentInfo(2, 1) -- Booming Voice
+		talentCache["warrior_booming_voice"] = count or 0
+	elseif pClass == "PRIEST" then
+		local _,_,_,_,count = GetTalentInfo(3, 4) -- Improved SW:P
+		talentCache["priest_imp_swp"] = count or 0
+	elseif pClass == "MAGE" then
+		local _,_,_,_,count = GetTalentInfo(3, 7) -- Permafrost
+		talentCache["mage_permafrost"] = count or 0
+	elseif pClass == "ROGUE" then
+		local _,_,_,_,count = GetTalentInfo(2, 1) -- Improved Gouge
+		talentCache["rogue_imp_gouge"] = count or 0
+	end
+	talentCacheValid = true
+end
+
+-- Event frame for talent cache invalidation
+local talentCacheFrame = CreateFrame("Frame")
+talentCacheFrame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+talentCacheFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+talentCacheFrame:SetScript("OnEvent", function()
+	talentCacheValid = false
+end)
+
 GudaPlates_SpellDB.textureToSpell = {
 	-- Warrior
 	["Interface\\Icons\\Ability_Gouge"] = "Rend",
@@ -75,6 +109,13 @@ GudaPlates_SpellDB.debuffPriority = {
 	["Interface\\Icons\\Spell_Holy_RighteousnessAura"] = "Judgement of Wisdom",
 	["Interface\\Icons\\Spell_Holy_HolySmite"] = "Judgement of the Crusader",
 	["Interface\\Icons\\Spell_Holy_SealOfWrath"] = "Judgement of Justice",
+}
+
+-- Combat log aliases: when a combat log spell name differs from the textureToSpell name
+-- (shared icon), store SpellDB data under BOTH names so timer lookups work correctly.
+-- Key = combat log name, Value = textureToSpell canonical name
+GudaPlates_SpellDB.COMBAT_LOG_ALIASES = {
+	["Pounce"] = "Pounce Bleed",
 }
 
 -- ============================================
@@ -217,8 +258,8 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Faerie Fire (Feral)"] = {[0]=40},
 	["Rake"] = {[1]=9, [2]=9, [3]=9, [4]=9, [0]=9},
 	["Rip"] = {[0]=8}, -- +2s per combo point, handled dynamically
-	["Pounce Bleed"] = {[0]=18},
-	["Pounce"] = {[0]=3}, -- stun component
+	["Pounce Bleed"] = {[0]=16},
+	["Pounce"] = {[0]=16}, -- shares icon with Pounce Bleed; use bleed duration for nameplate tracking
 	["Insect Swarm"] = {[0]=12},
 	["Hibernate"] = {[1]=20, [2]=30, [3]=40, [0]=40},
 	["Feral Charge Effect"] = {[0]=4},
@@ -253,6 +294,16 @@ GudaPlates_SpellDB.DEBUFFS = {
 	["Thunderfury"] = {[0]=12},
 	["Thunderfury's Blessing"] = {[0]=12},
 }
+
+-- Precompute max rank for each spell (avoids pairs() scan on every GetMaxRank call)
+GudaPlates_SpellDB.MAX_RANKS = {}
+for effect, ranks in pairs(GudaPlates_SpellDB.DEBUFFS) do
+	local max = 0
+	for id in pairs(ranks) do
+		if id > max then max = id end
+	end
+	GudaPlates_SpellDB.MAX_RANKS[effect] = max
+end
 
 -- Dynamic debuffs that scale with combo points
 GudaPlates_SpellDB.COMBO_POINT_DEBUFFS = {
@@ -619,16 +670,9 @@ function GudaPlates_SpellDB:FindEffectData(u, lvl, eff)
 	return nil
 end
 
--- Get max rank for a spell
+-- Get max rank for a spell (precomputed at load time)
 function GudaPlates_SpellDB:GetMaxRank(effect)
-	local spellData = self.DEBUFFS[effect]
-	if not spellData then return 0 end
-
-	local max = 0
-	for id in pairs(spellData) do
-		if id > max then max = id end
-	end
-	return max
+	return self.MAX_RANKS[effect] or 0
 end
 
 -- Get duration by spell name and rank
@@ -670,27 +714,31 @@ function GudaPlates_SpellDB:GetDuration(effect, rank)
 	-- Rip: +2 sec per combo point (8 base + 2*CP = 10/12/14/16/18)
 		duration = duration + (GetComboPoints("player", "target") or 0) * 2
 	elseif effect == self.DYN_DEBUFFS["Demoralizing Shout"] then
-	-- Booming Voice: 10% per talent
-		local _,_,_,_,count = GetTalentInfo(2, 1)
-		if count and count > 0 then
+	-- Booming Voice: 10% per talent (cached)
+		if not talentCacheValid then RefreshTalentCache() end
+		local count = talentCache["warrior_booming_voice"] or 0
+		if count > 0 then
 			duration = duration + (duration / 100 * (count * 10))
 		end
 	elseif effect == self.DYN_DEBUFFS["Shadow Word: Pain"] then
-	-- Improved Shadow Word: Pain: +3s per talent
-		local _,_,_,_,count = GetTalentInfo(3, 4)
-		if count and count > 0 then
+	-- Improved Shadow Word: Pain: +3s per talent (cached)
+		if not talentCacheValid then RefreshTalentCache() end
+		local count = talentCache["priest_imp_swp"] or 0
+		if count > 0 then
 			duration = duration + count * 3
 		end
 	elseif effect == self.DYN_DEBUFFS["Frostbolt"] then
-	-- Permafrost: +1s per talent
-		local _,_,_,_,count = GetTalentInfo(3, 7)
-		if count and count > 0 then
+	-- Permafrost: +1s per talent (cached)
+		if not talentCacheValid then RefreshTalentCache() end
+		local count = talentCache["mage_permafrost"] or 0
+		if count > 0 then
 			duration = duration + count
 		end
 	elseif effect == self.DYN_DEBUFFS["Gouge"] then
-	-- Improved Gouge: +.5s per talent
-		local _,_,_,_,count = GetTalentInfo(2, 1)
-		if count and count > 0 then
+	-- Improved Gouge: +.5s per talent (cached)
+		if not talentCacheValid then RefreshTalentCache() end
+		local count = talentCache["rogue_imp_gouge"] or 0
+		if count > 0 then
 			duration = duration + (count * 0.5)
 		end
 	elseif effect == self.DYN_DEBUFFS["Rend"] then
@@ -829,10 +877,22 @@ function GudaPlates_SpellDB:AddEffect(unit, unitlevel, effect, duration, isOwn)
 
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
+	local now = GetTime()
+	local dur = duration or self:GetDuration(effect)
 	self.objects[unit][unitlevel][effect].effect = effect
-	self.objects[unit][unitlevel][effect].start = GetTime()
-	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+	self.objects[unit][unitlevel][effect].start = now
+	self.objects[unit][unitlevel][effect].duration = dur
 	self.objects[unit][unitlevel][effect].isOwn = isOwn or false -- default to false (other players' spells)
+
+	-- Also store under the alias name so textureToSpell-based lookups find this data
+	local alias = self.COMBAT_LOG_ALIASES and self.COMBAT_LOG_ALIASES[effect]
+	if alias and not (self.objects[unit][unitlevel][alias] and self.objects[unit][unitlevel][alias].start) then
+		if not self.objects[unit][unitlevel][alias] then self.objects[unit][unitlevel][alias] = {} end
+		self.objects[unit][unitlevel][alias].effect = alias
+		self.objects[unit][unitlevel][alias].start = now
+		self.objects[unit][unitlevel][alias].duration = dur
+		self.objects[unit][unitlevel][alias].isOwn = isOwn or false
+	end
 end
 
 function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isOwn)
@@ -843,10 +903,22 @@ function GudaPlates_SpellDB:RefreshEffect(unit, unitlevel, effect, duration, isO
 	if not self.objects[unit][unitlevel] then self.objects[unit][unitlevel] = {} end
 	if not self.objects[unit][unitlevel][effect] then self.objects[unit][unitlevel][effect] = {} end
 
+	local now = GetTime()
+	local dur = duration or self:GetDuration(effect)
 	self.objects[unit][unitlevel][effect].effect = effect
-	self.objects[unit][unitlevel][effect].start = GetTime()
-	self.objects[unit][unitlevel][effect].duration = duration or self:GetDuration(effect)
+	self.objects[unit][unitlevel][effect].start = now
+	self.objects[unit][unitlevel][effect].duration = dur
 	self.objects[unit][unitlevel][effect].isOwn = isOwn ~= false -- default to true for backwards compatibility
+
+	-- Also store under the alias name so textureToSpell-based lookups find this data
+	local alias = self.COMBAT_LOG_ALIASES and self.COMBAT_LOG_ALIASES[effect]
+	if alias then
+		if not self.objects[unit][unitlevel][alias] then self.objects[unit][unitlevel][alias] = {} end
+		self.objects[unit][unitlevel][alias].effect = alias
+		self.objects[unit][unitlevel][alias].start = now
+		self.objects[unit][unitlevel][alias].duration = dur
+		self.objects[unit][unitlevel][alias].isOwn = isOwn ~= false
+	end
 end
 
 function GudaPlates_SpellDB:UpdateDuration(unit, unitlevel, effect, duration)

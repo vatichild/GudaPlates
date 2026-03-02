@@ -55,13 +55,29 @@ GudaPlates_Threat.GP_TankPlayers = GP_TankPlayers
 -- Utility Functions
 -- =============================================================================
 
--- Simple string split function
-local function GP_Split(str, delimiter)
-    local result = {}
-    local pattern = "([^" .. delimiter .. "]+)"
-    for match in string_gfind(str, pattern) do
-        table.insert(result, match)
+-- Simple string split function (reuses tables to reduce GC pressure)
+local GP_Split_result1 = {}  -- reusable table for outer splits
+local GP_Split_result2 = {}  -- reusable table for inner splits
+local GP_Split_patterns = {} -- cached patterns per delimiter
+
+local function GP_Split(str, delimiter, useSecond)
+    local result = useSecond and GP_Split_result2 or GP_Split_result1
+    -- Clear previous entries
+    local count = 0
+    local pattern = GP_Split_patterns[delimiter]
+    if not pattern then
+        pattern = "([^" .. delimiter .. "]+)"
+        GP_Split_patterns[delimiter] = pattern
     end
+    for match in string_gfind(str, pattern) do
+        count = count + 1
+        result[count] = match
+    end
+    -- Nil out stale trailing entries from previous use
+    for i = count + 1, (result._count or 0) do
+        result[i] = nil
+    end
+    result._count = count
     return result
 end
 
@@ -93,7 +109,7 @@ local function GP_HandleTankModePacket(packet)
     -- Parse each entry (creature:guid:name:perc)
     local entries = GP_Split(dataStr, ";")
     for _, entry in ipairs(entries) do
-        local parts = GP_Split(entry, ":")
+        local parts = GP_Split(entry, ":", true)
         if parts[1] and parts[2] and parts[3] and parts[4] then
             local creature = parts[1]
             local guid = parts[2]
@@ -129,7 +145,7 @@ local function GP_HandleThreatPacket(packet)
     -- Parse each entry (name:class:threat:perc:melee:tank)
     local entries = GP_Split(dataStr, ";")
     for _, entry in ipairs(entries) do
-        local parts = GP_Split(entry, ":")
+        local parts = GP_Split(entry, ":", true)
         if parts[1] and parts[3] and parts[4] then
             local name = parts[1]
             local threat = tonumber(parts[3]) or 0

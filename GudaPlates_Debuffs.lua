@@ -23,6 +23,31 @@ playerClass = playerClass or ""
 local MAX_DEBUFFS = 16
 local DEBUFF_SIZE = 16
 
+-- Performance: Pre-allocated reusable tables for UpdateDebuffs() hot path
+-- Parallel arrays for collected debuffs (avoids creating a table per debuff)
+local cd_index = {}      -- debuff scan index
+local cd_texture = {}    -- texture path
+local cd_stacks = {}     -- stack count
+local cd_effect = {}     -- effect name
+local cd_isOwnerBound = {} -- owner-bound flag
+local cd_count = 0       -- number of collected debuffs
+
+-- Reusable hash tables with tracked keys for efficient clearing
+local ownerBoundCounts = {}
+local ownerBoundFirst_index = {}
+local ownerBoundFirst_texture = {}
+local ownerBoundFirst_stacks = {}
+local ob_keys = {}       -- tracked keys for ownerBound tables
+local ob_key_count = 0
+
+local displayedOwnerBound = {}
+local dob_keys = {}      -- tracked keys for displayedOwnerBound
+local dob_key_count = 0
+
+local claimedMyDebuffs_pool = {}
+local cmd_keys = {}
+local cmd_key_count = 0
+
 -- Performance: Pre-defined spell lists (avoid creating tables in hot paths)
 -- Note: Crusader Strike is NOT a judgement - it's a separate debuff
 local JUDGEMENT_EFFECTS = {
@@ -312,32 +337,8 @@ function GudaPlates_Debuffs:GetDebuffSize()
     return Settings.debuffIconSize or 16
 end
 
-local function DebuffOnUpdate()
-    local now = GetTime()
-    if (this.tick or 0) > now then return else this.tick = now + 0.1 end
-
-    if not this:IsShown() then return end
-    if not this.expirationTime or this.expirationTime <= 0 then
-        if this.cd then this.cd:SetText("") end
-        return
-    end
-
-    local timeLeft = this.expirationTime - now
-    if timeLeft > 0 then
-        local text, r, g, b, a = GudaPlates_Debuffs:FormatTime(timeLeft)
-        if this.cd then
-            this.cd:SetText(text)
-            if r then this.cd:SetTextColor(r, g, b, a or 1) end
-            this.cd:SetAlpha(1)
-        end
-    else
-        if this.cd then
-            this.cd:SetText("")
-            this.cd:SetAlpha(0)
-        end
-        this.expirationTime = 0
-    end
-end
+-- DebuffOnUpdate removed: timer text is now updated entirely within UpdateDebuffs()
+-- at 0.1s intervals, eliminating up to 320 C-side OnUpdate dispatches per render frame.
 
 function GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
     nameplate.debuffs = {}
@@ -380,8 +381,6 @@ function GudaPlates_Debuffs:CreateDebuffFrames(nameplate)
         debuff.count:SetText("")
         debuff.count:SetDrawLayer("OVERLAY", 7)
 
-        debuff:SetScript("OnUpdate", DebuffOnUpdate)
-
         debuff:Hide()
         nameplate.debuffs[i] = debuff
     end
@@ -409,7 +408,12 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
     end
 
     local now = GetTime()
-    local claimedMyDebuffs = {}
+
+    -- Clear reusable hash tables using tracked keys (O(n) where n = keys used, not table size)
+    for i = 1, cmd_key_count do
+        claimedMyDebuffs_pool[cmd_keys[i]] = nil
+    end
+    cmd_key_count = 0
 
     local effectiveUnit = (isTarget) and "target" or (superwow_active and hasValidGUID and unitstr) or nil
     if not effectiveUnit and not plateName then return 0 end
@@ -424,9 +428,16 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
     -- ============================================
     -- PHASE 1: Collect all debuffs and count OWNER_BOUND instances
     -- ============================================
-    local collectedDebuffs = {}  -- Array of debuff data
-    local ownerBoundCounts = {}  -- Count of instances per OWNER_BOUND spell name
-    local ownerBoundFirst = {}   -- First occurrence data for each OWNER_BOUND spell
+    -- Clear reusable ownerBound tables using tracked keys
+    for i = 1, ob_key_count do
+        local k = ob_keys[i]
+        ownerBoundCounts[k] = nil
+        ownerBoundFirst_index[k] = nil
+        ownerBoundFirst_texture[k] = nil
+        ownerBoundFirst_stacks[k] = nil
+    end
+    ob_key_count = 0
+    cd_count = 0
 
     for i = 1, 40 do
         local texture, stacks = UnitDebuff(scanUnit, i)
@@ -441,36 +452,45 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
 
         -- Count OWNER_BOUND_DEBUFFS instances
         if isOwnerBound then
-            ownerBoundCounts[effect] = (ownerBoundCounts[effect] or 0) + 1
-            if not ownerBoundFirst[effect] then
-                ownerBoundFirst[effect] = { index = i, texture = texture, stacks = stacks }
+            if not ownerBoundCounts[effect] then
+                ob_key_count = ob_key_count + 1
+                ob_keys[ob_key_count] = effect
+                ownerBoundCounts[effect] = 1
+                ownerBoundFirst_index[effect] = i
+                ownerBoundFirst_texture[effect] = texture
+                ownerBoundFirst_stacks[effect] = stacks
+            else
+                ownerBoundCounts[effect] = ownerBoundCounts[effect] + 1
             end
         end
 
-        -- Store all debuff data for phase 2
-        table.insert(collectedDebuffs, {
-            index = i,
-            texture = texture,
-            stacks = stacks,
-            effect = effect,
-            isOwnerBound = isOwnerBound
-        })
+        -- Store debuff data in parallel arrays (no table allocation)
+        cd_count = cd_count + 1
+        cd_index[cd_count] = i
+        cd_texture[cd_count] = texture
+        cd_stacks[cd_count] = stacks
+        cd_effect[cd_count] = effect
+        cd_isOwnerBound[cd_count] = isOwnerBound
     end
 
     -- ============================================
     -- PHASE 2: Display debuffs with filtering at render time
     -- ============================================
     local debuffIndex = 1
-    local displayedOwnerBound = {}  -- Track which OWNER_BOUND spells we've displayed
+    -- Clear displayedOwnerBound using tracked keys
+    for i = 1, dob_key_count do
+        displayedOwnerBound[dob_keys[i]] = nil
+    end
+    dob_key_count = 0
     local unitlevel = (scanUnit == "target") and UnitLevel("target") or (unitstr and UnitLevel(unitstr)) or 0
 
-    for _, debuffData in ipairs(collectedDebuffs) do
+    for di = 1, cd_count do
         if debuffIndex > MAX_DEBUFFS then break end
 
-        local effect = debuffData.effect
-        local texture = debuffData.texture
-        local stacks = debuffData.stacks
-        local isOwnerBound = debuffData.isOwnerBound
+        local effect = cd_effect[di]
+        local texture = cd_texture[di]
+        local stacks = cd_stacks[di]
+        local isOwnerBound = cd_isOwnerBound[di]
 
         -- Rogue poisons: Early detection for visibility exception
         -- Poisons are weapon procs with no ownership data, must be force-allowed for Rogues
@@ -568,9 +588,11 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if data.start + data.duration > now then
                     duration = data.duration
                     timeleft = data.duration + data.start - now
-                    if data.isOwn == true and not claimedMyDebuffs[effect] then
+                    if data.isOwn == true and not claimedMyDebuffs_pool[effect] then
                         isMyDebuff = true
-                        claimedMyDebuffs[effect] = true
+                        claimedMyDebuffs_pool[effect] = true
+                        cmd_key_count = cmd_key_count + 1
+                        cmd_keys[cmd_key_count] = effect
                     end
                 end
             end
@@ -578,7 +600,11 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             -- Paladin special handling
             if playerClass == "PALADIN" and (string_find(effect, "Judgement of ") or string_find(effect, "Seal of ") or effect == "Crusader Strike" or effect == "Hammer of Justice" or effect == "Repentance") then
                 isMyDebuff = true
-                claimedMyDebuffs[effect] = true
+                if not claimedMyDebuffs_pool[effect] then
+                    claimedMyDebuffs_pool[effect] = true
+                    cmd_key_count = cmd_key_count + 1
+                    cmd_keys[cmd_key_count] = effect
+                end
                 local dbData = self:GetSpellData(unitstr, plateName, effect, 0)
                 if dbData and dbData.start then
                     duration = dbData.duration
@@ -634,6 +660,8 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
                 if isMyOwnerBound then
                     -- Display ONE icon for this OWNER_BOUND debuff
                     displayedOwnerBound[effect] = true
+                    dob_key_count = dob_key_count + 1
+                    dob_keys[dob_key_count] = effect
 
                     local debuff = nameplate.debuffs[debuffIndex]
                     debuff.icon:SetTexture(texture)
@@ -699,7 +727,7 @@ function GudaPlates_Debuffs:UpdateDebuffs(nameplate, unitstr, plateName, isTarge
             -- ============================================
             local uniqueClass = effect and SpellDB and SpellDB.SHARED_DEBUFFS and SpellDB.SHARED_DEBUFFS[effect]
             local isUnique = uniqueClass and (uniqueClass == true or uniqueClass == playerClass)
-            local isRedundant = self:IsDebuffRedundant(scanUnit, effect, debuffData.index)
+            local isRedundant = self:IsDebuffRedundant(scanUnit, effect, cd_index[di])
 
             -- Rogue poisons: Force-allow at acceptance stage
             -- Bypass redundancy and treat as owned
@@ -837,25 +865,20 @@ function GudaPlates_Debuffs:UpdateDebuffPositions(nameplate, numDebuffs)
 end
 
 local lastDebuffCleanup = 0
-local lastFullCacheRefresh = 0
 local lastOwnerBoundCleanup = 0
 
 function GudaPlates_Debuffs:CleanupTimers()
     local now = GetTime()
 
-    -- Full cache wipe every 2 seconds to force re-sync with SpellDB
-    if now - lastFullCacheRefresh > 2 then
-        lastFullCacheRefresh = now
-        for key in pairs(self.timers) do
-            self.timers[key] = nil
-        end
-    end
-
-    -- Cleanup stale (unseen) debuff timers every 0.5 seconds
+    -- Cleanup stale (unseen) and fully expired debuff timers every 0.5 seconds
     if now - lastDebuffCleanup > 0.5 then
         lastDebuffCleanup = now
         for key, data in pairs(self.timers) do
+            -- Remove entries not seen for >1 second (target lost or debuff gone)
             if data.lastSeen and (now - data.lastSeen > 1) then
+                self.timers[key] = nil
+            -- Remove entries whose duration has fully elapsed
+            elseif data.startTime and data.duration and (now - data.startTime > data.duration + 1) then
                 self.timers[key] = nil
             end
         end
