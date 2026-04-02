@@ -55,8 +55,13 @@ local ELITE_STRINGS = {
 local cachedPlayerLevel = UnitLevel("player") or 60
 
 -- Update cached player level (call on PLAYER_LEVEL_UP and PLAYER_ENTERING_WORLD)
-function GudaPlates_Level.UpdatePlayerLevel()
-    cachedPlayerLevel = UnitLevel("player") or 60
+-- newLevel: pass arg1 from PLAYER_LEVEL_UP to avoid stale UnitLevel("player") during the event
+function GudaPlates_Level.UpdatePlayerLevel(newLevel)
+    if newLevel and tonumber(newLevel) then
+        cachedPlayerLevel = tonumber(newLevel)
+    else
+        cachedPlayerLevel = UnitLevel("player") or 60
+    end
 end
 
 -- Get cached player level

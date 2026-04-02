@@ -2676,8 +2676,9 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
 
     elseif event == "PLAYER_LEVEL_UP" then
         -- Update cached player level for difficulty colors
+        -- arg1 is the new level; pass it directly to avoid stale UnitLevel("player")
         if GudaPlates_Level then
-            GudaPlates_Level.UpdatePlayerLevel()
+            GudaPlates_Level.UpdatePlayerLevel(arg1)
         end
 
     -- SuperWoW UNIT_CASTEVENT handler (moved to GudaPlates_Castbar.lua)
