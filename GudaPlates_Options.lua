@@ -4,6 +4,8 @@
 -- This file contains the CreateOptionsFrame function and all options panel UI
 --------------------------------------------------------------------------------
 
+local L = setmetatable(GudaPlates_L or {}, {__index = function(t, k) return k end})
+
 -- Local upvalue aliases for exposed globals from main file
 -- Note: Settings/THREAT_COLORS are tables that exist from Settings file load
 local Settings = GudaPlates.Settings
@@ -88,7 +90,7 @@ local function CreateOptionsFrame()
     -- Title
     local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", optionsFrame, "TOP", 0, -20)
-    title:SetText("GudaPlates Settings")
+    title:SetText(L["GudaPlates Settings"])
 
     -- Close Button
     local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
@@ -127,7 +129,7 @@ local function CreateOptionsFrame()
 
     local generalTabText = generalTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     generalTabText:SetPoint("CENTER", generalTabButton, "CENTER", 0, 0)
-    generalTabText:SetText("General")
+    generalTabText:SetText(L["General"])
 
     generalTabBg = generalTabButton:CreateTexture(nil, "BACKGROUND")
     generalTabBg:SetTexture(1, 1, 1, 0.3)
@@ -140,7 +142,7 @@ local function CreateOptionsFrame()
 
     local healthbarTabText = healthbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     healthbarTabText:SetPoint("CENTER", healthbarTabButton, "CENTER", 0, 0)
-    healthbarTabText:SetText("Health")
+    healthbarTabText:SetText(L["Health"])
 
     healthbarTabBg = healthbarTabButton:CreateTexture(nil, "BACKGROUND")
     healthbarTabBg:SetTexture(1, 1, 1, 0.1)
@@ -153,7 +155,7 @@ local function CreateOptionsFrame()
 
     local manaTabText = manaTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     manaTabText:SetPoint("CENTER", manaTabButton, "CENTER", 0, 0)
-    manaTabText:SetText("Mana")
+    manaTabText:SetText(L["Mana"])
 
     manaTabBg = manaTabButton:CreateTexture(nil, "BACKGROUND")
     manaTabBg:SetTexture(1, 1, 1, 0.1)
@@ -166,7 +168,7 @@ local function CreateOptionsFrame()
 
     local castbarTabText = castbarTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     castbarTabText:SetPoint("CENTER", castbarTabButton, "CENTER", 0, 0)
-    castbarTabText:SetText("Castbar")
+    castbarTabText:SetText(L["Castbar"])
 
     castbarTabBg = castbarTabButton:CreateTexture(nil, "BACKGROUND")
     castbarTabBg:SetTexture(1, 1, 1, 0.1)
@@ -179,7 +181,7 @@ local function CreateOptionsFrame()
 
     local colorsTabText = colorsTabButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     colorsTabText:SetPoint("CENTER", colorsTabButton, "CENTER", 0, 0)
-    colorsTabText:SetText("Colors")
+    colorsTabText:SetText(L["Colors"])
 
     colorsTabBg = colorsTabButton:CreateTexture(nil, "BACKGROUND")
     colorsTabBg:SetTexture(1, 1, 1, 0.1)
@@ -285,7 +287,7 @@ local function CreateOptionsFrame()
 
         swatch:SetScript("OnEnter", function()
             GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Click to change color")
+            GameTooltip:AddLine(L["Click to change color"])
             GameTooltip:Show()
         end)
 
@@ -301,7 +303,7 @@ local function CreateOptionsFrame()
 -- Settings Frame Section
 local settingsHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 settingsHeader:SetPoint("TOPLEFT", generalTab, "TOPLEFT", 5, 0)
-settingsHeader:SetText("Settings Frame")
+settingsHeader:SetText(L["Settings Frame"])
 
 -- Background Transparency Slider
 local transparencySlider = CreateFrame("Slider", "GudaPlatesOptionsTransparencySlider", generalTab, "OptionsSliderTemplate")
@@ -317,7 +319,7 @@ transparencySlider:SetScript("OnValueChanged", function()
     -- Value is transparency (0 = opaque, 1 = transparent)
     -- optionsBgAlpha should be opacity (1 = opaque, 0 = transparent)
     Settings.optionsBgAlpha = 1 - this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Background Transparency: " .. math_floor(this:GetValue() * 100) .. "%")
+    getglobal(this:GetName() .. "Text"):SetText(L["Background Transparency: "] .. math_floor(this:GetValue() * 100) .. "%")
     SaveSettings()
     if optionsFrame and optionsFrame.UpdateBackdrop then
         optionsFrame.UpdateBackdrop()
@@ -328,7 +330,7 @@ end)
 local hideBorderCheckbox = CreateFrame("CheckButton", "GudaPlatesHideBorderCheckbox", generalTab, "UICheckButtonTemplate")
 hideBorderCheckbox:SetPoint("TOPLEFT", transparencySlider, "BOTTOMLEFT", 0, -10)
 local hideBorderLabel = getglobal(hideBorderCheckbox:GetName().."Text")
-hideBorderLabel:SetText("Hide Borders")
+hideBorderLabel:SetText(L["Hide Borders"])
 hideBorderLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 hideBorderCheckbox:SetScript("OnClick", function()
     Settings.hideOptionsBorder = this:GetChecked() == 1
@@ -348,13 +350,13 @@ separator1:SetPoint("TOPLEFT", hideBorderCheckbox, "BOTTOMLEFT", 0, -15)
 -- Nameplate Settings (formerly General Settings)
 local nameplateHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 nameplateHeader:SetPoint("TOPLEFT", separator1, "BOTTOMLEFT", 0, -15)
-nameplateHeader:SetText("Nameplate Settings")
+nameplateHeader:SetText(L["Nameplate Settings"])
 
 -- Row 1
 local overlapCheckbox = CreateFrame("CheckButton", "GudaPlatesOverlapCheckbox", generalTab, "UICheckButtonTemplate")
 overlapCheckbox:SetPoint("TOPLEFT", nameplateHeader, "BOTTOMLEFT", 0, -10)
 local overlapLabel = getglobal(overlapCheckbox:GetName().."Text")
-overlapLabel:SetText("Overlapping")
+overlapLabel:SetText(L["Overlapping"])
 overlapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 overlapCheckbox:SetScript("OnClick", function()
     GudaPlates.nameplateOverlap = this:GetChecked() == 1
@@ -364,7 +366,7 @@ end)
 local clickThroughCheckbox = CreateFrame("CheckButton", "GudaPlatesClickThroughCheckbox", generalTab, "UICheckButtonTemplate")
 clickThroughCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 150, 0)
 local clickThroughLabel = getglobal(clickThroughCheckbox:GetName().."Text")
-clickThroughLabel:SetText("Click-Through")
+clickThroughLabel:SetText(L["Click-Through"])
 clickThroughLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 clickThroughCheckbox:SetScript("OnClick", function()
     GudaPlates.nameplateClickThrough = this:GetChecked() == 1
@@ -372,7 +374,7 @@ clickThroughCheckbox:SetScript("OnClick", function()
 end)
 clickThroughCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Enable this to let clicks pass through nameplates (default: checked)")
+    GameTooltip:SetText(L["Enable this to let clicks pass through nameplates (default: checked)"])
     GameTooltip:Show()
 end)
 clickThroughCheckbox:SetScript("OnLeave", function()
@@ -382,7 +384,7 @@ end)
 local raidMarkCheckbox = CreateFrame("CheckButton", "GudaPlatesRaidMarkCheckbox", generalTab, "UICheckButtonTemplate")
 raidMarkCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 300, 0)
 local raidMarkLabel = getglobal(raidMarkCheckbox:GetName().."Text")
-raidMarkLabel:SetText("Raid Mark Right")
+raidMarkLabel:SetText(L["Raid Mark Right"])
 raidMarkLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 raidMarkCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
@@ -399,7 +401,7 @@ end)
 local swapCheckbox = CreateFrame("CheckButton", "GudaPlatesSwapCheckbox", generalTab, "UICheckButtonTemplate")
 swapCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "TOPLEFT", 450, 0)
 local swapLabel = getglobal(swapCheckbox:GetName().."Text")
-swapLabel:SetText("Swap Name/Debuffs")
+swapLabel:SetText(L["Swap Name/Debuffs"])
 swapLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 swapCheckbox:SetScript("OnClick", function()
     Settings.swapNameDebuff = this:GetChecked() == 1
@@ -412,7 +414,7 @@ end)
 local onlyMyDebuffsCheckbox = CreateFrame("CheckButton", "GudaPlatesOnlyMyDebuffsCheckbox", generalTab, "UICheckButtonTemplate")
 onlyMyDebuffsCheckbox:SetPoint("TOPLEFT", overlapCheckbox, "BOTTOMLEFT", 0, -10)
 local onlyMyDebuffsLabel = getglobal(onlyMyDebuffsCheckbox:GetName().."Text")
-onlyMyDebuffsLabel:SetText("Only My Debuffs")
+onlyMyDebuffsLabel:SetText(L["Only My Debuffs"])
 onlyMyDebuffsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 onlyMyDebuffsCheckbox:SetScript("OnClick", function()
     Settings.showOnlyMyDebuffs = this:GetChecked() == 1
@@ -425,7 +427,7 @@ end)
 local targetGlowCheckbox = CreateFrame("CheckButton", "GudaPlatesTargetGlowCheckbox", generalTab, "UICheckButtonTemplate")
 targetGlowCheckbox:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "TOPLEFT", 150, 0)
 local targetGlowLabel = getglobal(targetGlowCheckbox:GetName().."Text")
-targetGlowLabel:SetText("Target Glow")
+targetGlowLabel:SetText(L["Target Glow"])
 targetGlowLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 targetGlowCheckbox:SetScript("OnClick", function()
     Settings.showTargetGlow = this:GetChecked() == 1
@@ -438,7 +440,7 @@ end)
 local debuffTimerCheckbox = CreateFrame("CheckButton", "GudaPlatesDebuffTimerCheckbox", generalTab, "UICheckButtonTemplate")
 debuffTimerCheckbox:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "TOPLEFT", 300, 0)
 local debuffTimerLabel = getglobal(debuffTimerCheckbox:GetName().."Text")
-debuffTimerLabel:SetText("Debuff Timers")
+debuffTimerLabel:SetText(L["Debuff Timers"])
 debuffTimerLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 debuffTimerCheckbox:SetScript("OnClick", function()
     Settings.showDebuffTimers = this:GetChecked() == 1
@@ -451,7 +453,7 @@ end)
 local showCrittersCheckbox = CreateFrame("CheckButton", "GudaPlatesShowCrittersCheckbox", generalTab, "UICheckButtonTemplate")
 showCrittersCheckbox:SetPoint("TOPLEFT", onlyMyDebuffsCheckbox, "TOPLEFT", 450, 0)
 local showCrittersLabel = getglobal(showCrittersCheckbox:GetName().."Text")
-showCrittersLabel:SetText("Show Critters")
+showCrittersLabel:SetText(L["Show Critters"])
 showCrittersLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 showCrittersCheckbox:SetScript("OnClick", function()
     Settings.showCritterNameplates = this:GetChecked() == 1
@@ -462,7 +464,7 @@ showCrittersCheckbox:SetScript("OnClick", function()
 end)
 showCrittersCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Show nameplates for critters and ambient mobs (default: unchecked)")
+    GameTooltip:SetText(L["Show nameplates for critters and ambient mobs (default: unchecked)"])
     GameTooltip:Show()
 end)
 showCrittersCheckbox:SetScript("OnLeave", function()
@@ -480,7 +482,7 @@ getglobal(debuffSizeSlider:GetName() .. "Low"):SetText("8")
 getglobal(debuffSizeSlider:GetName() .. "High"):SetText("32")
 debuffSizeSlider:SetScript("OnValueChanged", function()
     Settings.debuffIconSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Debuff Icon Size: " .. math_floor(this:GetValue()) .. " px")
+    getglobal(this:GetName() .. "Text"):SetText(L["Debuff Icon Size: "] .. math_floor(this:GetValue()) .. " px")
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlate(plate)
@@ -505,12 +507,12 @@ if isComboClass then
 
     comboPointsHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     comboPointsHeader:SetPoint("TOPLEFT", comboSeparator, "BOTTOMLEFT", 0, -15)
-    comboPointsHeader:SetText("Combo Points (Rogue/Druid)")
+    comboPointsHeader:SetText(L["Combo Points (Rogue/Druid)"])
 
     comboPointsCheckbox = CreateFrame("CheckButton", "GudaPlatesComboPointsCheckbox", generalTab, "UICheckButtonTemplate")
     comboPointsCheckbox:SetPoint("TOPLEFT", comboPointsHeader, "BOTTOMLEFT", 0, -10)
     local comboPointsLabel = getglobal(comboPointsCheckbox:GetName().."Text")
-    comboPointsLabel:SetText("Show Combo Points")
+    comboPointsLabel:SetText(L["Show Combo Points"])
     comboPointsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
     comboPointsCheckbox:SetScript("OnClick", function()
         Settings.showComboPoints = this:GetChecked() == 1
@@ -523,7 +525,7 @@ if isComboClass then
     local comboRoundedCheckbox = CreateFrame("CheckButton", "GudaPlatesComboRoundedCheckbox", generalTab, "UICheckButtonTemplate")
     comboRoundedCheckbox:SetPoint("TOPLEFT", comboPointsCheckbox, "TOPLEFT", 180, 0)
     local comboRoundedLabel = getglobal(comboRoundedCheckbox:GetName().."Text")
-    comboRoundedLabel:SetText("Rounded")
+    comboRoundedLabel:SetText(L["Rounded"])
     comboRoundedLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
     comboRoundedCheckbox:SetScript("OnClick", function()
         Settings.comboPointsRounded = this:GetChecked() == 1
@@ -544,7 +546,7 @@ if isComboClass then
     getglobal(comboPointsSizeSlider:GetName() .. "High"):SetText("20")
     comboPointsSizeSlider:SetScript("OnValueChanged", function()
         Settings.comboPointsSize = this:GetValue()
-        getglobal(this:GetName() .. "Text"):SetText("Combo Point Size: " .. math_floor(this:GetValue()) .. " px")
+        getglobal(this:GetName() .. "Text"):SetText(L["Combo Point Size: "] .. math_floor(this:GetValue()) .. " px")
         SaveSettings()
         for plate, _ in pairs(registry) do
             UpdateNamePlate(plate)
@@ -566,11 +568,11 @@ end
 -- Font Section
 local fontHeader = generalTab:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 fontHeader:SetPoint("TOPLEFT", separator2, "BOTTOMLEFT", 0, -15)
-fontHeader:SetText("Font Settings")
+fontHeader:SetText(L["Font Settings"])
 
 local fontLabel = generalTab:CreateFontString("GudaPlatesFontLabel", "OVERLAY", "GameFontNormal")
 fontLabel:SetPoint("TOPLEFT", fontHeader, "BOTTOMLEFT", 0, -15)
-fontLabel:SetText("Nameplates Font:")
+fontLabel:SetText(L["Nameplates Font:"])
 
 local fontDropdown = CreateFrame("Frame", "GudaPlatesFontDropdown", generalTab, "UIDropDownMenuTemplate")
 fontDropdown:SetPoint("TOPLEFT", fontLabel, "TOPRIGHT", -10, 8)
@@ -613,7 +615,7 @@ scrollFrame:SetScrollChild(scrollContent)
 -- Enemy Section Header
 local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
-enemyHeader:SetText("Enemy Nameplates")
+enemyHeader:SetText(L["Enemy Nameplates"])
 
 -- PvP Enemy No Class Colors Checkbox (inline with header)
 local pvpNoClassColorsCheckbox = CreateFrame("CheckButton", "GudaPlatesPvPNoClassColorsCheckbox", scrollContent, "UICheckButtonTemplate")
@@ -621,7 +623,7 @@ pvpNoClassColorsCheckbox:SetPoint("LEFT", enemyHeader, "RIGHT", 20, 0)
 pvpNoClassColorsCheckbox:SetWidth(24)
 pvpNoClassColorsCheckbox:SetHeight(24)
 local pvpNoClassColorsLabel = getglobal(pvpNoClassColorsCheckbox:GetName().."Text")
-pvpNoClassColorsLabel:SetText("No class colors for PvP enemies")
+pvpNoClassColorsLabel:SetText(L["No class colors for PvP enemies"])
 pvpNoClassColorsLabel:SetFont("Fonts\\FRIZQT__.TTF", 10)
 pvpNoClassColorsCheckbox:SetScript("OnClick", function()
     Settings.pvpEnemyNoClassColors = (this:GetChecked() == 1)
@@ -629,10 +631,10 @@ pvpNoClassColorsCheckbox:SetScript("OnClick", function()
 end)
 pvpNoClassColorsCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Disable Class Colors for PvP Enemies")
-    GameTooltip:AddLine("When enabled, PvP-flagged enemy players will have", 1, 1, 1)
-    GameTooltip:AddLine("red healthbar instead of class colors.", 1, 1, 1)
-    GameTooltip:AddLine("Requires SuperWoW for player detection.", 0.7, 0.7, 0.7)
+    GameTooltip:SetText(L["Disable Class Colors for PvP Enemies"])
+    GameTooltip:AddLine(L["When enabled, PvP-flagged enemy players will have"], 1, 1, 1)
+    GameTooltip:AddLine(L["red healthbar instead of class colors."], 1, 1, 1)
+    GameTooltip:AddLine(L["Requires SuperWoW for player detection."], 0.7, 0.7, 0.7)
     GameTooltip:Show()
 end)
 pvpNoClassColorsCheckbox:SetScript("OnLeave", function()
@@ -651,7 +653,7 @@ getglobal(heightSlider:GetName() .. "Low"):SetText("4")
 getglobal(heightSlider:GetName() .. "High"):SetText("25")
 heightSlider:SetScript("OnValueChanged", function()
     Settings.healthbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Healthbar Height: "] .. Settings.healthbarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -670,7 +672,7 @@ getglobal(widthSlider:GetName() .. "Low"):SetText("72")
 getglobal(widthSlider:GetName() .. "High"):SetText("150")
 widthSlider:SetScript("OnValueChanged", function()
     Settings.healthbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    getglobal(this:GetName() .. "Text"):SetText(L["Healthbar Width: "] .. Settings.healthbarWidth)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -689,7 +691,7 @@ getglobal(healthFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(healthFontSlider:GetName() .. "High"):SetText("20")
 healthFontSlider:SetScript("OnValueChanged", function()
     Settings.healthFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Health Font Size: "] .. Settings.healthFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -708,7 +710,7 @@ getglobal(levelFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(levelFontSlider:GetName() .. "High"):SetText("20")
 levelFontSlider:SetScript("OnValueChanged", function()
     Settings.levelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Level Font Size: "] .. Settings.levelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -727,7 +729,7 @@ getglobal(nameFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(nameFontSlider:GetName() .. "High"):SetText("20")
 nameFontSlider:SetScript("OnValueChanged", function()
     Settings.nameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Name Font Size: "] .. Settings.nameFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -737,13 +739,13 @@ end)
 -- Health Text Position Dropdown
 local healthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 healthPosLabel:SetPoint("TOPLEFT", nameFontSlider, "BOTTOMLEFT", 0, -15)
-healthPosLabel:SetText("Health Text Position:")
+healthPosLabel:SetText(L["Health Text Position:"])
 
 local healthPosDropdown = CreateFrame("Frame", "GudaPlatesHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 healthPosDropdown:SetPoint("TOPLEFT", healthPosLabel, "TOPRIGHT", -10, 8)
 
 local healthPosOptions = {"LEFT", "CENTER", "RIGHT"}
-local healthPosLabels = {LEFT = "Left", CENTER = "Center", RIGHT = "Right"}
+local healthPosLabels = {LEFT = L["Left"], CENTER = L["Center"], RIGHT = L["Right"]}
 
 local function HealthPosDropdown_OnClick()
     Settings.healthTextPosition = this.value
@@ -771,21 +773,21 @@ UIDropDownMenu_SetSelectedValue(healthPosDropdown, Settings.healthTextPosition)
 -- Health Text Format Dropdown
 local healthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 healthFormatLabel:SetPoint("LEFT", healthPosDropdown, "RIGHT", 10, 0)
-healthFormatLabel:SetText("Health Text Format:")
+healthFormatLabel:SetText(L["Health Text Format:"])
 
 local healthFormatDropdown = CreateFrame("Frame", "GudaPlatesHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 healthFormatDropdown:SetPoint("LEFT", healthFormatLabel, "RIGHT", -10, -3)
 
 local healthFormatOptions = {
-    {value = 0, text = "None"},
-    {value = 1, text = "Percent"},
-    {value = 2, text = "Current HP"},
-    {value = 3, text = "HP (Percent%)"},
-    {value = 4, text = "Current - Max"},
-    {value = 5, text = "Current - Max (%)"},
-    {value = 6, text = "Name - %"},
-    {value = 7, text = "Name - HP(%)"},
-    {value = 8, text = "Name"},
+    {value = 0, text = L["None"]},
+    {value = 1, text = L["Percent"]},
+    {value = 2, text = L["Current HP"]},
+    {value = 3, text = L["HP (Percent%)"]},
+    {value = 4, text = L["Current - Max"]},
+    {value = 5, text = L["Current - Max (%)"]},
+    {value = 6, text = L["Name - %"]},
+    {value = 7, text = L["Name - HP(%)"]},
+    {value = 8, text = L["Name"]},
 }
 
 local function HealthFormatDropdown_OnClick()
@@ -821,7 +823,7 @@ separator:SetPoint("TOPLEFT", healthPosLabel, "BOTTOMLEFT", 0, -35)
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
-friendlyHeader:SetText("Friendly Nameplates")
+friendlyHeader:SetText(L["Friendly Nameplates"])
 
 -- PvP Enemy As Friendly Checkbox (inline with header)
 local pvpAsFriendlyCheckbox = CreateFrame("CheckButton", "GudaPlatesPvPAsFriendlyCheckbox", scrollContent, "UICheckButtonTemplate")
@@ -829,7 +831,7 @@ pvpAsFriendlyCheckbox:SetPoint("LEFT", friendlyHeader, "RIGHT", 20, 0)
 pvpAsFriendlyCheckbox:SetWidth(24)
 pvpAsFriendlyCheckbox:SetHeight(24)
 local pvpAsFriendlyLabel = getglobal(pvpAsFriendlyCheckbox:GetName().."Text")
-pvpAsFriendlyLabel:SetText("Use for PvP enemies")
+pvpAsFriendlyLabel:SetText(L["Use for PvP enemies"])
 pvpAsFriendlyLabel:SetFont("Fonts\\FRIZQT__.TTF", 10)
 pvpAsFriendlyCheckbox:SetScript("OnClick", function()
     Settings.pvpEnemyAsFriendly = (this:GetChecked() == 1)
@@ -840,10 +842,10 @@ pvpAsFriendlyCheckbox:SetScript("OnClick", function()
 end)
 pvpAsFriendlyCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("PvP Enemies Use Friendly Style")
-    GameTooltip:AddLine("When enabled, PvP-flagged enemy players will use", 1, 1, 1)
-    GameTooltip:AddLine("the friendly nameplate style.", 1, 1, 1)
-    GameTooltip:AddLine("Requires SuperWoW for player detection.", 0.7, 0.7, 0.7)
+    GameTooltip:SetText(L["PvP Enemies Use Friendly Style"])
+    GameTooltip:AddLine(L["When enabled, PvP-flagged enemy players will use"], 1, 1, 1)
+    GameTooltip:AddLine(L["the friendly nameplate style."], 1, 1, 1)
+    GameTooltip:AddLine(L["Requires SuperWoW for player detection."], 0.7, 0.7, 0.7)
     GameTooltip:Show()
 end)
 pvpAsFriendlyCheckbox:SetScript("OnLeave", function()
@@ -862,7 +864,7 @@ getglobal(friendHeightSlider:GetName() .. "Low"):SetText("4")
 getglobal(friendHeightSlider:GetName() .. "High"):SetText("25")
 friendHeightSlider:SetScript("OnValueChanged", function()
     Settings.friendHealthbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Height: " .. Settings.friendHealthbarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Healthbar Height: "] .. Settings.friendHealthbarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -881,7 +883,7 @@ getglobal(friendWidthSlider:GetName() .. "Low"):SetText("72")
 getglobal(friendWidthSlider:GetName() .. "High"):SetText("150")
 friendWidthSlider:SetScript("OnValueChanged", function()
     Settings.friendHealthbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Healthbar Width: " .. Settings.friendHealthbarWidth)
+    getglobal(this:GetName() .. "Text"):SetText(L["Healthbar Width: "] .. Settings.friendHealthbarWidth)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -900,7 +902,7 @@ getglobal(friendHealthFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(friendHealthFontSlider:GetName() .. "High"):SetText("20")
 friendHealthFontSlider:SetScript("OnValueChanged", function()
     Settings.friendHealthFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Health Font Size: " .. Settings.friendHealthFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Health Font Size: "] .. Settings.friendHealthFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -919,7 +921,7 @@ getglobal(friendLevelFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(friendLevelFontSlider:GetName() .. "High"):SetText("20")
 friendLevelFontSlider:SetScript("OnValueChanged", function()
     Settings.friendLevelFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Level Font Size: " .. Settings.friendLevelFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Level Font Size: "] .. Settings.friendLevelFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -938,7 +940,7 @@ getglobal(friendNameFontSlider:GetName() .. "Low"):SetText("6")
 getglobal(friendNameFontSlider:GetName() .. "High"):SetText("20")
 friendNameFontSlider:SetScript("OnValueChanged", function()
     Settings.friendNameFontSize = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Name Font Size: " .. Settings.friendNameFontSize)
+    getglobal(this:GetName() .. "Text"):SetText(L["Name Font Size: "] .. Settings.friendNameFontSize)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -948,7 +950,7 @@ end)
 -- Friend Health Text Position Dropdown
 local friendHealthPosLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 friendHealthPosLabel:SetPoint("TOPLEFT", friendNameFontSlider, "BOTTOMLEFT", 0, -15)
-friendHealthPosLabel:SetText("Health Text Position:")
+friendHealthPosLabel:SetText(L["Health Text Position:"])
 
 local friendHealthPosDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 friendHealthPosDropdown:SetPoint("TOPLEFT", friendHealthPosLabel, "TOPRIGHT", -10, 8)
@@ -979,7 +981,7 @@ UIDropDownMenu_SetSelectedValue(friendHealthPosDropdown, Settings.friendHealthTe
 -- Friend Health Text Format Dropdown
 local friendHealthFormatLabel = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 friendHealthFormatLabel:SetPoint("LEFT", friendHealthPosDropdown, "RIGHT", 10, 0)
-friendHealthFormatLabel:SetText("Health Text Format:")
+friendHealthFormatLabel:SetText(L["Health Text Format:"])
 
 local friendHealthFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendHealthFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 friendHealthFormatDropdown:SetPoint("LEFT", friendHealthFormatLabel, "RIGHT", -10, -3)
@@ -995,15 +997,15 @@ end
 
 local function FriendHealthFormatDropdown_Initialize()
     local healthFormatOptions = {
-        {value = 0, text = "None"},
-        {value = 1, text = "Percent"},
-        {value = 2, text = "Current HP"},
-        {value = 3, text = "HP (Percent%)"},
-        {value = 4, text = "Current - Max"},
-        {value = 5, text = "Current - Max (%)"},
-        {value = 6, text = "Name - %"},
-        {value = 7, text = "Name - HP(%)"},
-        {value = 8, text = "Name"},
+        {value = 0, text = L["None"]},
+        {value = 1, text = L["Percent"]},
+        {value = 2, text = L["Current HP"]},
+        {value = 3, text = L["HP (Percent%)"]},
+        {value = 4, text = L["Current - Max"]},
+        {value = 5, text = L["Current - Max (%)"]},
+        {value = 6, text = L["Name - %"]},
+        {value = 7, text = L["Name - HP(%)"]},
+        {value = 8, text = L["Name"]},
     }
     for _, opt in ipairs(healthFormatOptions) do
         local info = {}
@@ -1032,13 +1034,13 @@ scrollFrame:SetScrollChild(scrollContent)
 -- Enemy Section Header
 local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
-enemyHeader:SetText("Enemy Nameplates")
+enemyHeader:SetText(L["Enemy Nameplates"])
 
 -- Show Mana Bar Checkbox
 local manaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesManaBarCheckbox", scrollContent, "UICheckButtonTemplate")
 manaBarCheckbox:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -10)
 local manaBarLabel = getglobal(manaBarCheckbox:GetName().."Text")
-manaBarLabel:SetText("Show Mana Bar")
+manaBarLabel:SetText(L["Show Mana Bar"])
 manaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Manabar Height Slider
@@ -1053,7 +1055,7 @@ getglobal(manaHeightSlider:GetName() .. "Low"):SetText("2")
 getglobal(manaHeightSlider:GetName() .. "High"):SetText("10")
 manaHeightSlider:SetScript("OnValueChanged", function()
     Settings.manabarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Manabar Height: "] .. Settings.manabarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1063,7 +1065,7 @@ end)
 -- Mana Text Position Dropdown
 local manaPosLabel = scrollContent:CreateFontString("GudaPlatesManaPosLabel", "OVERLAY", "GameFontNormal")
 manaPosLabel:SetPoint("TOPLEFT", manaHeightSlider, "BOTTOMLEFT", 0, -15)
-manaPosLabel:SetText("Mana Text Position:")
+manaPosLabel:SetText(L["Mana Text Position:"])
 
 local manaPosDropdown = CreateFrame("Frame", "GudaPlatesManaPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 manaPosDropdown:SetPoint("TOPLEFT", manaPosLabel, "TOPRIGHT", -10, 8)
@@ -1079,9 +1081,9 @@ end
 
 local function ManaPosDropdown_Initialize()
     local opts = {
-        {value = "LEFT", text = "Left"},
-        {value = "CENTER", text = "Center"},
-        {value = "RIGHT", text = "Right"},
+        {value = "LEFT", text = L["Left"]},
+        {value = "CENTER", text = L["Center"]},
+        {value = "RIGHT", text = L["Right"]},
     }
     for _, opt in ipairs(opts) do
         local info = {}
@@ -1099,7 +1101,7 @@ UIDropDownMenu_SetSelectedValue(manaPosDropdown, Settings.manaTextPosition)
 -- Mana Text Format Dropdown
 local manaFormatLabel = scrollContent:CreateFontString("GudaPlatesManaFormatLabel", "OVERLAY", "GameFontNormal")
 manaFormatLabel:SetPoint("LEFT", manaPosDropdown, "RIGHT", 10, 0)
-manaFormatLabel:SetText("Mana Text Format:")
+manaFormatLabel:SetText(L["Mana Text Format:"])
 
 local manaFormatDropdown = CreateFrame("Frame", "GudaPlatesManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 manaFormatDropdown:SetPoint("LEFT", manaFormatLabel, "RIGHT", -10, -3)
@@ -1115,10 +1117,10 @@ end
 
 local function ManaFormatDropdown_Initialize()
     local opts = {
-        {value = 0, text = "None"},
-        {value = 1, text = "Percent"},
-        {value = 2, text = "Current Mana"},
-        {value = 3, text = "Mana (Percent%)"},
+        {value = 0, text = L["None"]},
+        {value = 1, text = L["Percent"]},
+        {value = 2, text = L["Current Mana"]},
+        {value = 3, text = L["Mana (Percent%)"]},
     }
     for _, opt in ipairs(opts) do
         local info = {}
@@ -1143,13 +1145,13 @@ separator:SetPoint("TOPLEFT", manaPosLabel, "BOTTOMLEFT", 0, -35)
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
-friendlyHeader:SetText("Friendly Nameplates")
+friendlyHeader:SetText(L["Friendly Nameplates"])
 
 -- Friend Show Mana Bar Checkbox
 local friendManaBarCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendManaBarCheckbox", scrollContent, "UICheckButtonTemplate")
 friendManaBarCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
 local friendManaBarLabel = getglobal(friendManaBarCheckbox:GetName().."Text")
-friendManaBarLabel:SetText("Show Mana Bar")
+friendManaBarLabel:SetText(L["Show Mana Bar"])
 friendManaBarLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Friend Manabar Height Slider
@@ -1164,7 +1166,7 @@ getglobal(friendManaHeightSlider:GetName() .. "Low"):SetText("2")
 getglobal(friendManaHeightSlider:GetName() .. "High"):SetText("10")
 friendManaHeightSlider:SetScript("OnValueChanged", function()
     Settings.friendManabarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Manabar Height: " .. Settings.friendManabarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Manabar Height: "] .. Settings.friendManabarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1174,7 +1176,7 @@ end)
 -- Friend Mana Text Position Dropdown
 local friendManaPosLabel = scrollContent:CreateFontString("GudaPlatesFriendManaPosLabel", "OVERLAY", "GameFontNormal")
 friendManaPosLabel:SetPoint("TOPLEFT", friendManaHeightSlider, "BOTTOMLEFT", 0, -15)
-friendManaPosLabel:SetText("Mana Text Position:")
+friendManaPosLabel:SetText(L["Mana Text Position:"])
 
 local friendManaPosDropdown = CreateFrame("Frame", "GudaPlatesFriendManaPosDropdown", scrollContent, "UIDropDownMenuTemplate")
 friendManaPosDropdown:SetPoint("TOPLEFT", friendManaPosLabel, "TOPRIGHT", -10, 8)
@@ -1190,9 +1192,9 @@ end
 
 local function FriendManaPosDropdown_Initialize()
     local opts = {
-        {value = "LEFT", text = "Left"},
-        {value = "CENTER", text = "Center"},
-        {value = "RIGHT", text = "Right"},
+        {value = "LEFT", text = L["Left"]},
+        {value = "CENTER", text = L["Center"]},
+        {value = "RIGHT", text = L["Right"]},
     }
     for _, opt in ipairs(opts) do
         local info = {}
@@ -1210,7 +1212,7 @@ UIDropDownMenu_SetSelectedValue(friendManaPosDropdown, Settings.friendManaTextPo
 -- Friend Mana Text Format Dropdown
 local friendManaFormatLabel = scrollContent:CreateFontString("GudaPlatesFriendManaFormatLabel", "OVERLAY", "GameFontNormal")
 friendManaFormatLabel:SetPoint("LEFT", friendManaPosDropdown, "RIGHT", 10, 0)
-friendManaFormatLabel:SetText("Mana Text Format:")
+friendManaFormatLabel:SetText(L["Mana Text Format:"])
 
 local friendManaFormatDropdown = CreateFrame("Frame", "GudaPlatesFriendManaFormatDropdown", scrollContent, "UIDropDownMenuTemplate")
 friendManaFormatDropdown:SetPoint("LEFT", friendManaFormatLabel, "RIGHT", -10, -3)
@@ -1226,10 +1228,10 @@ end
 
 local function FriendManaFormatDropdown_Initialize()
     local opts = {
-        {value = 0, text = "None"},
-        {value = 1, text = "Percent"},
-        {value = 2, text = "Current Mana"},
-        {value = 3, text = "Mana (Percent%)"},
+        {value = 0, text = L["None"]},
+        {value = 1, text = L["Percent"]},
+        {value = 2, text = L["Current Mana"]},
+        {value = 3, text = L["Mana (Percent%)"]},
     }
     for _, opt in ipairs(opts) do
         local info = {}
@@ -1288,9 +1290,9 @@ manaBarCheckbox:SetScript("OnClick", function()
 end)
 manaBarCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Show Mana Bar (Enemy)")
-    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
-    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:AddLine(L["Show Mana Bar (Enemy)"])
+    GameTooltip:AddLine(L["Shows a mana bar below the health bar"], 1, 1, 1, 1)
+    GameTooltip:AddLine(L["for units with mana. Requires SuperWoW."], 1, 1, 1, 1)
     GameTooltip:Show()
 end)
 manaBarCheckbox:SetScript("OnLeave", function()
@@ -1308,9 +1310,9 @@ friendManaBarCheckbox:SetScript("OnClick", function()
 end)
 friendManaBarCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Show Mana Bar (Friendly)")
-    GameTooltip:AddLine("Shows a mana bar below the health bar", 1, 1, 1, 1)
-    GameTooltip:AddLine("for units with mana. Requires SuperWoW.", 1, 1, 1, 1)
+    GameTooltip:AddLine(L["Show Mana Bar (Friendly)"])
+    GameTooltip:AddLine(L["Shows a mana bar below the health bar"], 1, 1, 1, 1)
+    GameTooltip:AddLine(L["for units with mana. Requires SuperWoW."], 1, 1, 1, 1)
     GameTooltip:Show()
 end)
 friendManaBarCheckbox:SetScript("OnLeave", function()
@@ -1331,13 +1333,13 @@ scrollFrame:SetScrollChild(scrollContent)
 -- Enemy Section Header
 local enemyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 enemyHeader:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 5, -5)
-enemyHeader:SetText("Enemy Nameplates")
+enemyHeader:SetText(L["Enemy Nameplates"])
 
 -- Show Spell Icon Checkbox
 local castbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIconCheckbox", scrollContent, "UICheckButtonTemplate")
 castbarIconCheckbox:SetPoint("TOPLEFT", enemyHeader, "BOTTOMLEFT", 0, -10)
 local castbarIconLabel = getglobal(castbarIconCheckbox:GetName().."Text")
-castbarIconLabel:SetText("Show Spell Icon")
+castbarIconLabel:SetText(L["Show Spell Icon"])
 castbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 castbarIconCheckbox:SetScript("OnClick", function()
     Settings.showCastbarIcon = this:GetChecked() == 1
@@ -1359,7 +1361,7 @@ getglobal(castbarHeightSlider:GetName() .. "Low"):SetText("6")
 getglobal(castbarHeightSlider:GetName() .. "High"):SetText("20")
 castbarHeightSlider:SetScript("OnValueChanged", function()
     Settings.castbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Castbar Height: "] .. Settings.castbarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1370,7 +1372,7 @@ end)
 local castbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesCastbarIndependentCheckbox", scrollContent, "UICheckButtonTemplate")
 castbarIndependentCheckbox:SetPoint("TOPLEFT", castbarHeightSlider, "BOTTOMLEFT", 0, -15)
 local castbarIndependentLabel = getglobal(castbarIndependentCheckbox:GetName().."Text")
-castbarIndependentLabel:SetText("Independent Width from Healthbar")
+castbarIndependentLabel:SetText(L["Independent Width from Healthbar"])
 castbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 
 -- Castbar Width Slider
@@ -1385,7 +1387,7 @@ getglobal(castbarWidthSlider:GetName() .. "Low"):SetText("72")
 getglobal(castbarWidthSlider:GetName() .. "High"):SetText("200")
 castbarWidthSlider:SetScript("OnValueChanged", function()
     Settings.castbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    getglobal(this:GetName() .. "Text"):SetText(L["Castbar Width: "] .. Settings.castbarWidth)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1430,13 +1432,13 @@ separator:SetPoint("TOPLEFT", castbarWidthSlider, "BOTTOMLEFT", 0, -15)
 -- Friendly Section Header
 local friendlyHeader = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 friendlyHeader:SetPoint("TOPLEFT", separator, "BOTTOMLEFT", 0, -15)
-friendlyHeader:SetText("Friendly Nameplates")
+friendlyHeader:SetText(L["Friendly Nameplates"])
 
 -- Friend Show Spell Icon Checkbox
 local friendCastbarIconCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendCastbarIconCheckbox", scrollContent, "UICheckButtonTemplate")
 friendCastbarIconCheckbox:SetPoint("TOPLEFT", friendlyHeader, "BOTTOMLEFT", 0, -10)
 local friendCastbarIconLabel = getglobal(friendCastbarIconCheckbox:GetName().."Text")
-friendCastbarIconLabel:SetText("Show Spell Icon")
+friendCastbarIconLabel:SetText(L["Show Spell Icon"])
 friendCastbarIconLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 friendCastbarIconCheckbox:SetScript("OnClick", function()
     Settings.friendShowCastbarIcon = this:GetChecked() == 1
@@ -1458,7 +1460,7 @@ getglobal(friendCastbarHeightSlider:GetName() .. "Low"):SetText("6")
 getglobal(friendCastbarHeightSlider:GetName() .. "High"):SetText("20")
 friendCastbarHeightSlider:SetScript("OnValueChanged", function()
     Settings.friendCastbarHeight = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Castbar Height: " .. Settings.friendCastbarHeight)
+    getglobal(this:GetName() .. "Text"):SetText(L["Castbar Height: "] .. Settings.friendCastbarHeight)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1469,7 +1471,7 @@ end)
 local friendCastbarIndependentCheckbox = CreateFrame("CheckButton", "GudaPlatesFriendCastbarIndependentCheckbox", scrollContent, "UICheckButtonTemplate")
 friendCastbarIndependentCheckbox:SetPoint("TOPLEFT", friendCastbarHeightSlider, "BOTTOMLEFT", 0, -15)
 local friendCastbarIndependentLabel = getglobal(friendCastbarIndependentCheckbox:GetName().."Text")
-friendCastbarIndependentLabel:SetText("Independent Width from Healthbar")
+friendCastbarIndependentLabel:SetText(L["Independent Width from Healthbar"])
 friendCastbarIndependentLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 friendCastbarIndependentCheckbox:SetScript("OnClick", function()
     Settings.friendCastbarIndependent = this:GetChecked() == 1
@@ -1492,7 +1494,7 @@ getglobal(friendCastbarWidthSlider:GetName() .. "Low"):SetText("72")
 getglobal(friendCastbarWidthSlider:GetName() .. "High"):SetText("200")
 friendCastbarWidthSlider:SetScript("OnValueChanged", function()
     Settings.friendCastbarWidth = this:GetValue()
-    getglobal(this:GetName() .. "Text"):SetText("Castbar Width: " .. Settings.friendCastbarWidth)
+    getglobal(this:GetName() .. "Text"):SetText(L["Castbar Width: "] .. Settings.friendCastbarWidth)
     SaveSettings()
     for plate, _ in pairs(registry) do
         UpdateNamePlateDimensions(plate)
@@ -1506,7 +1508,7 @@ end)
 local tankCheckbox = CreateFrame("CheckButton", "GudaPlatesTankCheckbox", colorsTab, "UICheckButtonTemplate")
 tankCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -10)
 local tankLabel = getglobal(tankCheckbox:GetName().."Text")
-tankLabel:SetText("Tank Mode")
+tankLabel:SetText(L["Tank Mode"])
 tankLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 tankCheckbox:SetScript("OnClick", function()
     if this:GetChecked() == 1 then
@@ -1523,9 +1525,9 @@ tankCheckbox:SetScript("OnClick", function()
 end)
 tankCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Tank Mode")
-    GameTooltip:AddLine("If unchecked, you are in DPS/Healer mode.", 1, 1, 1, 1)
-    GameTooltip:AddLine("Setting is shared with raid/party members.", 0.7, 0.7, 0.7, 1)
+    GameTooltip:AddLine(L["Tank Mode"])
+    GameTooltip:AddLine(L["If unchecked, you are in DPS/Healer mode."], 1, 1, 1, 1)
+    GameTooltip:AddLine(L["Setting is shared with raid/party members."], 0.7, 0.7, 0.7, 1)
     GameTooltip:Show()
 end)
 tankCheckbox:SetScript("OnLeave", function()
@@ -1535,35 +1537,35 @@ end)
 -- DPS Colors Section
 local dpsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 dpsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -50)
-dpsHeader:SetText("|cff00ff00DPS/Healer Colors:|r")
+dpsHeader:SetText("|cff00ff00" .. L["DPS/Healer Colors:"] .. "|r")
 
-CreateColorSwatch(colorsTab, 5, -75, "Aggro (Bad)", THREAT_COLORS.DPS, "AGGRO")
-CreateColorSwatch(colorsTab, 5, -100, "High Threat (Warning)", THREAT_COLORS.DPS, "HIGH_THREAT")
-CreateColorSwatch(colorsTab, 5, -125, "No Aggro (Good)", THREAT_COLORS.DPS, "NO_AGGRO")
+CreateColorSwatch(colorsTab, 5, -75, L["Aggro (Bad)"], THREAT_COLORS.DPS, "AGGRO")
+CreateColorSwatch(colorsTab, 5, -100, L["High Threat (Warning)"], THREAT_COLORS.DPS, "HIGH_THREAT")
+CreateColorSwatch(colorsTab, 5, -125, L["No Aggro (Good)"], THREAT_COLORS.DPS, "NO_AGGRO")
 
 -- Tank Colors Section
 local tankHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 tankHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -50)
-tankHeader:SetText("|cff00ff00Tank Colors:|r")
+tankHeader:SetText("|cff00ff00" .. L["Tank Colors:"] .. "|r")
 
-CreateColorSwatch(colorsTab, 320, -75, "Has Aggro (Good)", THREAT_COLORS.TANK, "AGGRO")
-CreateColorSwatch(colorsTab, 320, -100, "Other Tank Aggro", THREAT_COLORS.TANK, "OTHER_TANK")
-CreateColorSwatch(colorsTab, 320, -125, "Losing Aggro (Warning)", THREAT_COLORS.TANK, "LOSING_AGGRO")
-CreateColorSwatch(colorsTab, 320, -150, "No Aggro (Bad)", THREAT_COLORS.TANK, "NO_AGGRO")
+CreateColorSwatch(colorsTab, 320, -75, L["Has Aggro (Good)"], THREAT_COLORS.TANK, "AGGRO")
+CreateColorSwatch(colorsTab, 320, -100, L["Other Tank Aggro"], THREAT_COLORS.TANK, "OTHER_TANK")
+CreateColorSwatch(colorsTab, 320, -125, L["Losing Aggro (Warning)"], THREAT_COLORS.TANK, "LOSING_AGGRO")
+CreateColorSwatch(colorsTab, 320, -150, L["No Aggro (Bad)"], THREAT_COLORS.TANK, "NO_AGGRO")
 
 -- Misc Colors Section
 local miscHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 miscHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -200)
-miscHeader:SetText("|cff00ff00Other Colors:|r")
+miscHeader:SetText("|cff00ff00" .. L["Other Colors:"] .. "|r")
 
-CreateColorSwatch(colorsTab, 5, -225, "Unit Tapped", THREAT_COLORS, "TAPPED")
-CreateColorSwatch(colorsTab, 5, -250, "Stun", THREAT_COLORS, "STUN")
-CreateColorSwatch(colorsTab, 5, -275, "Mana Bar", THREAT_COLORS, "MANA_BAR")
+CreateColorSwatch(colorsTab, 5, -225, L["Unit Tapped"], THREAT_COLORS, "TAPPED")
+CreateColorSwatch(colorsTab, 5, -250, L["Stun"], THREAT_COLORS, "STUN")
+CreateColorSwatch(colorsTab, 5, -275, L["Mana Bar"], THREAT_COLORS, "MANA_BAR")
 
 -- Target Glow Color Swatch (uses Settings table directly)
 local targetGlowSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 targetGlowSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -305)
-targetGlowSwatchLabel:SetText("Target Glow")
+targetGlowSwatchLabel:SetText(L["Target Glow"])
 
 local targetGlowSwatch = CreateFrame("Button", nil, colorsTab)
 targetGlowSwatch:SetWidth(20)
@@ -1604,7 +1606,7 @@ end)
 
 targetGlowSwatch:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change target glow color")
+    GameTooltip:AddLine(L["Click to change target glow color"])
     GameTooltip:Show()
 end)
 
@@ -1615,7 +1617,7 @@ end)
 -- Castbar Color Swatch
 local castbarSwatchLabel = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 castbarSwatchLabel:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 5, -330)
-castbarSwatchLabel:SetText("Castbar")
+castbarSwatchLabel:SetText(L["Castbar"])
 
 local castbarSwatch = CreateFrame("Button", nil, colorsTab)
 castbarSwatch:SetWidth(20)
@@ -1656,7 +1658,7 @@ end)
 
 castbarSwatch:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:AddLine("Click to change castbar color")
+    GameTooltip:AddLine(L["Click to change castbar color"])
     GameTooltip:Show()
 end)
 
@@ -1667,18 +1669,18 @@ end)
 -- Text Colors Section
 local textColorsHeader = colorsTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 textColorsHeader:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -200)
-textColorsHeader:SetText("|cff00ff00Text Colors:|r")
+textColorsHeader:SetText("|cff00ff00" .. L["Text Colors:"] .. "|r")
 
-CreateColorSwatch(colorsTab, 320, -225, "Health Text", Settings, "healthTextColor")
-CreateColorSwatch(colorsTab, 320, -250, "Mana Text", Settings, "manaTextColor")
-CreateColorSwatch(colorsTab, 320, -275, "Name", Settings, "nameColor")
-CreateColorSwatch(colorsTab, 320, -300, "Level", Settings, "levelColor")
+CreateColorSwatch(colorsTab, 320, -225, L["Health Text"], Settings, "healthTextColor")
+CreateColorSwatch(colorsTab, 320, -250, L["Mana Text"], Settings, "manaTextColor")
+CreateColorSwatch(colorsTab, 320, -275, L["Name"], Settings, "nameColor")
+CreateColorSwatch(colorsTab, 320, -300, L["Level"], Settings, "levelColor")
 
 -- Level difficulty colors checkbox
 local levelDiffColorsCheckbox = CreateFrame("CheckButton", "GudaPlatesLevelDiffColorsCheckbox", colorsTab, "UICheckButtonTemplate")
 levelDiffColorsCheckbox:SetPoint("TOPLEFT", colorsTab, "TOPLEFT", 320, -330)
 local levelDiffColorsLabel = getglobal(levelDiffColorsCheckbox:GetName().."Text")
-levelDiffColorsLabel:SetText("Level Difficulty Colors")
+levelDiffColorsLabel:SetText(L["Level Difficulty Colors"])
 levelDiffColorsLabel:SetFont("Fonts\\FRIZQT__.TTF", 11)
 levelDiffColorsCheckbox:SetScript("OnClick", function()
     Settings.useLevelDiffColors = this:GetChecked() == 1
@@ -1689,13 +1691,13 @@ levelDiffColorsCheckbox:SetScript("OnClick", function()
 end)
 levelDiffColorsCheckbox:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Level Difficulty Colors")
-    GameTooltip:AddLine("Colors level text based on difficulty:", 1, 1, 1)
-    GameTooltip:AddLine("|cff999999Grey|r = Trivial (much lower level)", 0.6, 0.6, 0.6)
-    GameTooltip:AddLine("|cff00ff00Green|r = Easy (lower level)", 0.1, 1.0, 0.1)
-    GameTooltip:AddLine("|cffffff00Yellow|r = Normal (same level)", 1.0, 1.0, 0)
-    GameTooltip:AddLine("|cffff8000Orange|r = Difficult (higher level)", 1.0, 0.5, 0)
-    GameTooltip:AddLine("|cffff1a1aRed|r = Very Difficult (5+ levels higher)", 1.0, 0.1, 0.1)
+    GameTooltip:SetText(L["Level Difficulty Colors"])
+    GameTooltip:AddLine(L["Colors level text based on difficulty:"], 1, 1, 1)
+    GameTooltip:AddLine("|cff999999" .. L["Grey"] .. "|r = " .. L["Trivial (much lower level)"], 0.6, 0.6, 0.6)
+    GameTooltip:AddLine("|cff00ff00" .. L["Green"] .. "|r = " .. L["Easy (lower level)"], 0.1, 1.0, 0.1)
+    GameTooltip:AddLine("|cffffff00" .. L["Yellow"] .. "|r = " .. L["Normal (same level)"], 1.0, 1.0, 0)
+    GameTooltip:AddLine("|cffff8000" .. L["Orange"] .. "|r = " .. L["Difficult (higher level)"], 1.0, 0.5, 0)
+    GameTooltip:AddLine("|cffff1a1a" .. L["Red"] .. "|r = " .. L["Very Difficult (5+ levels higher)"], 1.0, 0.1, 0.1)
     GameTooltip:Show()
 end)
 levelDiffColorsCheckbox:SetScript("OnLeave", function()
@@ -1711,21 +1713,21 @@ optionsFrame:SetScript("OnShow", function()
     if currentAlpha == nil then currentAlpha = 0.9 end
     local currentTransparency = 1 - currentAlpha
     getglobal("GudaPlatesOptionsTransparencySlider"):SetValue(currentTransparency)
-    getglobal("GudaPlatesOptionsTransparencySliderText"):SetText("Background Transparency: " .. math_floor(currentTransparency * 100) .. "%")
+    getglobal("GudaPlatesOptionsTransparencySliderText"):SetText(L["Background Transparency: "] .. math_floor(currentTransparency * 100) .. "%")
     getglobal("GudaPlatesHideBorderCheckbox"):SetChecked(Settings.hideOptionsBorder)
     getglobal("GudaPlatesOverlapCheckbox"):SetChecked(GudaPlates.nameplateOverlap)
     getglobal("GudaPlatesClickThroughCheckbox"):SetChecked(GudaPlates.nameplateClickThrough)
     getglobal("GudaPlatesLevelFontSlider"):SetValue(Settings.levelFontSize)
-    getglobal("GudaPlatesLevelFontSliderText"):SetText("Level Font Size: " .. Settings.levelFontSize)
+    getglobal("GudaPlatesLevelFontSliderText"):SetText(L["Level Font Size: "] .. Settings.levelFontSize)
     getglobal("GudaPlatesNameFontSlider"):SetValue(Settings.nameFontSize)
-    getglobal("GudaPlatesNameFontSliderText"):SetText("Name Font Size: " .. Settings.nameFontSize)
+    getglobal("GudaPlatesNameFontSliderText"):SetText(L["Name Font Size: "] .. Settings.nameFontSize)
     getglobal("GudaPlatesRaidMarkCheckbox"):SetChecked(Settings.raidIconPosition == "RIGHT")
     getglobal("GudaPlatesSwapCheckbox"):SetChecked(Settings.swapNameDebuff)
     getglobal("GudaPlatesDebuffTimerCheckbox"):SetChecked(Settings.showDebuffTimers)
     getglobal("GudaPlatesShowCrittersCheckbox"):SetChecked(Settings.showCritterNameplates)
     getglobal("GudaPlatesOnlyMyDebuffsCheckbox"):SetChecked(Settings.showOnlyMyDebuffs)
     getglobal("GudaPlatesDebuffSizeSlider"):SetValue(Settings.debuffIconSize)
-    getglobal("GudaPlatesDebuffSizeSliderText"):SetText("Debuff Icon Size: " .. Settings.debuffIconSize .. " px")
+    getglobal("GudaPlatesDebuffSizeSliderText"):SetText(L["Debuff Icon Size: "] .. Settings.debuffIconSize .. " px")
     -- Combo points (only for Rogue/Druid)
     if getglobal("GudaPlatesComboPointsCheckbox") then
         getglobal("GudaPlatesComboPointsCheckbox"):SetChecked(Settings.showComboPoints)
@@ -1735,7 +1737,7 @@ optionsFrame:SetScript("OnShow", function()
     end
     if getglobal("GudaPlatesComboSizeSlider") then
         getglobal("GudaPlatesComboSizeSlider"):SetValue(Settings.comboPointsSize or 12)
-        getglobal("GudaPlatesComboSizeSliderText"):SetText("Combo Point Size: " .. (Settings.comboPointsSize or 12) .. " px")
+        getglobal("GudaPlatesComboSizeSliderText"):SetText(L["Combo Point Size: "] .. (Settings.comboPointsSize or 12) .. " px")
     end
     getglobal("GudaPlatesTargetGlowCheckbox"):SetChecked(Settings.showTargetGlow)
     getglobal("GudaPlatesLevelDiffColorsCheckbox"):SetChecked(Settings.useLevelDiffColors)
@@ -1744,25 +1746,25 @@ optionsFrame:SetScript("OnShow", function()
     getglobal("GudaPlatesPvPNoClassColorsCheckbox"):SetChecked(Settings.pvpEnemyNoClassColors)
     getglobal("GudaPlatesPvPAsFriendlyCheckbox"):SetChecked(Settings.pvpEnemyAsFriendly)
     getglobal("GudaPlatesHeightSlider"):SetValue(Settings.healthbarHeight)
-    getglobal("GudaPlatesHeightSliderText"):SetText("Healthbar Height: " .. Settings.healthbarHeight)
+    getglobal("GudaPlatesHeightSliderText"):SetText(L["Healthbar Height: "] .. Settings.healthbarHeight)
     getglobal("GudaPlatesWidthSlider"):SetValue(Settings.healthbarWidth)
-    getglobal("GudaPlatesWidthSliderText"):SetText("Healthbar Width: " .. Settings.healthbarWidth)
+    getglobal("GudaPlatesWidthSliderText"):SetText(L["Healthbar Width: "] .. Settings.healthbarWidth)
     getglobal("GudaPlatesHealthFontSlider"):SetValue(Settings.healthFontSize)
-    getglobal("GudaPlatesHealthFontSliderText"):SetText("Health Font Size: " .. Settings.healthFontSize)
+    getglobal("GudaPlatesHealthFontSliderText"):SetText(L["Health Font Size: "] .. Settings.healthFontSize)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthPosDropdown"), Settings.healthTextPosition)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesHealthFormatDropdown"), Settings.healthTextFormat)
 
     -- Friendly nameplates
     getglobal("GudaPlatesFriendHeightSlider"):SetValue(Settings.friendHealthbarHeight)
-    getglobal("GudaPlatesFriendHeightSliderText"):SetText("Healthbar Height: " .. Settings.friendHealthbarHeight)
+    getglobal("GudaPlatesFriendHeightSliderText"):SetText(L["Healthbar Height: "] .. Settings.friendHealthbarHeight)
     getglobal("GudaPlatesFriendWidthSlider"):SetValue(Settings.friendHealthbarWidth)
-    getglobal("GudaPlatesFriendWidthSliderText"):SetText("Healthbar Width: " .. Settings.friendHealthbarWidth)
+    getglobal("GudaPlatesFriendWidthSliderText"):SetText(L["Healthbar Width: "] .. Settings.friendHealthbarWidth)
     getglobal("GudaPlatesFriendHealthFontSlider"):SetValue(Settings.friendHealthFontSize)
-    getglobal("GudaPlatesFriendHealthFontSliderText"):SetText("Health Font Size: " .. Settings.friendHealthFontSize)
+    getglobal("GudaPlatesFriendHealthFontSliderText"):SetText(L["Health Font Size: "] .. Settings.friendHealthFontSize)
     getglobal("GudaPlatesFriendLevelFontSlider"):SetValue(Settings.friendLevelFontSize)
-    getglobal("GudaPlatesFriendLevelFontSliderText"):SetText("Level Font Size: " .. Settings.friendLevelFontSize)
+    getglobal("GudaPlatesFriendLevelFontSliderText"):SetText(L["Level Font Size: "] .. Settings.friendLevelFontSize)
     getglobal("GudaPlatesFriendNameFontSlider"):SetValue(Settings.friendNameFontSize)
-    getglobal("GudaPlatesFriendNameFontSliderText"):SetText("Name Font Size: " .. Settings.friendNameFontSize)
+    getglobal("GudaPlatesFriendNameFontSliderText"):SetText(L["Name Font Size: "] .. Settings.friendNameFontSize)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthPosDropdown"), Settings.friendHealthTextPosition)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendHealthFormatDropdown"), Settings.friendHealthTextFormat)
     -- Mana settings
@@ -1770,13 +1772,13 @@ optionsFrame:SetScript("OnShow", function()
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaFormatDropdown"), Settings.manaTextFormat)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesManaPosDropdown"), Settings.manaTextPosition)
     getglobal("GudaPlatesManaHeightSlider"):SetValue(Settings.manabarHeight)
-    getglobal("GudaPlatesManaHeightSliderText"):SetText("Manabar Height: " .. Settings.manabarHeight)
+    getglobal("GudaPlatesManaHeightSliderText"):SetText(L["Manabar Height: "] .. Settings.manabarHeight)
 
     getglobal("GudaPlatesFriendManaBarCheckbox"):SetChecked(Settings.friendShowManaBar)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaFormatDropdown"), Settings.friendManaTextFormat)
     UIDropDownMenu_SetSelectedValue(getglobal("GudaPlatesFriendManaPosDropdown"), Settings.friendManaTextPosition)
     getglobal("GudaPlatesFriendManaHeightSlider"):SetValue(Settings.friendManabarHeight)
-    getglobal("GudaPlatesFriendManaHeightSliderText"):SetText("Manabar Height: " .. Settings.friendManabarHeight)
+    getglobal("GudaPlatesFriendManaHeightSliderText"):SetText(L["Manabar Height: "] .. Settings.friendManabarHeight)
 
     UpdateManaOptionsState()
     if optionsFrame and optionsFrame.UpdateBackdrop then
@@ -1785,17 +1787,17 @@ optionsFrame:SetScript("OnShow", function()
     -- Castbar tab
     getglobal("GudaPlatesCastbarIconCheckbox"):SetChecked(Settings.showCastbarIcon)
     getglobal("GudaPlatesCastbarHeightSlider"):SetValue(Settings.castbarHeight)
-    getglobal("GudaPlatesCastbarHeightSliderText"):SetText("Castbar Height: " .. Settings.castbarHeight)
+    getglobal("GudaPlatesCastbarHeightSliderText"):SetText(L["Castbar Height: "] .. Settings.castbarHeight)
     getglobal("GudaPlatesCastbarIndependentCheckbox"):SetChecked(Settings.castbarIndependent)
     getglobal("GudaPlatesCastbarWidthSlider"):SetValue(Settings.castbarWidth)
-    getglobal("GudaPlatesCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.castbarWidth)
+    getglobal("GudaPlatesCastbarWidthSliderText"):SetText(L["Castbar Width: "] .. Settings.castbarWidth)
 
     getglobal("GudaPlatesFriendCastbarIconCheckbox"):SetChecked(Settings.friendShowCastbarIcon)
     getglobal("GudaPlatesFriendCastbarHeightSlider"):SetValue(Settings.friendCastbarHeight)
-    getglobal("GudaPlatesFriendCastbarHeightSliderText"):SetText("Castbar Height: " .. Settings.friendCastbarHeight)
+    getglobal("GudaPlatesFriendCastbarHeightSliderText"):SetText(L["Castbar Height: "] .. Settings.friendCastbarHeight)
     getglobal("GudaPlatesFriendCastbarIndependentCheckbox"):SetChecked(Settings.friendCastbarIndependent)
     getglobal("GudaPlatesFriendCastbarWidthSlider"):SetValue(Settings.friendCastbarWidth)
-    getglobal("GudaPlatesFriendCastbarWidthSliderText"):SetText("Castbar Width: " .. Settings.friendCastbarWidth)
+    getglobal("GudaPlatesFriendCastbarWidthSliderText"):SetText(L["Castbar Width: "] .. Settings.friendCastbarWidth)
     UpdateCastbarWidthSliderState()
     -- Colors tab
     getglobal("GudaPlatesTankCheckbox"):SetChecked(GudaPlates.playerRole == "TANK")
@@ -1810,7 +1812,7 @@ local resetButton = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTempl
 resetButton:SetWidth(120)
 resetButton:SetHeight(25)
 resetButton:SetPoint("BOTTOM", optionsFrame, "BOTTOM", 0, 15)
-resetButton:SetText("Reset Defaults")
+resetButton:SetText(L["Reset Defaults"])
 resetButton:SetScript("OnClick", function()
     GudaPlates.playerRole = "DPS"
     THREAT_COLORS.DPS.AGGRO = {0.41, 0.35, 0.76, 1}

@@ -318,6 +318,8 @@ local BroadcastTankMode = GudaPlates_Threat and GudaPlates_Threat.BroadcastTankM
 
 -- Load spell database if available
 local SpellDB = GudaPlates_SpellDB
+-- Locale table with fallback: if key is missing, return the key itself (English)
+local L = setmetatable(GudaPlates_L or {}, {__index = function(t, k) return k end})
 
 -- Verify SpellDB loaded correctly
 if not SpellDB then
@@ -2766,14 +2768,14 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         end
         EnableOnUpdate()  -- Wake up OnUpdate to start scanning
 
-        Print("Initialized. Scanning...")
+        Print(L["Initialized. Scanning..."])
         if twthreat_active then
-            Print("TWThreat detected - full threat colors enabled")
+            Print(L["TWThreat detected - full threat colors enabled"])
         end
         if superwow_active then
-            Print("SuperWoW detected - GUID targeting enabled")
+            Print(L["SuperWoW detected - GUID targeting enabled"])
             if Settings.showDebuffTimers then
-                Print("Debuff countdowns enabled")
+                Print(L["Debuff countdowns enabled"])
             end
         end
 
@@ -3227,17 +3229,17 @@ SlashCmdList["GUDAPLATES"] = function(msg)
     msg = string_lower(msg or "")
     if msg == "tank" then
         playerRole = "TANK"
-        Print("Role set to TANK - Blue=you have aggro, Red=need to taunt")
+        Print(L["Role set to TANK - Blue=you have aggro, Red=need to taunt"])
     elseif msg == "dps" or msg == "healer" then
         playerRole = "DPS"
-        Print("Role set to DPS/HEALER - Red=mob attacking you, Blue=tank has aggro")
+        Print(L["Role set to DPS/HEALER - Red=mob attacking you, Blue=tank has aggro"])
     elseif msg == "toggle" then
         if playerRole == "TANK" then
             playerRole = "DPS"
-            Print("Role set to DPS/HEALER")
+            Print(L["Role set to DPS/HEALER"])
         else
             playerRole = "TANK"
-            Print("Role set to TANK")
+            Print(L["Role set to TANK"])
         end
     elseif msg == "debugthreat" then
         DEBUG_THREAT = not DEBUG_THREAT
@@ -3434,7 +3436,7 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         Print("         /gp tracked - Show all tracked debuffs")
         Print("         /gp pending - Show pending spell cast")
         Print("         /gp spelldb - Test SpellDB loading")
-        Print("Current role: " .. playerRole)
+        Print(L["Current role: "] .. playerRole)
     end
 end
 
@@ -3658,18 +3660,18 @@ loadFrame:SetScript("OnEvent", function()
             end
         end
     end
-    Print("Settings loaded.")
+    Print(L["Settings loaded."])
 
     -- Test the spell database
     if SpellDB then
-        Print("Spell database loaded successfully")
+        Print(L["Spell database loaded successfully"])
         -- Quick test with Rend
         local duration = SpellDB:GetDuration("Rend", 2)
         Print("  Test - Rend Rank 2 -> " .. tostring(duration) .. "s (expected: 12)")
     else
-        Print("ERROR: Spell database not loaded!")
+        Print(L["ERROR: Spell database not loaded!"])
     end
 end)
 
 
-Print("Loaded. Use /gp tank or /gp dps to set role.")
+Print(L["Loaded. Use /gp tank or /gp dps to set role."])
