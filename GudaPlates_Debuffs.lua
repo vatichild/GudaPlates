@@ -317,13 +317,33 @@ end
 function GudaPlates_Debuffs:HolyStrikeHandler(msg)
     if not msg or playerClass ~= "PALADIN" then return end
 
-    -- Check if this is a Holy Strike hit (pattern from ShaguPlates turtle-wow module)
-    -- "Your Holy Strike hits X for Y."
-    local holyStrike = string_find(string_sub(msg, 6, 17), "Holy Strike")
-    if not holyStrike then return end
+    -- Extract spell name from "Your X hits Y for Z." pattern and resolve to English
+    -- This handles both English and non-English clients
+    local spellName = nil
+    for s in string.gfind(msg, "Your (.+) hits") do
+        spellName = s
+        break
+    end
+    if not spellName then
+        for s in string.gfind(msg, "Your (.+) crits") do
+            spellName = s
+            break
+        end
+    end
+
+    if spellName then
+        -- Resolve to English for comparison
+        if SpellDB and SpellDB.ResolveSpellName then
+            spellName = SpellDB:ResolveSpellName(spellName, nil)
+        end
+        if spellName ~= "Holy Strike" then return end
+    else
+        -- Fallback: original substring check for English clients
+        local holyStrike = string_find(string_sub(msg, 6, 17), "Holy Strike")
+        if not holyStrike then return end
+    end
 
     -- Only refresh if the spell actually hit (not a miss/resist)
-    -- In the combat log, a successful hit will have damage in it
     if not string_find(msg, "%d+") then return end
 
     RefreshJudgementsOnTarget()

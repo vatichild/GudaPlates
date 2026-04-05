@@ -16,6 +16,21 @@ GudaPlates_Filter = {}
 local string_lower = string.lower
 local UnitCreatureType = UnitCreatureType
 
+-- Localized "Critter" creature type string
+-- UnitCreatureType() returns a localized string, so we need all known translations
+local CRITTER_TYPES = {
+    ["Critter"] = true,       -- English
+    ["Kleintier"] = true,     -- German (deDE)
+    ["Bestiole"] = true,      -- French (frFR)
+    ["Alimaña"] = true,       -- Spanish (esES)
+    ["Animale"] = true,       -- Italian (itIT)
+    ["Bicho"] = true,         -- Portuguese (ptBR)
+    ["Существо"] = true,      -- Russian (ruRU)
+    ["小动物"] = true,          -- Chinese Simplified (zhCN)
+    ["小動物"] = true,          -- Chinese Traditional (zhTW)
+    ["동물"] = true,            -- Korean (koKR)
+}
+
 -- =============================================================================
 -- Critter Detection
 -- =============================================================================
@@ -23,10 +38,10 @@ local UnitCreatureType = UnitCreatureType
 -- Check if unit is a critter using multiple detection methods
 -- Returns: true if critter, false otherwise
 function GudaPlates_Filter.IsCritter(frame, nameplate, original, unitstr)
-    -- Method 1: SuperWoW - use UnitCreatureType API
+    -- Method 1: SuperWoW - use UnitCreatureType API (locale-aware)
     if unitstr and UnitCreatureType then
         local creatureType = UnitCreatureType(unitstr)
-        if creatureType == "Critter" then
+        if creatureType and CRITTER_TYPES[creatureType] then
             return true
         end
     end

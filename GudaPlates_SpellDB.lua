@@ -43,6 +43,10 @@ talentCacheFrame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 talentCacheFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 talentCacheFrame:SetScript("OnEvent", function()
 	talentCacheValid = false
+	-- Build locale map on login/reload (spellbook is available at this point)
+	if event == "PLAYER_ENTERING_WORLD" then
+		GudaPlates_SpellDB:BuildLocaleMap()
+	end
 end)
 
 GudaPlates_SpellDB.textureToSpell = {
@@ -117,6 +121,59 @@ GudaPlates_SpellDB.debuffPriority = {
 GudaPlates_SpellDB.COMBAT_LOG_ALIASES = {
 	["Pounce"] = "Pounce Bleed",
 }
+
+-- ============================================
+-- LOCALE SUPPORT
+-- Maps localized spell names to English equivalents via texture lookup
+-- ============================================
+GudaPlates_SpellDB.localizedToEnglish = {}
+
+-- Build reverse mapping: localized spell name -> English name
+-- Scans the player's spellbook and uses textureToSpell to find English equivalents
+function GudaPlates_SpellDB:BuildLocaleMap()
+	local map = self.localizedToEnglish
+	local tts = self.textureToSpell
+	if not tts then return end
+
+	local i = 1
+	while true do
+		local localName, localRank = GetSpellName(i, "spell")
+		if not localName then break end
+
+		local texture = GetSpellTexture(i, "spell")
+		if texture and tts[texture] then
+			local englishName = tts[texture]
+			if localName ~= englishName then
+				map[localName] = englishName
+			end
+		end
+		i = i + 1
+	end
+end
+
+-- Resolve a potentially localized spell name to its English equivalent
+-- Returns the English name for DB lookups, or the original name if no mapping exists
+function GudaPlates_SpellDB:ResolveSpellName(localizedName, texture)
+	if not localizedName then return nil end
+	-- Fast path: already English (exists in DEBUFFS)
+	if self.DEBUFFS[localizedName] then return localizedName end
+	-- Check locale map (built from spellbook scan)
+	local english = self.localizedToEnglish[localizedName]
+	if english then return english end
+	-- Check texture -> English name
+	if texture and self.textureToSpell[texture] then
+		return self.textureToSpell[texture]
+	end
+	-- Check combat log aliases
+	if self.COMBAT_LOG_ALIASES[localizedName] then
+		return self.COMBAT_LOG_ALIASES[localizedName]
+	end
+	-- Check shared debuffs, owner-bound, etc. (already English-keyed)
+	if self.SHARED_DEBUFFS and self.SHARED_DEBUFFS[localizedName] then return localizedName end
+	if self.OWNER_BOUND_DEBUFFS and self.OWNER_BOUND_DEBUFFS[localizedName] then return localizedName end
+	-- Fallback: return as-is
+	return localizedName
+end
 
 -- ============================================
 -- DEBUFF DURATIONS BY SPELL NAME AND RANK
@@ -1130,11 +1187,15 @@ function GudaPlates_SpellDB:ScanDebuff(unit, index)
 	local textLeft = getglobal("GudaPlatesDebuffScannerTextLeft1")
 	if textLeft then
 		local effect = textLeft:GetText()
-		-- Cache the tooltip-scanned effect *only if it's new*.
-		-- This prevents tooltip's potentially incorrect name from overwriting known good names.
-		-- It also populates the cache for future faster lookups of unknown spells.
-		if effect and effect ~= "" and texture and not self.textureToSpell[texture] then
-			self.textureToSpell[texture] = effect
+		-- Resolve localized tooltip name to English if possible
+		if effect and effect ~= "" then
+			local englishEffect = self:ResolveSpellName(effect, texture)
+			-- Cache the resolved name *only if it's new*
+			-- This prevents tooltip's potentially incorrect name from overwriting known good names.
+			if texture and not self.textureToSpell[texture] then
+				self.textureToSpell[texture] = englishEffect
+			end
+			return englishEffect
 		end
 		return effect
 	end
@@ -1177,7 +1238,9 @@ function GudaPlates_SpellDB:ScanAction(slot)
 
 	-- Return highest rank if found
 	if bestName then
-		return bestName, bestRank
+		-- Prefer English name from textureToSpell (locale-independent)
+		local englishName = self.textureToSpell[actionTexture]
+		return englishName or bestName, bestRank
 	end
 
 	-- If not found in spellbook, try tooltip as fallback
@@ -1191,5 +1254,9 @@ function GudaPlates_SpellDB:ScanAction(slot)
 	local effect = textLeft and textLeft:GetText() or nil
 	local rank = textRight and textRight:GetText() or nil
 
+	-- Resolve to English name if possible
+	if effect then
+		effect = self:ResolveSpellName(effect, actionTexture)
+	end
 	return effect, rank
 end

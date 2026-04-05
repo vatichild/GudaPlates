@@ -333,6 +333,40 @@ GudaPlates.recentMeleeCrits = GudaPlates.recentMeleeCrits or {}
 GudaPlates.recentMeleeHits = GudaPlates.recentMeleeHits or {}
 
 -- ============================================
+-- LOCALE-AWARE COMBAT LOG PATTERNS
+-- Built from WoW global strings (localized) instead of hardcoded English
+-- ============================================
+
+-- Convert a WoW GlobalString format (e.g., "%s is afflicted by %s.") into a Lua pattern
+local function GlobalStringToPattern(gs)
+	if not gs then return nil end
+	-- Escape Lua pattern special characters first
+	local p = string.gsub(gs, "([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+	-- Convert %s (string) and %d (number) placeholders to capture groups
+	p = string.gsub(p, "%%%%s", "(.+)")
+	p = string.gsub(p, "%%%%d", "(%%d+)")
+	return p
+end
+
+-- Snapshot WoW global strings at load time for locale-aware pattern matching
+-- All patterns stored in a single table to minimize upvalue count (Lua 5.0 limit: 32)
+local LP = {
+	AFFLICTED = GlobalStringToPattern(AURAADDEDOTHERHARMFUL) or "(.+) is afflicted by (.+)%.",
+	FADES = GlobalStringToPattern(AURAREMOVEDOTHER) or "(.+) fades from (.+)%.",
+	PERIODIC_SELF_HIT = GlobalStringToPattern(PERIODICAURADAMAGESELFOTHER),
+	PERIODIC_SELF_CRIT = GlobalStringToPattern(PERIODICAURADAMAGECRITSELFOTHER),
+	PERIODIC_SUFFER = GlobalStringToPattern(PERIODICAURADAMAGEOTHERSELF),
+	SPELL_HIT_SELF = GlobalStringToPattern(SPELLLOGSELFOTHER),
+	SPELL_CRIT_SELF = GlobalStringToPattern(SPELLLOGCRITSELFOTHER),
+	SPELL_RESIST_SELF = GlobalStringToPattern(SPELLRESISTSELFOTHER),
+	SPELL_HIT_OTHER = GlobalStringToPattern(SPELLLOGOTHEROTHER),
+	SPELL_CRIT_OTHER = GlobalStringToPattern(SPELLLOGCRITOTHEROTHER),
+	SPELL_RESIST_OTHER = GlobalStringToPattern(SPELLRESISTOTHEROTHER),
+	MELEE_CRIT_SELF = GlobalStringToPattern(COMBATHITCRITSELFOTHER),
+	MELEE_HIT_SELF = GlobalStringToPattern(COMBATHITSELFOTHER),
+}
+
+-- ============================================
 -- SPELL CAST HOOKS (ShaguTweaks-style)
 -- Detects when player casts spells to track debuff durations with correct rank
 -- ============================================
@@ -353,12 +387,21 @@ local function GetSpellInfoFromBook(spellId, bookType)
 	return name, GetRankNumber(rank)
 end
 
+-- Localized "Rank" word for spell rank parsing (e.g., "Rang" in German, "Rango" in Spanish)
+local localizedRankWord = RANK or "Rank"
+
 -- Helper: Get spell name and rank from spell name string (e.g., "Rend(Rank 2)")
 local function ParseSpellName(spellString)
 	if not spellString then return nil, 0 end
 	-- Try to match "SpellName(Rank X)" format (Lua 5.0 compatible)
-	for name, rank in string_gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+	for name, rank in string_gfind(spellString, "^(.+)%(" .. localizedRankWord .. " (%d+)%)$") do
 		return name, tonumber(rank) or 0
+	end
+	-- Also try English "Rank" as fallback (macros may use English)
+	if localizedRankWord ~= "Rank" then
+		for name, rank in string_gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+			return name, tonumber(rank) or 0
+		end
 	end
 	-- No rank specified, just spell name
 	return spellString, 0
@@ -370,15 +413,24 @@ end
 -- "Rend" -> "Rend", rank 0
 local function StripSpellRank(spellString)
 	if not spellString then return nil, 0 end
-	-- Match "SpellName (Rank X)" with space before parenthesis
-	for name, rank in string_gfind(spellString, "^(.+) %(Rank (%d+)%)$") do
+	-- Match "SpellName (Rank X)" with space before parenthesis (localized)
+	for name, rank in string_gfind(spellString, "^(.+) %(" .. localizedRankWord .. " (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
 	-- Also try without space
-	for name, rank in string_gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+	for name, rank in string_gfind(spellString, "^(.+)%(" .. localizedRankWord .. " (%d+)%)$") do
 		return name, tonumber(rank) or 0
 	end
-	
+	-- Also try English "Rank" as fallback
+	if localizedRankWord ~= "Rank" then
+		for name, rank in string_gfind(spellString, "^(.+) %(Rank (%d+)%)$") do
+			return name, tonumber(rank) or 0
+		end
+		for name, rank in string_gfind(spellString, "^(.+)%(Rank (%d+)%)$") do
+			return name, tonumber(rank) or 0
+		end
+	end
+
 	-- Match Roman numerals: II, III, IV, V, VI
 	for name, rank in string_gfind(spellString, "^(.+) (VI)$") do return name, 6 end
 	for name, rank in string_gfind(spellString, "^(.+) (V)$") do return name, 5 end
@@ -394,12 +446,15 @@ local Original_CastSpell = CastSpell
 CastSpell = function(spellId, bookType)
 	if SpellDB and spellId and bookType then
 		local spellName, rank = GetSpellName(spellId, bookType)
-		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
+		local texture = GetSpellTexture(spellId, bookType)
+		-- Resolve localized spell name to English for DB lookup
+		local englishName = SpellDB:ResolveSpellName(spellName, texture)
+		if englishName and UnitExists("target") and UnitCanAttack("player", "target") then
 			local targetName = UnitName("target")
 			local targetLevel = UnitLevel("target") or 0
-			local duration = SpellDB:GetDuration(spellName, rank)
+			local duration = SpellDB:GetDuration(englishName, rank)
 			if duration and duration > 0 then
-				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+				SpellDB:AddPending(targetName, targetLevel, englishName, duration)
 			end
 		end
 	end
@@ -411,12 +466,14 @@ local Original_CastSpellByName = CastSpellByName
 CastSpellByName = function(spellString, onSelf)
 	if SpellDB and spellString then
 		local spellName, rank = ParseSpellName(spellString)
-		if spellName and UnitExists("target") and UnitCanAttack("player", "target") then
+		-- Resolve localized spell name to English for DB lookup
+		local englishName = SpellDB:ResolveSpellName(spellName, nil)
+		if englishName and UnitExists("target") and UnitCanAttack("player", "target") then
 			local targetName = UnitName("target")
 			local targetLevel = UnitLevel("target") or 0
-			local duration = SpellDB:GetDuration(spellName, rank)
+			local duration = SpellDB:GetDuration(englishName, rank)
 			if duration and duration > 0 then
-				SpellDB:AddPending(targetName, targetLevel, spellName, duration)
+				SpellDB:AddPending(targetName, targetLevel, englishName, duration)
 			end
 		end
 	end
@@ -429,10 +486,11 @@ UseAction = function(slot, checkCursor, onSelf)
 	if SpellDB and slot then
 		local actionTexture = GetActionTexture(slot)
 		if GetActionText(slot) == nil and actionTexture ~= nil then
+			-- ScanAction already resolves to English via textureToSpell
 			local spellName, rank = SpellDB:ScanAction(slot)
 			if spellName then
-				-- Cache texture -> spell name for debuff display lookup
-				if SpellDB.textureToSpell then
+				-- Cache texture -> spell name only if not already mapped (preserve English names)
+				if SpellDB.textureToSpell and not SpellDB.textureToSpell[actionTexture] then
 					SpellDB.textureToSpell[actionTexture] = spellName
 				end
 				if UnitExists("target") then
@@ -2517,44 +2575,94 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         if GudaPlates.ParseCastStart then GudaPlates.ParseCastStart(arg1) end
         -- Also check for spell damage that might refresh debuffs (like Thunderfury)
         if SpellDB and SPELL_DAMAGE_EVENTS[event] then
-            -- Patterns for player and others
+            -- Patterns for player and others (locale-aware with English fallback)
             local spell, victim, attacker = nil, nil, nil
-            
+
             -- Your [Spell] hits [Target] for [Amount] [Type] damage.
-            for s, v in string_gfind(arg1, "Your (.+) hits (.+) for %d+.") do 
-                spell, victim, attacker = s, v, "You" 
+            if LP.SPELL_HIT_SELF then
+                for s, v in string_gfind(arg1, LP.SPELL_HIT_SELF) do
+                    spell, victim, attacker = s, v, "You"
+                    break
+                end
+            end
+            if not spell then
+                for s, v in string_gfind(arg1, "Your (.+) hits (.+) for %d+.") do
+                    spell, victim, attacker = s, v, "You"
+                end
             end
             if not spell then
                 -- Your [Spell] crits [Target] for [Amount] [Type] damage.
-                for s, v in string_gfind(arg1, "Your (.+) crits (.+) for %d+.") do 
-                    spell, victim, attacker = s, v, "You" 
+                if LP.SPELL_CRIT_SELF then
+                    for s, v in string_gfind(arg1, LP.SPELL_CRIT_SELF) do
+                        spell, victim, attacker = s, v, "You"
+                        break
+                    end
+                end
+                if not spell then
+                    for s, v in string_gfind(arg1, "Your (.+) crits (.+) for %d+.") do
+                        spell, victim, attacker = s, v, "You"
+                    end
                 end
             end
             if not spell then
                 -- Your [Spell] was resisted by [Target].
-                for s, v in string_gfind(arg1, "Your (.+) was resisted by (.+)%.") do 
-                    spell, victim, attacker = s, v, "You" 
+                if LP.SPELL_RESIST_SELF then
+                    for s, v in string_gfind(arg1, LP.SPELL_RESIST_SELF) do
+                        spell, victim, attacker = s, v, "You"
+                        break
+                    end
+                end
+                if not spell then
+                    for s, v in string_gfind(arg1, "Your (.+) was resisted by (.+)%.") do
+                        spell, victim, attacker = s, v, "You"
+                    end
                 end
             end
-            
+
             -- Others' procs
             if not spell then
-                -- [Attacker]'s [Spell] hits [Target] for [Amount] [Type] damage.
-                for a, s, v in string_gfind(arg1, "(.+)'s (.+) hits (.+) for %d+.") do 
-                    spell, victim, attacker = s, v, a 
+                if LP.SPELL_HIT_OTHER then
+                    for a, s, v in string_gfind(arg1, LP.SPELL_HIT_OTHER) do
+                        spell, victim, attacker = s, v, a
+                        break
+                    end
+                end
+                if not spell then
+                    for a, s, v in string_gfind(arg1, "(.+)'s (.+) hits (.+) for %d+.") do
+                        spell, victim, attacker = s, v, a
+                    end
                 end
             end
             if not spell then
-                -- [Attacker]'s [Spell] crits [Target] for [Amount] [Type] damage.
-                for a, s, v in string_gfind(arg1, "(.+)'s (.+) crits (.+) for %d+.") do 
-                    spell, victim, attacker = s, v, a 
+                if LP.SPELL_CRIT_OTHER then
+                    for a, s, v in string_gfind(arg1, LP.SPELL_CRIT_OTHER) do
+                        spell, victim, attacker = s, v, a
+                        break
+                    end
+                end
+                if not spell then
+                    for a, s, v in string_gfind(arg1, "(.+)'s (.+) crits (.+) for %d+.") do
+                        spell, victim, attacker = s, v, a
+                    end
                 end
             end
             if not spell then
-                -- [Attacker]'s [Spell] was resisted by [Target].
-                for a, s, v in string_gfind(arg1, "(.+)'s (.+) was resisted by (.+)%.") do 
-                    spell, victim, attacker = s, v, a 
+                if LP.SPELL_RESIST_OTHER then
+                    for a, s, v in string_gfind(arg1, LP.SPELL_RESIST_OTHER) do
+                        spell, victim, attacker = s, v, a
+                        break
+                    end
                 end
+                if not spell then
+                    for a, s, v in string_gfind(arg1, "(.+)'s (.+) was resisted by (.+)%.") do
+                        spell, victim, attacker = s, v, a
+                    end
+                end
+            end
+
+            -- Resolve spell name to English for comparisons
+            if spell and SpellDB.ResolveSpellName then
+                spell = SpellDB:ResolveSpellName(spell, nil)
             end
 
             if spell and victim and (spell == "Thunderfury" or spell == "Thunderfury's Blessing") then
@@ -2724,9 +2832,15 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         if SpellDB and REMOVE_PENDING_PATTERNS then
             for _, pattern in pairs(REMOVE_PENDING_PATTERNS) do
                 local effect = cmatch(arg1, pattern)
-                if effect and SpellDB.pending[3] == effect then
-                    SpellDB:RemovePending()
-                    return
+                if effect then
+                    -- Resolve to English since pending stores English names
+                    if SpellDB.ResolveSpellName then
+                        effect = SpellDB:ResolveSpellName(effect, nil)
+                    end
+                    if SpellDB.pending[3] == effect then
+                        SpellDB:RemovePending()
+                        return
+                    end
                 end
             end
         end
@@ -2761,25 +2875,39 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
         -- Track debuff applications from combat log (ShaguPlates-style)
         if arg1 and SpellDB then
-            -- Pattern: "Unit is afflicted by Spell." or "Unit is afflicted by Spell (N)."
-            -- Use hardcoded pattern to avoid conflicts with addons like Cursive that modify AURAADDEDOTHERHARMFUL
-            local unit, effect = cmatch(arg1, "%s is afflicted by %s.")
-            -- If no match, try pattern with stack count (e.g. "X is afflicted by Y (1).")
+            -- Pattern: "Unit is afflicted by Spell." (locale-aware via global string)
+            local unit, effect
+            if LP.AFFLICTED then
+                for u, e in string_gfind(arg1, LP.AFFLICTED) do
+                    unit, effect = u, e
+                    break
+                end
+            end
+            -- Fallback: try English pattern if global string didn't match
             if not unit or not effect then
+                unit, effect = cmatch(arg1, "%s is afflicted by %s.")
+            end
+            -- Try pattern with stack count (e.g. "X is afflicted by Y (1).")
+            if not unit or not effect then
+                -- Build stack variant from LP.AFFLICTED by inserting stack capture before final period
                 for u, e in string_gfind(arg1, "(.+) is afflicted by (.+) %((%d+)%)%.") do
                     unit, effect = u, e
                     break
                 end
             end
 
-            -- If we matched with Cursive's format (Debuff (1)), the stack-unaware pattern will capture "(1)" as part of the effect name
-            -- Strip any stack counts from the effect name
+            -- Strip any stack counts and rank info from the effect name
             if effect then
                 effect = StripSpellRank(effect)
                 for e, s in string_gfind(effect, "(.+) %((%d+)%)$") do
                     effect = e
                     break
                 end
+            end
+
+            -- Resolve localized spell name to English for all DB lookups
+            if effect and SpellDB.ResolveSpellName then
+                effect = SpellDB:ResolveSpellName(effect, nil)
             end
 
             if unit and effect then
@@ -2911,35 +3039,62 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
     elseif event == "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE" then
         -- Track player's own periodic damage (Deep Wound, etc.) for ownership inference
         -- This event fires when YOUR DoTs tick on enemies
-        -- Format: "Your Deep Wound hits Target for X damage." or "Target suffers X damage from your Deep Wound."
         if arg1 and SpellDB then
             local effect, unit, damage
 
-            -- Pattern 1: "Your Spell hits Target for X damage."
-            for e, u in string_gfind(arg1, "Your (.+) hits (.+) for %d+") do
-                effect, unit = e, u
-                break
+            -- Pattern 1: "Your Spell hits Target for X damage." (locale-aware)
+            if LP.PERIODIC_SELF_HIT then
+                for e, u in string_gfind(arg1, LP.PERIODIC_SELF_HIT) do
+                    effect, unit = e, u
+                    break
+                end
             end
-
-            -- Pattern 2: "Target suffers X damage from your Spell."
             if not effect then
-                for u, e in string_gfind(arg1, "(.+) suffers %d+ .+ from your (.+)%.") do
-                    unit, effect = u, e
+                for e, u in string_gfind(arg1, "Your (.+) hits (.+) for %d+") do
+                    effect, unit = e, u
                     break
                 end
             end
 
-            -- Pattern 3: "Your Spell crits Target for X damage."
+            -- Pattern 2: "Target suffers X damage from your Spell." (locale-aware)
             if not effect then
-                for e, u in string_gfind(arg1, "Your (.+) crits (.+) for %d+") do
-                    effect, unit = e, u
-                    break
+                if LP.PERIODIC_SUFFER then
+                    for u, d1, d2, e in string_gfind(arg1, LP.PERIODIC_SUFFER) do
+                        unit, effect = u, e
+                        break
+                    end
+                end
+                if not effect then
+                    for u, e in string_gfind(arg1, "(.+) suffers %d+ .+ from your (.+)%.") do
+                        unit, effect = u, e
+                        break
+                    end
+                end
+            end
+
+            -- Pattern 3: "Your Spell crits Target for X damage." (locale-aware)
+            if not effect then
+                if LP.PERIODIC_SELF_CRIT then
+                    for e, u in string_gfind(arg1, LP.PERIODIC_SELF_CRIT) do
+                        effect, unit = e, u
+                        break
+                    end
+                end
+                if not effect then
+                    for e, u in string_gfind(arg1, "Your (.+) crits (.+) for %d+") do
+                        effect, unit = e, u
+                        break
+                    end
                 end
             end
 
             if effect and unit then
                 -- Strip any rank info
                 effect = StripSpellRank(effect)
+                -- Resolve to English for DB lookups
+                if SpellDB.ResolveSpellName then
+                    effect = SpellDB:ResolveSpellName(effect, nil)
+                end
 
                 -- Check if this is an OWNER_BOUND_DEBUFF (like Deep Wound)
                 if SpellDB.OWNER_BOUND_DEBUFFS and SpellDB.OWNER_BOUND_DEBUFFS[effect] then
@@ -2967,14 +3122,22 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
 
     elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
         -- Track melee crits for Deep Wound heuristic
-        -- Format: "You crit Target for X damage." or "You hit Target for X damage."
         if arg1 then
             local unit
 
-            -- Pattern: "You crit Target for X damage."
-            for u in string_gfind(arg1, "You crit (.+) for %d+") do
-                unit = u
-                break
+            -- Pattern: "You crit Target for X damage." (locale-aware)
+            if LP.MELEE_CRIT_SELF then
+                for u in string_gfind(arg1, LP.MELEE_CRIT_SELF) do
+                    unit = u
+                    break
+                end
+            end
+            -- Fallback: English pattern
+            if not unit then
+                for u in string_gfind(arg1, "You crit (.+) for %d+") do
+                    unit = u
+                    break
+                end
             end
 
             if unit then
@@ -2993,30 +3156,42 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
 
     elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" or event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
         if arg1 then
-            -- Pattern: "Spell fades from Unit."
-            for rawSpell, unit in string_gfind(arg1, "(.+) fades from (.+)%.") do
+            local rawSpell, unit
+
+            -- Pattern: "Spell fades from Unit." (locale-aware)
+            if LP.FADES then
+                for s, u in string_gfind(arg1, LP.FADES) do
+                    rawSpell, unit = s, u
+                    break
+                end
+            end
+            -- Fallback: English pattern
+            if not rawSpell then
+                for s, u in string_gfind(arg1, "(.+) fades from (.+)%.") do
+                    rawSpell, unit = s, u
+                    break
+                end
+            end
+            -- Also try "is removed from" pattern
+            if not rawSpell then
+                for s, u in string_gfind(arg1, "(.+) is removed from (.+)%.") do
+                    rawSpell, unit = s, u
+                    break
+                end
+            end
+
+            if rawSpell and unit then
                 local spell = StripSpellRank(rawSpell)
                 -- Also strip stack count if present (Cursive/SuperWoW might add it)
                 for s, c in string_gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
 
-                GudaPlates.debuffTracker[unit .. spell] = nil
-                -- Remove from SpellDB objects (all levels)
-                if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
-                    for level, effects in pairs(SpellDB.objects[unit]) do
-                        if effects[spell] then effects[spell] = nil end
-                    end
+                -- Resolve to English for consistent DB keys
+                if SpellDB and SpellDB.ResolveSpellName then
+                    spell = SpellDB:ResolveSpellName(spell, nil)
                 end
-                -- Remove from OWNER_BOUND_DEBUFFS cache
-                if SpellDB and SpellDB.RemoveOwnerBoundDebuff then
-                    SpellDB:RemoveOwnerBoundDebuff(unit, spell)
-                end
-            end
-            for rawSpell, unit in string_gfind(arg1, "(.+) is removed from (.+)%.") do
-                local spell = StripSpellRank(rawSpell)
-                -- Also strip stack count if present
-                for s, c in string_gfind(spell, "(.+) %((%d+)%)$") do spell = s break end
 
                 GudaPlates.debuffTracker[unit .. spell] = nil
+                -- Remove from SpellDB objects (all levels)
                 if SpellDB and SpellDB.objects and SpellDB.objects[unit] then
                     for level, effects in pairs(SpellDB.objects[unit]) do
                         if effects[spell] then effects[spell] = nil end

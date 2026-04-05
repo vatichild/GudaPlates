@@ -28,6 +28,43 @@ local function InitReferences()
     recentMeleeHits = GudaPlates.recentMeleeHits
 end
 
+-- ============================================
+-- LOCALE-AWARE COMBAT LOG PATTERNS
+-- Built from WoW global strings at load time
+-- ============================================
+local function GlobalStringToPattern(gs)
+    if not gs then return nil end
+    local p = string.gsub(gs, "([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+    p = string.gsub(p, "%%%%s", "(.+)")
+    p = string.gsub(p, "%%%%d", "(%%d+)")
+    return p
+end
+
+-- Cast start/perform patterns
+local L_CAST_START = GlobalStringToPattern(SPELLCASTOTHERSTART)     -- "%s begins to cast %s."
+local L_PERFORM_START = GlobalStringToPattern(SPELLPERFORMOTHERSTART) -- "%s begins to perform %s."
+
+-- Extract fast-path prefix from global strings for cheap rejection
+-- e.g., from "You hit %s for %d." extract "You hit "
+local function ExtractPrefix(gs, placeholder)
+    if not gs then return nil end
+    local pos = string.find(gs, placeholder, 1, true)
+    if pos and pos > 1 then
+        return string.sub(gs, 1, pos - 1)
+    end
+    return nil
+end
+
+-- Melee hit/crit prefixes for fast-path checks
+local L_YOU_HIT_PREFIX = ExtractPrefix(COMBATHITSELFOTHER, "%s") or "You hit "
+local L_YOU_CRIT_PREFIX = ExtractPrefix(COMBATHITCRITSELFOTHER, "%s") or "You crit "
+
+-- Melee hit/crit patterns
+local L_MELEE_HIT_SELF = GlobalStringToPattern(COMBATHITSELFOTHER)     -- "You hit %s for %d."
+local L_MELEE_CRIT_SELF = GlobalStringToPattern(COMBATHITCRITSELFOTHER) -- "You crit %s for %d."
+local L_MELEE_HIT_OTHER = GlobalStringToPattern(COMBATHITOTHEROTHER)   -- "%s hits %s for %d."
+local L_MELEE_CRIT_OTHER = GlobalStringToPattern(COMBATHITCRITOTHEROTHER) -- "%s crits %s for %d."
+
 -- Helper function to match combat log patterns (ShaguPlates-style cmatch)
 local function cmatch(str, pattern)
     if not str or not pattern then return nil end
@@ -81,34 +118,59 @@ local function ParseCastStart(msg)
     if not castTracker then return end
 
     local unit, spell = nil, nil
+    local SpellDB = GudaPlates_SpellDB
 
-    -- Early-exit: cheap plain-text check before expensive regex
-    -- Most combat log messages won't contain "begins to" so we reject them fast
-    local hasBeginsTo = string_find(msg, "begins to ", 1, true)
-    if hasBeginsTo then
-        -- Try "begins to cast"
-        for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
+    -- Try locale-aware "begins to cast" pattern
+    if L_CAST_START then
+        for u, s in string_gfind(msg, L_CAST_START) do
             unit, spell = u, s
+            break
         end
-
-        -- Try "begins to perform"
-        if not unit then
-            for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
+    end
+    -- Fallback: English pattern
+    if not unit then
+        local hasBeginsTo = string_find(msg, "begins to ", 1, true)
+        if hasBeginsTo then
+            for u, s in string_gfind(msg, "(.+) begins to cast (.+)%.") do
                 unit, spell = u, s
             end
         end
     end
 
+    -- Try locale-aware "begins to perform" pattern
+    if not unit then
+        if L_PERFORM_START then
+            for u, s in string_gfind(msg, L_PERFORM_START) do
+                unit, spell = u, s
+                break
+            end
+        end
+        if not unit then
+            local hasBeginsTo = string_find(msg, "begins to ", 1, true)
+            if hasBeginsTo then
+                for u, s in string_gfind(msg, "(.+) begins to perform (.+)%.") do
+                    unit, spell = u, s
+                end
+            end
+        end
+    end
+
     if unit and spell then
+        -- Resolve spell name to English for castIcons lookup
+        local englishSpell = spell
+        if SpellDB and SpellDB.ResolveSpellName then
+            englishSpell = SpellDB:ResolveSpellName(spell, nil)
+        end
+
         local duration = 2000 -- Default 2 seconds
 
         if not castTracker[unit] then castTracker[unit] = {} end
 
         local newCast = {
-            spell = spell,
+            spell = englishSpell,
             startTime = GetTime(),
             duration = duration,
-            icon = castIcons[spell],
+            icon = castIcons[englishSpell],
         }
 
         table.insert(castTracker[unit], newCast)
@@ -139,20 +201,43 @@ local function ParseAttackHit(msg)
     -- For Paladin judgement refresh, we don't need SpellDB or recentMeleeHits
     -- Just parse the message and call SealHandler
     local attacker, victim = nil, nil
+    local hitPrefixLen = string.len(L_YOU_HIT_PREFIX)
+    local critPrefixLen = string.len(L_YOU_CRIT_PREFIX)
 
-    -- Simple pattern: check if message starts with "You hit " or "You crit "
-    if string.sub(msg, 1, 8) == "You hit " then
-        -- Find " for " to get the victim name
-        local forPos = string.find(msg, " for ")
-        if forPos then
-            victim = string.sub(msg, 9, forPos - 1)
-            attacker = "You"
+    -- Simple pattern: check if message starts with localized "You hit " or "You crit "
+    if string_sub(msg, 1, hitPrefixLen) == L_YOU_HIT_PREFIX then
+        -- Try locale-aware pattern first
+        if L_MELEE_HIT_SELF then
+            for v in string_gfind(msg, L_MELEE_HIT_SELF) do
+                victim = v
+                attacker = "You"
+                break
+            end
         end
-    elseif string.sub(msg, 1, 9) == "You crit " then
-        local forPos = string.find(msg, " for ")
-        if forPos then
-            victim = string.sub(msg, 10, forPos - 1)
-            attacker = "You"
+        -- Fallback: manual extraction
+        if not victim then
+            local forPos = string_find(msg, " for ", 1, true)
+            if forPos then
+                victim = string_sub(msg, hitPrefixLen + 1, forPos - 1)
+                attacker = "You"
+            end
+        end
+    elseif string_sub(msg, 1, critPrefixLen) == L_YOU_CRIT_PREFIX then
+        -- Try locale-aware pattern first
+        if L_MELEE_CRIT_SELF then
+            for v in string_gfind(msg, L_MELEE_CRIT_SELF) do
+                victim = v
+                attacker = "You"
+                break
+            end
+        end
+        -- Fallback: manual extraction
+        if not victim then
+            local forPos = string_find(msg, " for ", 1, true)
+            if forPos then
+                victim = string_sub(msg, critPrefixLen + 1, forPos - 1)
+                attacker = "You"
+            end
         end
     end
 
@@ -181,15 +266,21 @@ local function ParseAttackHit(msg)
             end
         end
     end
-    -- Only run expensive regex patterns if message contains " for " (all hit/crit messages do)
+    -- Only run expensive regex patterns if no victim found yet
     if not victim and string_find(msg, " for ", 1, true) then
-        -- Check for "hits" or "crits" keyword before running regex
-        if string_find(msg, " hits ", 1, true) then
-            -- X hits Y for Z.
-            for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
-                attacker = a
-                victim = v
-                break
+        -- Try locale-aware other hit/crit patterns
+        if string_find(msg, " hits ", 1, true) or (L_MELEE_HIT_OTHER and string_find(msg, L_MELEE_HIT_OTHER)) then
+            if L_MELEE_HIT_OTHER then
+                for a, v in string_gfind(msg, L_MELEE_HIT_OTHER) do
+                    attacker, victim = a, v
+                    break
+                end
+            end
+            if not victim then
+                for a, v in string_gfind(msg, "(.+) hits (.-) for %d+%.") do
+                    attacker, victim = a, v
+                    break
+                end
             end
             -- Ranged: Your ranged attack hits X for Y.
             if not victim and string_find(msg, "ranged", 1, true) then
@@ -200,35 +291,39 @@ local function ParseAttackHit(msg)
                 end
             end
             if not victim then
-                -- X's ranged attack hits Y for Z.
                 for a, v in string_gfind(msg, "(.+)'s ranged attack hits (.-) for %d+%.") do
-                    attacker = a
-                    victim = v
+                    attacker, victim = a, v
                     break
                 end
             end
         end
-        if not victim and string_find(msg, " crits ", 1, true) then
-            -- X crits Y for Z.
-            for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
-                attacker = a
-                victim = v
-                break
-            end
-            -- Ranged: Your ranged attack crits X for Y.
-            if not victim and string_find(msg, "ranged", 1, true) then
-                for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
-                    attacker = "You"
-                    victim = v
-                    break
+        if not victim then
+            if string_find(msg, " crits ", 1, true) or (L_MELEE_CRIT_OTHER and string_find(msg, L_MELEE_CRIT_OTHER)) then
+                if L_MELEE_CRIT_OTHER then
+                    for a, v in string_gfind(msg, L_MELEE_CRIT_OTHER) do
+                        attacker, victim = a, v
+                        break
+                    end
                 end
-            end
-            if not victim then
-                -- X's ranged attack crits Y for Z.
-                for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
-                    attacker = a
-                    victim = v
-                    break
+                if not victim then
+                    for a, v in string_gfind(msg, "(.+) crits (.-) for %d+%.") do
+                        attacker, victim = a, v
+                        break
+                    end
+                end
+                -- Ranged crits
+                if not victim and string_find(msg, "ranged", 1, true) then
+                    for v in string_gfind(msg, "Your ranged attack crits (.-) for %d+%.") do
+                        attacker = "You"
+                        victim = v
+                        break
+                    end
+                end
+                if not victim then
+                    for a, v in string_gfind(msg, "(.+)'s ranged attack crits (.-) for %d+%.") do
+                        attacker, victim = a, v
+                        break
+                    end
                 end
             end
         end
