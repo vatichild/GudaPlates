@@ -110,8 +110,14 @@ local function UpdateTargetFrameIcon()
         CreateTargetFrameIcon()
     end
 
-    -- If real server-side mark exists, hide ours
+    -- If DLL is active or server-side mark exists, Blizzard's own icon handles it
     if GetRaidTargetIndex and GetRaidTargetIndex("target") then
+        targetIconFrame:Hide()
+        return
+    end
+
+    -- DLL active: Blizzard's built-in target frame icon shows automatically
+    if GudaIO_SetRaidTarget then
         targetIconFrame:Hide()
         return
     end
@@ -121,6 +127,7 @@ local function UpdateTargetFrameIcon()
         return
     end
 
+    -- No DLL: show our custom icon (fallback)
     local guid = UnitGUID and UnitGUID("target")
     if not guid then
         local name = UnitName("target")
@@ -131,8 +138,7 @@ local function UpdateTargetFrameIcon()
     if iconIndex then
         ApplyRaidIcon(targetIconTexture, iconIndex)
         targetIconFrame:ClearAllPoints()
-        -- Position above the portrait area (where Blizzard shows raid icons)
-        targetIconFrame:SetPoint("CENTER", TargetFrame, "TOPLEFT", 50, -6)
+        targetIconFrame:SetPoint("CENTER", TargetFrame, "CENTER", 68, 17)
         targetIconFrame:Show()
     else
         targetIconFrame:Hide()
