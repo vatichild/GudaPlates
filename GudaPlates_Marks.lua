@@ -388,7 +388,7 @@ local function AddMarkButtons(level)
 
     for i = 1, 8 do
         local info = {}
-        info.text = ICON_NAMES[i]
+        info.text = ICON_COLORED[i]
         info.icon = RAID_ICON_TEXTURE
         local l, r, t, b = GetIconTexCoords(i)
         info.tCoordLeft = l
@@ -512,7 +512,7 @@ local function SetupUnitPopup()
 
         -- Define submenu items
         for i = 1, 8 do
-            UnitPopupButtons["GUDAPLATES_MARK_" .. i] = { text = ICON_NAMES[i], dist = 0 }
+            UnitPopupButtons["GUDAPLATES_MARK_" .. i] = { text = ICON_COLORED[i], dist = 0 }
         end
         UnitPopupButtons["GUDAPLATES_MARK_NONE"] = { text = "None", dist = 0 }
 
