@@ -3559,9 +3559,9 @@ LoadSettings = function()
     end
 
     -- Load Tank Mode states from other players (persists across reloads)
-    if GudaPlatesDB.GP_TankPlayers then
+    if GudaPlatesDB.GP_TankPlayers and GudaPlates.GP_TankPlayers then
         for name, isTank in pairs(GudaPlatesDB.GP_TankPlayers) do
-            GP_TankPlayers[name] = isTank
+            GudaPlates.GP_TankPlayers[name] = isTank
         end
     end
 

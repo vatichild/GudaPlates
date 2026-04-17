@@ -555,6 +555,69 @@ local function SetupUnitPopup()
             end
         end
     end
+
+    -- ==========================================
+    -- "Mark as Tank" button for player targets
+    -- ==========================================
+    UnitPopupButtons["GUDAPLATES_TANK"] = { text = "Mark as Tank", dist = 0 }
+
+    local tankMenuTypes = {"PARTY", "RAID_PLAYER", "RAID", "FRIEND"}
+    for _, menuType in ipairs(tankMenuTypes) do
+        if UnitPopupMenus[menuType] then
+            local buttons = UnitPopupMenus[menuType]
+            for i = 1, table.getn(buttons) do
+                if buttons[i] == "CANCEL" then
+                    table.insert(buttons, i, "GUDAPLATES_TANK")
+                    break
+                end
+            end
+        end
+    end
+
+    -- Hook UnitPopup_OnClick for tank toggle
+    if UnitPopup_OnClick then
+        local prev_UnitPopup_OnClick = UnitPopup_OnClick
+        UnitPopup_OnClick = function()
+            local button = this.value
+            if button == "GUDAPLATES_TANK" then
+                local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
+                local name = dropdownFrame and dropdownFrame.name
+                if name and GudaPlates_Threat and GudaPlates_Threat.SetPlayerTank then
+                    local isTank = GudaPlates_Threat.IsPlayerTank(name)
+                    GudaPlates_Threat.SetPlayerTank(name, not isTank)
+                    if Marks.UpdateTankShieldIcons then
+                        Marks.UpdateTankShieldIcons()
+                    end
+                    if GudaPlates and GudaPlates.Print then
+                        if not isTank then
+                            GudaPlates.Print(name .. " marked as tank")
+                        else
+                            GudaPlates.Print(name .. " unmarked as tank")
+                        end
+                    end
+                end
+                return prev_UnitPopup_OnClick()
+            end
+            return prev_UnitPopup_OnClick()
+        end
+    end
+
+    -- Hook UnitPopup_ShowMenu to update button text before menu renders
+    if UnitPopup_ShowMenu then
+        local prev_UnitPopup_ShowMenu = UnitPopup_ShowMenu
+        UnitPopup_ShowMenu = function(a1, a2, a3, a4, a5)
+            -- Try to get the player name from various sources
+            local pName = a4  -- 4th arg is usually the name
+            if not pName and a1 and a1.name then
+                pName = a1.name
+            end
+            if pName and GudaPlates_Threat and GudaPlates_Threat.IsPlayerTank then
+                local isTank = GudaPlates_Threat.IsPlayerTank(pName)
+                UnitPopupButtons["GUDAPLATES_TANK"].text = isTank and "Unmark Tank" or "Mark as Tank"
+            end
+            return prev_UnitPopup_ShowMenu(a1, a2, a3, a4, a5)
+        end
+    end
 end
 
 -- ============================================
@@ -632,6 +695,73 @@ function Marks.DebugTest()
 end
 
 -- ============================================
+-- Tank Shield Icons on Party/Raid Frames
+-- ============================================
+
+local SHIELD_TEXTURE = "Interface\\AddOns\\GudaPlates\\Assets\\shield"
+local shieldIcons = {}  -- [frameName] = texture
+
+local function GetOrCreateShield(parentFrame)
+    local name = parentFrame:GetName()
+    if shieldIcons[name] then return shieldIcons[name] end
+
+    local icon = parentFrame:CreateTexture(nil, "OVERLAY")
+    icon:SetTexture(SHIELD_TEXTURE)
+    icon:SetWidth(10)
+    icon:SetHeight(10)
+    -- Position before the level number in the raid frame
+    local levelText = getglobal(parentFrame:GetName() .. "Level")
+    if levelText then
+        icon:SetPoint("RIGHT", levelText, "LEFT", -1, 0)
+    else
+        icon:SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 1, -1)
+    end
+    icon:Hide()
+    shieldIcons[name] = icon
+    return icon
+end
+
+local function UpdateTankShieldIcons()
+    if not GudaPlates_Threat or not GudaPlates_Threat.IsPlayerTank then return end
+
+    -- Party frames (1-4)
+    for i = 1, 4 do
+        local frame = getglobal("PartyMemberFrame" .. i)
+        if frame and frame:IsShown() then
+            local unitId = "party" .. i
+            if UnitExists(unitId) then
+                local name = UnitName(unitId)
+                local icon = GetOrCreateShield(frame)
+                if name and GudaPlates_Threat.IsPlayerTank(name) then
+                    icon:Show()
+                else
+                    icon:Hide()
+                end
+            end
+        end
+    end
+
+    -- Raid frames (1-40)
+    for i = 1, 40 do
+        local frame = getglobal("RaidGroupButton" .. i)
+        if frame and frame:IsShown() then
+            local unitId = "raid" .. i
+            if UnitExists(unitId) then
+                local name = UnitName(unitId)
+                local icon = GetOrCreateShield(frame)
+                if name and GudaPlates_Threat.IsPlayerTank(name) then
+                    icon:Show()
+                else
+                    icon:Hide()
+                end
+            end
+        end
+    end
+end
+
+Marks.UpdateTankShieldIcons = UpdateTankShieldIcons
+
+-- ============================================
 -- Event Frame
 -- ============================================
 
@@ -639,16 +769,21 @@ local eventFrame = CreateFrame("Frame", "GudaPlatesMarksFrame")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:SetScript("OnEvent", function()
     if event == "PLAYER_TARGET_CHANGED" then
         UpdateTargetFrameIcon()
     elseif event == "PLAYER_ENTERING_WORLD" then
         Marks.ClearAllMarks()
         if targetIconFrame then targetIconFrame:Hide() end
+        UpdateTankShieldIcons()
     elseif event == "ADDON_LOADED" and arg1 == "GudaPlates" then
         CreateTargetFrameIcon()
         SetupUnitPopup()
         HookTargetFrameClick()
+    elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+        UpdateTankShieldIcons()
     end
 end)
 

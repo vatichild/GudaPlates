@@ -217,6 +217,15 @@ function GudaPlates_Threat.IsPlayerTank(playerName)
     return GP_TankPlayers[playerName] == true
 end
 
+-- Manually mark/unmark a player as tank (for players without GudaPlates)
+function GudaPlates_Threat.SetPlayerTank(playerName, isTank)
+    if not playerName then return end
+    GP_TankPlayers[playerName] = isTank or nil
+    if GudaPlatesDB then
+        GudaPlatesDB.GP_TankPlayers = GP_TankPlayers
+    end
+end
+
 -- Handle incoming Tank Mode messages
 local function GP_HandleTankModeMessage(sender, msg)
     if string_find(msg, "TM=") then
