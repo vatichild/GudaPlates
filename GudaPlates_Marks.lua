@@ -15,9 +15,6 @@ local GetNumRaidMembers = GetNumRaidMembers
 
 -- Marks storage: guid -> iconIndex (1-8)
 local marks = {}
-local markGeneration = 0  -- Incremented when any mark changes
-
-
 -- Raid icon texture path
 local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
 
@@ -295,15 +292,8 @@ function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
         end
     end
 
-    if iconIndex >= 1 and iconIndex <= 8 and marks[guid] == iconIndex then
-        -- Toggle off
-        marks[guid] = nil
-        Apply3DRaidIcon(0)
-        if GudaPlates and GudaPlates.Print then
-            GudaPlates.Print("Mark cleared from " .. (targetName or "target"))
-        end
-    elseif iconIndex == 0 then
-        -- Clear
+    if (iconIndex >= 1 and iconIndex <= 8 and marks[guid] == iconIndex) or iconIndex == 0 then
+        -- Clear (toggle off same icon, or explicit clear)
         marks[guid] = nil
         Apply3DRaidIcon(0)
         if GudaPlates and GudaPlates.Print then
@@ -319,7 +309,6 @@ function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
         end
     end
 
-    markGeneration = markGeneration + 1
     UpdateTargetFrameIcon()
 end
 
@@ -328,18 +317,6 @@ end
 -- ============================================
 
 local markDropdown = CreateFrame("Frame", "GudaPlatesMarkDropdown", UIParent, "UIDropDownMenuTemplate")
-
--- Factory function (Lua 5.0 safe closures)
-local function MakeMarkCallback(index)
-    return function()
-        GudaPlates_Marks_SetMarkOnTarget(index)
-    end
-end
-
-local markCallbacks = {}
-for i = 0, 8 do
-    markCallbacks[i] = MakeMarkCallback(i)
-end
 
 -- Icon texcoords for the 4x4 atlas (used for dropdown icon display)
 local function GetIconTexCoords(index)
@@ -357,23 +334,30 @@ local function GetCurrentMark()
     return nil
 end
 
+-- Shared delay frame for mark callbacks (avoids creating new frames per click)
+local markDelayFrame = CreateFrame("Frame")
+markDelayFrame:Hide()
+local pendingMarkIndex = nil
+
+markDelayFrame:SetScript("OnUpdate", function()
+    if pendingMarkIndex then
+        GudaPlates_Marks_SetMarkOnTarget(pendingMarkIndex)
+        pendingMarkIndex = nil
+    end
+    this:Hide()
+end)
+
 -- Close all menus then apply mark on next frame
 local function MakeMarkCallbackWithClose(index)
     return function()
-        -- Close menus first
         if CloseDropDownMenus then
             CloseDropDownMenus()
         elseif HideDropDownMenu then
             HideDropDownMenu(1)
             HideDropDownMenu(2)
         end
-        -- Apply mark on next frame after menus are fully closed
-        local delay = CreateFrame("Frame")
-        delay:SetScript("OnUpdate", function()
-            GudaPlates_Marks_SetMarkOnTarget(index)
-            this:SetScript("OnUpdate", nil)
-            this:Hide()
-        end)
+        pendingMarkIndex = index
+        markDelayFrame:Show()
     end
 end
 
@@ -411,9 +395,9 @@ end
 local function MarkDropdown_Initialize(level)
     level = level or 1
     if level == 1 then
-        -- For NPC right-click: show "Raid Target Icon" with arrow to submenu
+        -- For NPC right-click (solo): show "Target Icon" with arrow to submenu
         local info = {}
-        info.text = "Raid Target Icon"
+        info.text = "Target Icon"
         info.hasArrow = 1
         info.notCheckable = 1
         info.value = "GUDAPLATES_MARKS"
@@ -462,45 +446,18 @@ local function SetupUnitPopup()
             end
         end
 
-        -- Hook UnitPopup_OnClick to use local marks when solo
-        if UnitPopup_OnClick then
-            local orig_UnitPopup_OnClick = UnitPopup_OnClick
-            UnitPopup_OnClick = function()
-                local button = this.value
-                -- Intercept RAID_TARGET clicks when solo
-                if button and string.find(button, "^RAID_TARGET_") then
-                    local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
-                    if not inGroup then
-                        -- Extract icon index from button name
-                        if button == "RAID_TARGET_NONE" then
-                            GudaPlates_Marks_SetMarkOnTarget(0)
-                        else
-                            local idx = tonumber(string.sub(button, 13))  -- "RAID_TARGET_" = 12 chars
-                            if idx and idx >= 1 and idx <= 8 then
-                                GudaPlates_Marks_SetMarkOnTarget(idx)
-                            end
-                        end
-                        return orig_UnitPopup_OnClick()
-                    end
-                end
-                return orig_UnitPopup_OnClick()
-            end
-        end
-
         -- Hook UnitPopup_HideButtons to keep raid target visible when solo
         if UnitPopup_HideButtons then
             local orig_UnitPopup_HideButtons = UnitPopup_HideButtons
             UnitPopup_HideButtons = function()
                 orig_UnitPopup_HideButtons()
-                -- After default hiding, re-show raid target buttons if solo
                 local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
                 if not inGroup then
-                    local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
-                    if not dropdownFrame then return end
                     for i = 1, UIDROPDOWNMENU_MAXBUTTONS do
                         local btn = getglobal("DropDownList1Button" .. i)
                         if btn and btn.value == "RAID_TARGET_ICON" then
                             btn:Show()
+                            break
                         end
                     end
                 end
@@ -510,7 +467,6 @@ local function SetupUnitPopup()
         -- Blizzard raid target buttons don't exist - use our own with nested submenu
         UnitPopupButtons["GUDAPLATES_RAID_TARGET"] = { text = "Raid Target Icon", nested = 1, dist = 0 }
 
-        -- Define submenu items
         for i = 1, 8 do
             UnitPopupButtons["GUDAPLATES_MARK_" .. i] = { text = ICON_COLORED[i], dist = 0 }
         end
@@ -534,26 +490,6 @@ local function SetupUnitPopup()
                 end
             end
         end
-
-        -- Hook UnitPopup_OnClick for our custom buttons
-        if UnitPopup_OnClick then
-            local orig_UnitPopup_OnClick = UnitPopup_OnClick
-            UnitPopup_OnClick = function()
-                local button = this.value
-                if button and string.find(button, "^GUDAPLATES_MARK_") then
-                    if button == "GUDAPLATES_MARK_NONE" then
-                        GudaPlates_Marks_SetMarkOnTarget(0)
-                    else
-                        local idx = tonumber(string.sub(button, 17))  -- "GUDAPLATES_MARK_" = 16 chars
-                        if idx and idx >= 1 and idx <= 8 then
-                            GudaPlates_Marks_SetMarkOnTarget(idx)
-                        end
-                    end
-                    return orig_UnitPopup_OnClick()
-                end
-                return orig_UnitPopup_OnClick()
-            end
-        end
     end
 
     -- ==========================================
@@ -574,11 +510,45 @@ local function SetupUnitPopup()
         end
     end
 
-    -- Hook UnitPopup_OnClick for tank toggle
+    -- ==========================================
+    -- Single consolidated UnitPopup_OnClick hook
+    -- Handles: RAID_TARGET_*, GUDAPLATES_MARK_*, GUDAPLATES_TANK
+    -- ==========================================
     if UnitPopup_OnClick then
-        local prev_UnitPopup_OnClick = UnitPopup_OnClick
+        local orig_UnitPopup_OnClick = UnitPopup_OnClick
         UnitPopup_OnClick = function()
             local button = this.value
+
+            -- Blizzard RAID_TARGET buttons (solo intercept)
+            if button and string.find(button, "^RAID_TARGET_") then
+                local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
+                if not inGroup then
+                    if button == "RAID_TARGET_NONE" then
+                        GudaPlates_Marks_SetMarkOnTarget(0)
+                    else
+                        local idx = tonumber(string.sub(button, 13))
+                        if idx and idx >= 1 and idx <= 8 then
+                            GudaPlates_Marks_SetMarkOnTarget(idx)
+                        end
+                    end
+                end
+                return orig_UnitPopup_OnClick()
+            end
+
+            -- Custom GUDAPLATES_MARK buttons
+            if button and string.find(button, "^GUDAPLATES_MARK_") then
+                if button == "GUDAPLATES_MARK_NONE" then
+                    GudaPlates_Marks_SetMarkOnTarget(0)
+                else
+                    local idx = tonumber(string.sub(button, 17))
+                    if idx and idx >= 1 and idx <= 8 then
+                        GudaPlates_Marks_SetMarkOnTarget(idx)
+                    end
+                end
+                return orig_UnitPopup_OnClick()
+            end
+
+            -- Tank toggle
             if button == "GUDAPLATES_TANK" then
                 local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
                 local name = dropdownFrame and dropdownFrame.name
@@ -596,18 +566,18 @@ local function SetupUnitPopup()
                         end
                     end
                 end
-                return prev_UnitPopup_OnClick()
+                return orig_UnitPopup_OnClick()
             end
-            return prev_UnitPopup_OnClick()
+
+            return orig_UnitPopup_OnClick()
         end
     end
 
-    -- Hook UnitPopup_ShowMenu to update button text before menu renders
+    -- Hook UnitPopup_ShowMenu to update tank button text before menu renders
     if UnitPopup_ShowMenu then
         local prev_UnitPopup_ShowMenu = UnitPopup_ShowMenu
         UnitPopup_ShowMenu = function(a1, a2, a3, a4, a5)
-            -- Try to get the player name from various sources
-            local pName = a4  -- 4th arg is usually the name
+            local pName = a4
             if not pName and a1 and a1.name then
                 pName = a1.name
             end
