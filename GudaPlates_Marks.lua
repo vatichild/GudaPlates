@@ -15,6 +15,8 @@ local GetNumRaidMembers = GetNumRaidMembers
 
 -- Marks storage: guid -> iconIndex (1-8)
 local marks = {}
+local markGeneration = 0  -- Incremented when any mark changes
+
 
 -- Raid icon texture path
 local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
@@ -87,11 +89,16 @@ end
 -- Get a unique GUID for a unit token, using best available method
 local function GetBestGUID(unitToken)
     -- Try SuperWoW's UnitGUID
+    -- UnitGUID returns (hi, lo) pair from our DLL or SuperWoW
     if UnitGUID then
-        local guid = UnitGUID(unitToken)
-        if guid then return guid end
+        local hi, lo = UnitGUID(unitToken)
+        if hi and lo and (hi ~= 0 or lo ~= 0) then
+            return string.format("0x%08X%08X", hi, lo)
+        end
+        -- SuperWoW might return a single value (string or number)
+        if hi and not lo then return tostring(hi) end
     end
-    -- Try GudaIO DLL (returns hi, lo as two numbers)
+    -- Try GudaIO_UnitGUID as fallback
     if GudaIO_UnitGUID then
         local hi, lo = GudaIO_UnitGUID(unitToken)
         if hi and lo and (hi ~= 0 or lo ~= 0) then
@@ -190,41 +197,43 @@ function Marks.UpdateNameplateIcon(nameplate, frame, unitstr)
 
     local iconIndex = nil
 
-    -- Try real GUID first (SuperWoW)
-    if unitstr and unitstr ~= "" and UnitGUID then
-        local guid = UnitGUID(unitstr)
-        if guid then iconIndex = marks[guid] end
+    -- 1. Targeted nameplate: DLL precise lookup
+    if GudaIO_GetRaidTarget and frame and frame.GetAlpha and frame:GetAlpha() > 0.9 then
+        local idx = GudaIO_GetRaidTarget("target")
+        if idx and idx > 0 then
+            iconIndex = idx
+        end
     end
 
-    -- If this nameplate is our current target, use DLL GUID for precise match
-    if not iconIndex and GudaIO_UnitGUID and UnitExists("target") then
-        local plateName = nil
-        if nameplate.original and nameplate.original.name and nameplate.original.name.GetText then
-            plateName = nameplate.original.name:GetText()
+    -- 2. All nameplates: GUID-based lookup
+    if not iconIndex and UnitGUID then
+        local us = unitstr
+        if (not us or us == "") and frame and frame.GetName then
+            us = frame:GetName(1)
         end
-        local targetName = UnitName("target")
-        -- Only check DLL GUID if names match (quick filter) and plate is the target
-        if plateName and targetName and plateName == targetName then
-            if frame and frame.GetAlpha and frame:GetAlpha() > 0.9 then
-                -- This is likely our target (highlighted nameplate)
-                local guid = GetBestGUID("target")
-                if guid then iconIndex = marks[guid] end
+        if us and us ~= "" then
+            local hi, lo = UnitGUID(us)
+            if hi and lo and (hi ~= 0 or lo ~= 0) then
+                local guid = string.format("0x%08X%08X", hi, lo)
+                iconIndex = marks[guid]
+            elseif hi and not lo then
+                iconIndex = marks[tostring(hi)]
             end
         end
     end
 
-    -- Fallback: name-based (no DLL, no SuperWoW)
-    if not iconIndex and not GudaIO_UnitGUID then
+    -- 3. Last resort (no SuperWoW, no DLL): name-based
+    if not iconIndex and not UnitGUID and not GudaIO_SetRaidTarget then
         local name = nil
         if nameplate.original and nameplate.original.name and nameplate.original.name.GetText then
             name = nameplate.original.name:GetText()
         end
         if name then
-            local guid = "name:" .. name
-            iconIndex = marks[guid]
+            iconIndex = marks["name:" .. name]
         end
     end
 
+    -- Show addon mark or restore Blizzard raidicon
     if iconIndex then
         if not nameplate.localMarkTexture then
             CreateNameplateMarkIcon(nameplate)
@@ -245,7 +254,12 @@ function Marks.UpdateNameplateIcon(nameplate, frame, unitstr)
             end
         end
         iconFrame:Show()
+        -- Hide Blizzard's raidicon to prevent double icon
+        if nameplate.original and nameplate.original.raidicon then
+            nameplate.original.raidicon:Hide()
+        end
     else
+        -- No addon mark: hide ours, let Blizzard handle its own raidicon
         if nameplate.localMarkFrame then
             nameplate.localMarkFrame:Hide()
             nameplate.localMarkIndex = nil
@@ -270,28 +284,42 @@ function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
 
     local guid = GetBestGUID("target")
     if not guid then return end
+    local targetName = UnitName("target")
+
+    -- Clear any other unit using the same icon (one mob per icon, like Blizzard)
+    if iconIndex >= 1 and iconIndex <= 8 then
+        for k, v in pairs(marks) do
+            if v == iconIndex and k ~= guid then
+                marks[k] = nil
+            end
+        end
+    end
 
     if iconIndex >= 1 and iconIndex <= 8 and marks[guid] == iconIndex then
+        -- Toggle off
         marks[guid] = nil
         Apply3DRaidIcon(0)
         if GudaPlates and GudaPlates.Print then
-            GudaPlates.Print("Mark cleared from " .. (UnitName("target") or "target"))
+            GudaPlates.Print("Mark cleared from " .. (targetName or "target"))
         end
     elseif iconIndex == 0 then
+        -- Clear
         marks[guid] = nil
         Apply3DRaidIcon(0)
         if GudaPlates and GudaPlates.Print then
-            GudaPlates.Print("Mark cleared from " .. (UnitName("target") or "target"))
+            GudaPlates.Print("Mark cleared from " .. (targetName or "target"))
         end
     else
+        -- Set
         marks[guid] = iconIndex
         Apply3DRaidIcon(iconIndex)
         local iconName = ICON_NAMES[iconIndex] or tostring(iconIndex)
         if GudaPlates and GudaPlates.Print then
-            GudaPlates.Print(iconName .. " mark set on " .. (UnitName("target") or "target"))
+            GudaPlates.Print(iconName .. " mark set on " .. (targetName or "target"))
         end
     end
 
+    markGeneration = markGeneration + 1
     UpdateTargetFrameIcon()
 end
 
