@@ -34,6 +34,7 @@ local ICON_COLORED = {
     [8] = "|cffFFFFFFSkull|r",
 }
 
+
 -- ============================================
 -- Apply raid icon texture
 -- ============================================
@@ -446,46 +447,54 @@ local function SetupUnitPopup()
             end
         end
 
-        -- Hook UnitPopup_HideButtons to keep raid target visible when solo
-        if UnitPopup_HideButtons then
-            local orig_UnitPopup_HideButtons = UnitPopup_HideButtons
-            UnitPopup_HideButtons = function()
-                orig_UnitPopup_HideButtons()
-                local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
-                if not inGroup then
-                    for i = 1, UIDROPDOWNMENU_MAXBUTTONS do
-                        local btn = getglobal("DropDownList1Button" .. i)
-                        if btn and btn.value == "RAID_TARGET_ICON" then
-                            btn:Show()
-                            break
-                        end
-                    end
+    end
+
+    -- Add our own "Target Icon" button with submenu to ALL menus
+    -- (Blizzard won't hide custom buttons, unlike RAID_TARGET_ICON)
+    UnitPopupButtons["GUDAPLATES_RAID_TARGET"] = { text = "Target Icon", nested = 1, dist = 0 }
+
+    -- Define submenu items (colored text)
+    for i = 1, 8 do
+        UnitPopupButtons["GUDAPLATES_MARK_" .. i] = { text = ICON_COLORED[i], dist = 0 }
+    end
+    UnitPopupButtons["GUDAPLATES_MARK_NONE"] = { text = "None", dist = 0 }
+
+    UnitPopupMenus["GUDAPLATES_RAID_TARGET"] = {
+        "GUDAPLATES_MARK_1", "GUDAPLATES_MARK_2", "GUDAPLATES_MARK_3", "GUDAPLATES_MARK_4",
+        "GUDAPLATES_MARK_5", "GUDAPLATES_MARK_6", "GUDAPLATES_MARK_7", "GUDAPLATES_MARK_8",
+        "GUDAPLATES_MARK_NONE",
+    }
+
+    local customMenuTypes = {"FRIEND", "ENEMY", "PLAYER", "SELF"}
+    for _, menuType in ipairs(customMenuTypes) do
+        if UnitPopupMenus[menuType] then
+            local buttons = UnitPopupMenus[menuType]
+            for i = 1, table.getn(buttons) do
+                if buttons[i] == "CANCEL" then
+                    table.insert(buttons, i, "GUDAPLATES_RAID_TARGET")
+                    break
                 end
             end
         end
-    else
-        -- Blizzard raid target buttons don't exist - use our own with nested submenu
-        UnitPopupButtons["GUDAPLATES_RAID_TARGET"] = { text = "Raid Target Icon", nested = 1, dist = 0 }
+    end
 
-        for i = 1, 8 do
-            UnitPopupButtons["GUDAPLATES_MARK_" .. i] = { text = ICON_COLORED[i], dist = 0 }
-        end
-        UnitPopupButtons["GUDAPLATES_MARK_NONE"] = { text = "None", dist = 0 }
-
-        UnitPopupMenus["GUDAPLATES_RAID_TARGET"] = {
-            "GUDAPLATES_MARK_1", "GUDAPLATES_MARK_2", "GUDAPLATES_MARK_3", "GUDAPLATES_MARK_4",
-            "GUDAPLATES_MARK_5", "GUDAPLATES_MARK_6", "GUDAPLATES_MARK_7", "GUDAPLATES_MARK_8",
-            "GUDAPLATES_MARK_NONE",
-        }
-
-        local menuTypes = {"FRIEND", "ENEMY", "PARTY", "PLAYER", "SELF", "RAID_PLAYER", "RAID"}
-        for _, menuType in ipairs(menuTypes) do
-            if UnitPopupMenus[menuType] then
-                local buttons = UnitPopupMenus[menuType]
-                for i = 1, table.getn(buttons) do
-                    if buttons[i] == "CANCEL" then
-                        table.insert(buttons, i, "GUDAPLATES_RAID_TARGET")
-                        break
+    -- Hook UnitPopup_HideButtons to re-show our custom buttons after Blizzard hides them
+    if UnitPopup_HideButtons then
+        local orig_UnitPopup_HideButtons = UnitPopup_HideButtons
+        UnitPopup_HideButtons = function()
+            orig_UnitPopup_HideButtons()
+            local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
+            for i = 1, UIDROPDOWNMENU_MAXBUTTONS do
+                local btn = getglobal("DropDownList1Button" .. i)
+                if btn then
+                    local val = btn.value
+                    -- Always show raid target marking
+                    if val == "RAID_TARGET_ICON" then
+                        btn:Show()
+                    end
+                    -- Only show tank marking in group
+                    if val == "GUDAPLATES_TANK" and inGroup then
+                        btn:Show()
                     end
                 end
             end
@@ -535,7 +544,7 @@ local function SetupUnitPopup()
                 return orig_UnitPopup_OnClick()
             end
 
-            -- Custom GUDAPLATES_MARK buttons
+            -- GUDAPLATES_MARK submenu buttons
             if button and string.find(button, "^GUDAPLATES_MARK_") then
                 if button == "GUDAPLATES_MARK_NONE" then
                     GudaPlates_Marks_SetMarkOnTarget(0)
@@ -573,10 +582,11 @@ local function SetupUnitPopup()
         end
     end
 
-    -- Hook UnitPopup_ShowMenu to update tank button text before menu renders
+    -- Hook UnitPopup_ShowMenu to update button text before menu renders
     if UnitPopup_ShowMenu then
         local prev_UnitPopup_ShowMenu = UnitPopup_ShowMenu
         UnitPopup_ShowMenu = function(a1, a2, a3, a4, a5)
+            -- Update tank button text
             local pName = a4
             if not pName and a1 and a1.name then
                 pName = a1.name
@@ -585,6 +595,7 @@ local function SetupUnitPopup()
                 local isTank = GudaPlates_Threat.IsPlayerTank(pName)
                 UnitPopupButtons["GUDAPLATES_TANK"].text = isTank and "Unmark Tank" or "Mark as Tank"
             end
+
             return prev_UnitPopup_ShowMenu(a1, a2, a3, a4, a5)
         end
     end
@@ -600,7 +611,7 @@ local function HookTargetFrameClick()
         local button = arg1
         if button == "RightButton" and UnitExists("target") then
             local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
-            -- Only show our dropdown for NPC targets when solo
+            -- Solo + NPC: show our Target Icon dropdown
             if not inGroup and not UnitIsPlayer("target") then
                 ToggleDropDownMenu(1, nil, markDropdown, "cursor", 0, 0)
                 return
