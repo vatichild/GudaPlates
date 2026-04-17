@@ -1,0 +1,29 @@
+<Bindings>
+  <Binding name="GUDAPLATES_MARK_1" header="GUDAPLATESHEADER">
+    GudaPlates_Marks_SetMarkOnTarget(1)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_2">
+    GudaPlates_Marks_SetMarkOnTarget(2)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_3">
+    GudaPlates_Marks_SetMarkOnTarget(3)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_4">
+    GudaPlates_Marks_SetMarkOnTarget(4)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_5">
+    GudaPlates_Marks_SetMarkOnTarget(5)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_6">
+    GudaPlates_Marks_SetMarkOnTarget(6)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_7">
+    GudaPlates_Marks_SetMarkOnTarget(7)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_8">
+    GudaPlates_Marks_SetMarkOnTarget(8)
+  </Binding>
+  <Binding name="GUDAPLATES_MARK_0">
+    GudaPlates_Marks_SetMarkOnTarget(0)
+  </Binding>
+</Bindings>

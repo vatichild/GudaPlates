@@ -1648,6 +1648,11 @@ local function UpdateNamePlate(frame)
         unitstr = frame:GetName(1)
     end
 
+    -- Solo target marking: show local mark icon on nameplate if set
+    if GudaPlates_Marks and GudaPlates_Marks.UpdateNameplateIcon then
+        GudaPlates_Marks.UpdateNameplateIcon(nameplate, frame, unitstr)
+    end
+
     -- Check if this mob is attacking the player (mob→player targeting)
     local isAttackingPlayer = false
     local hasValidGUID = unitstr and unitstr ~= ""
@@ -3427,8 +3432,29 @@ SlashCmdList["GUDAPLATES"] = function(msg)
         else
             Print("No target selected")
         end
+    elseif msg == "markdebug" then
+        if GudaPlates_Marks and GudaPlates_Marks.DebugTest then
+            GudaPlates_Marks.DebugTest()
+        end
+    elseif msg == "clearmarks" then
+        if GudaPlates_Marks then
+            GudaPlates_Marks.ClearAllMarks()
+            GudaPlates_Marks.UpdateTargetFrameIcon()
+            Print("All marks cleared")
+        end
+    elseif string_find(msg, "^mark") then
+        -- Solo target marking: /gp mark 1-8 (set) or /gp mark 0 (clear)
+        local indexStr = string_gsub(msg, "^mark%s*", "")
+        local index = tonumber(indexStr)
+        if index and index >= 0 and index <= 8 then
+            GudaPlates_Marks_SetMarkOnTarget(index)
+        else
+            Print("Usage: /gp mark <0-8> (1=Star, 2=Circle, 3=Diamond, 4=Triangle, 5=Moon, 6=Square, 7=Cross, 8=Skull, 0=Clear)")
+        end
     else
         Print("Commands: /gp tank | /gp dps | /gp toggle | /gp config")
+        Print("         /gp mark <0-8> - Mark target (solo, no party needed)")
+        Print("         /gp clearmarks - Clear all marks")
         Print("         /gp othertank <color> - Set Other Tank Aggro color")
         Print("         /gp debug - Show target debuffs with tooltip scanning")
         Print("         /gp debugjudge - Toggle Paladin Judgement refresh debug")
