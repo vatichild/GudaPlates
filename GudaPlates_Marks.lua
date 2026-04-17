@@ -93,24 +93,21 @@ local targetIconTexture = nil
 
 local function CreateTargetFrameIcon()
     if targetIconFrame then return end
-    targetIconFrame = CreateFrame("Frame", "GudaPlatesTargetMarkFrame", UIParent)
-    targetIconFrame:SetFrameStrata("TOOLTIP")
-    targetIconFrame:SetWidth(26)
-    targetIconFrame:SetHeight(26)
+    -- Parent to TargetFrame directly so it moves/shows with it
+    targetIconFrame = CreateFrame("Frame", "GudaPlatesTargetMarkFrame", TargetFrame)
+    targetIconFrame:SetFrameLevel(TargetFrame:GetFrameLevel() + 10)
+    targetIconFrame:SetWidth(24)
+    targetIconFrame:SetHeight(24)
     targetIconFrame:Hide()
 
-    targetIconTexture = targetIconFrame:CreateTexture(nil, "ARTWORK")
+    targetIconTexture = targetIconFrame:CreateTexture(nil, "OVERLAY")
     targetIconTexture:SetAllPoints(targetIconFrame)
-    targetIconTexture:SetDrawLayer("ARTWORK")
     targetIconTexture:SetAlpha(1)
 end
 
 local function UpdateTargetFrameIcon()
-    local Print = (GudaPlates and GudaPlates.Print) or function() end
-
     if not targetIconFrame then
         CreateTargetFrameIcon()
-        Print("[Mark Debug] Created target icon frame: " .. tostring(targetIconFrame ~= nil))
     end
 
     -- If real server-side mark exists, hide ours
@@ -131,14 +128,12 @@ local function UpdateTargetFrameIcon()
     end
     local iconIndex = guid and marks[guid]
 
-    Print("[Mark Debug] guid=" .. tostring(guid) .. " iconIndex=" .. tostring(iconIndex))
-
     if iconIndex then
         ApplyRaidIcon(targetIconTexture, iconIndex)
         targetIconFrame:ClearAllPoints()
-        targetIconFrame:SetPoint("TOP", TargetFrame, "TOP", 10, 8)
+        -- Position above the portrait area (where Blizzard shows raid icons)
+        targetIconFrame:SetPoint("CENTER", TargetFrame, "TOPLEFT", 50, -6)
         targetIconFrame:Show()
-        Print("[Mark Debug] Frame shown. IsShown=" .. tostring(targetIconFrame:IsShown()) .. " Alpha=" .. tostring(targetIconFrame:GetAlpha()))
     else
         targetIconFrame:Hide()
     end
@@ -171,11 +166,22 @@ end
 function Marks.UpdateNameplateIcon(nameplate, frame, unitstr)
     if not nameplate.health then return end
 
+    -- If DLL is active, Blizzard's own raidicon handles the display
+    -- (the DLL writes to the same internal raid target table)
+    -- Skip our custom addon mark to avoid duplicates and same-name issues
+    if GudaIO_SetRaidTarget then
+        if nameplate.localMarkFrame then
+            nameplate.localMarkFrame:Hide()
+            nameplate.localMarkIndex = nil
+        end
+        return
+    end
+
+    -- No DLL: use addon marks table (name-based fallback)
     local guid = nil
     if unitstr and unitstr ~= "" and UnitGUID then
         guid = UnitGUID(unitstr)
     end
-    -- Fallback to name-based GUID if UnitGUID unavailable
     if not guid then
         local name = nil
         if nameplate.original and nameplate.original.name and nameplate.original.name.GetText then
@@ -218,6 +224,22 @@ end
 -- Keybind + Slash Command Handler
 -- ============================================
 
+-- Set 3D raid icon via GudaIO DLL (if available and solo)
+local function Apply3DRaidIcon(iconIndex)
+    local Print = (GudaPlates and GudaPlates.Print) or function() end
+    if not GudaIO_SetRaidTarget then
+        Print("[3D Mark] GudaIO_SetRaidTarget not found")
+        return
+    end
+    local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
+    if inGroup then
+        Print("[3D Mark] In group, skipping")
+        return
+    end
+    Print("[3D Mark] Calling GudaIO_SetRaidTarget('target', " .. tostring(iconIndex) .. ")")
+    GudaIO_SetRaidTarget("target", iconIndex)
+end
+
 function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
     if not UnitExists("target") then return end
 
@@ -233,16 +255,19 @@ function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
 
     if iconIndex >= 1 and iconIndex <= 8 and marks[guid] == iconIndex then
         marks[guid] = nil
+        Apply3DRaidIcon(0)
         if GudaPlates and GudaPlates.Print then
             GudaPlates.Print("Mark cleared from " .. (UnitName("target") or "target"))
         end
     elseif iconIndex == 0 then
         marks[guid] = nil
+        Apply3DRaidIcon(0)
         if GudaPlates and GudaPlates.Print then
             GudaPlates.Print("Mark cleared from " .. (UnitName("target") or "target"))
         end
     else
         marks[guid] = iconIndex
+        Apply3DRaidIcon(iconIndex)
         local iconName = ICON_NAMES[iconIndex] or tostring(iconIndex)
         if GudaPlates and GudaPlates.Print then
             GudaPlates.Print(iconName .. " mark set on " .. (UnitName("target") or "target"))
