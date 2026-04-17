@@ -84,6 +84,26 @@ function Marks.ClearAllMarks()
     end
 end
 
+-- Get a unique GUID for a unit token, using best available method
+local function GetBestGUID(unitToken)
+    -- Try SuperWoW's UnitGUID
+    if UnitGUID then
+        local guid = UnitGUID(unitToken)
+        if guid then return guid end
+    end
+    -- Try GudaIO DLL (returns hi, lo as two numbers)
+    if GudaIO_UnitGUID then
+        local hi, lo = GudaIO_UnitGUID(unitToken)
+        if hi and lo and (hi ~= 0 or lo ~= 0) then
+            return string.format("0x%08X%08X", hi, lo)
+        end
+    end
+    -- Fallback to name-based (same-name units will share marks)
+    local name = UnitName(unitToken)
+    if name then return "name:" .. name end
+    return nil
+end
+
 -- ============================================
 -- Target Frame Overlay
 -- ============================================
@@ -128,11 +148,7 @@ local function UpdateTargetFrameIcon()
     end
 
     -- No DLL: show our custom icon (fallback)
-    local guid = UnitGUID and UnitGUID("target")
-    if not guid then
-        local name = UnitName("target")
-        if name then guid = "name:" .. name end
-    end
+    local guid = GetBestGUID("target")
     local iconIndex = guid and marks[guid]
 
     if iconIndex then
@@ -172,31 +188,42 @@ end
 function Marks.UpdateNameplateIcon(nameplate, frame, unitstr)
     if not nameplate.health then return end
 
-    -- If DLL is active, Blizzard's own raidicon handles the display
-    -- (the DLL writes to the same internal raid target table)
-    -- Skip our custom addon mark to avoid duplicates and same-name issues
-    if GudaIO_SetRaidTarget then
-        if nameplate.localMarkFrame then
-            nameplate.localMarkFrame:Hide()
-            nameplate.localMarkIndex = nil
-        end
-        return
+    local iconIndex = nil
+
+    -- Try real GUID first (SuperWoW)
+    if unitstr and unitstr ~= "" and UnitGUID then
+        local guid = UnitGUID(unitstr)
+        if guid then iconIndex = marks[guid] end
     end
 
-    -- No DLL: use addon marks table (name-based fallback)
-    local guid = nil
-    if unitstr and unitstr ~= "" and UnitGUID then
-        guid = UnitGUID(unitstr)
+    -- If this nameplate is our current target, use DLL GUID for precise match
+    if not iconIndex and GudaIO_UnitGUID and UnitExists("target") then
+        local plateName = nil
+        if nameplate.original and nameplate.original.name and nameplate.original.name.GetText then
+            plateName = nameplate.original.name:GetText()
+        end
+        local targetName = UnitName("target")
+        -- Only check DLL GUID if names match (quick filter) and plate is the target
+        if plateName and targetName and plateName == targetName then
+            if frame and frame.GetAlpha and frame:GetAlpha() > 0.9 then
+                -- This is likely our target (highlighted nameplate)
+                local guid = GetBestGUID("target")
+                if guid then iconIndex = marks[guid] end
+            end
+        end
     end
-    if not guid then
+
+    -- Fallback: name-based (no DLL, no SuperWoW)
+    if not iconIndex and not GudaIO_UnitGUID then
         local name = nil
         if nameplate.original and nameplate.original.name and nameplate.original.name.GetText then
             name = nameplate.original.name:GetText()
         end
-        if name then guid = "name:" .. name end
+        if name then
+            local guid = "name:" .. name
+            iconIndex = marks[guid]
+        end
     end
-
-    local iconIndex = guid and marks[guid]
 
     if iconIndex then
         if not nameplate.localMarkTexture then
@@ -232,32 +259,17 @@ end
 
 -- Set 3D raid icon via GudaIO DLL (if available and solo)
 local function Apply3DRaidIcon(iconIndex)
-    local Print = (GudaPlates and GudaPlates.Print) or function() end
-    if not GudaIO_SetRaidTarget then
-        Print("[3D Mark] GudaIO_SetRaidTarget not found")
-        return
-    end
+    if not GudaIO_SetRaidTarget then return end
     local inGroup = (GetNumPartyMembers() > 0) or (GetNumRaidMembers() > 0)
-    if inGroup then
-        Print("[3D Mark] In group, skipping")
-        return
-    end
-    Print("[3D Mark] Calling GudaIO_SetRaidTarget('target', " .. tostring(iconIndex) .. ")")
+    if inGroup then return end
     GudaIO_SetRaidTarget("target", iconIndex)
 end
 
 function GudaPlates_Marks_SetMarkOnTarget(iconIndex)
     if not UnitExists("target") then return end
 
-    local guid = UnitGUID and UnitGUID("target")
-    if not guid then
-        local name = UnitName("target")
-        if name then
-            guid = "name:" .. name
-        else
-            return
-        end
-    end
+    local guid = GetBestGUID("target")
+    if not guid then return end
 
     if iconIndex >= 1 and iconIndex <= 8 and marks[guid] == iconIndex then
         marks[guid] = nil
@@ -312,11 +324,7 @@ end
 -- Get current mark on target
 local function GetCurrentMark()
     if not UnitExists("target") then return nil end
-    local guid = UnitGUID and UnitGUID("target")
-    if not guid then
-        local name = UnitName("target")
-        if name then guid = "name:" .. name end
-    end
+    local guid = GetBestGUID("target")
     if guid then return marks[guid] end
     return nil
 end
