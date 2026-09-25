@@ -965,10 +965,6 @@ local function NamePlate_OnShow()
         nameplate:Show()
     end
 
-    -- Re-enable OnUpdate in case we were in idle mode
-    if GudaPlates.EnableOnUpdate then
-        GudaPlates.EnableOnUpdate()
-    end
 end
 
 -- OnHide handler - hides our nameplate when original frame hides (prevents stale data flash)
@@ -2475,15 +2471,11 @@ local function ResetNameplateScanning()
     cachedWorldChildCount = 0
 end
 GudaPlates.ResetNameplateScanning = ResetNameplateScanning
--- Idle detection - disable OnUpdate when nothing to do
-local idleFrames = 0
-local IDLE_THRESHOLD = 30 -- After 30 frames of no work, go idle
-local onUpdateEnabled = true
 
--- The actual OnUpdate logic (separate function so we can enable/disable)
+-- Keep discovery running: a new plate has no OnShow hook to wake this frame.
+-- The scanner, plate refreshes, and debuff cleanup each throttle their work.
 local function GudaPlates_OnUpdate()
     local now = GetTime()
-    local didWork = false
 
     -- Throttle debuff timer cleanup to once per second
     if GudaPlates_Debuffs and now - lastDebuffCleanup > CLEANUP_INTERVAL then
@@ -2492,15 +2484,12 @@ local function GudaPlates_OnUpdate()
     end
 
     -- Scanning logic (delegated to Scanner module)
-    if GudaPlates_Scanner.ScanForNewNameplates(registry, HandleNamePlate) then
-        didWork = true
-    end
+    GudaPlates_Scanner.ScanForNewNameplates(registry, HandleNamePlate)
 
     -- Throttle plate updates when out of combat (2x/sec instead of 60x/sec)
     local shouldUpdatePlates = playerInCombat or (now - lastPlateUpdate > PLATE_UPDATE_INTERVAL)
 
     if shouldUpdatePlates then
-        didWork = true
         if not playerInCombat then
             lastPlateUpdate = now
         end
@@ -2538,27 +2527,7 @@ local function GudaPlates_OnUpdate()
         end
     end
 
-    -- Idle detection: if no work done for IDLE_THRESHOLD frames, disable OnUpdate
-    if not didWork and not playerInCombat then
-        idleFrames = idleFrames + 1
-        if idleFrames > IDLE_THRESHOLD then
-            onUpdateEnabled = false
-            GudaPlatesEventFrame:SetScript("OnUpdate", nil)
-        end
-    else
-        idleFrames = 0
-    end
 end
-
--- Function to re-enable OnUpdate (called from events)
-local function EnableOnUpdate()
-    if not onUpdateEnabled then
-        onUpdateEnabled = true
-        idleFrames = 0
-        GudaPlatesEventFrame:SetScript("OnUpdate", GudaPlates_OnUpdate)
-    end
-end
-GudaPlates.EnableOnUpdate = EnableOnUpdate
 
 -- Set initial OnUpdate
 GudaPlatesEventFrame:SetScript("OnUpdate", GudaPlates_OnUpdate)
@@ -2771,7 +2740,6 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
         if GudaPlates.ResetNameplateScanning then
             GudaPlates.ResetNameplateScanning()
         end
-        EnableOnUpdate()  -- Wake up OnUpdate to start scanning
 
         Print(L["Initialized. Scanning..."])
         if twthreat_active then
@@ -3213,18 +3181,14 @@ GudaPlatesEventFrame:SetScript("OnEvent", function()
 
     -- Combat state tracking for garbage collection
     elseif event == "PLAYER_REGEN_DISABLED" then
-        -- Entering combat - wake up OnUpdate
+        -- Entering combat - update plates every frame
         playerInCombat = true
-        EnableOnUpdate()
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Leaving combat - run full garbage collection
         playerInCombat = false
         collectgarbage()
     end
 
-    -- Wake up OnUpdate for any event that might need nameplate updates
-    -- (combat log events, target changes, etc. are already handled above)
-    EnableOnUpdate()
 end)
 
 -- Slash command to toggle role

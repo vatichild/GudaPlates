@@ -16,6 +16,8 @@ GudaPlates_Scanner = {}
 -- Local state
 local initializedChildren = 0
 local cachedWorldChildren = {}
+local lastScan = nil
+local RESCAN_INTERVAL = 0.2
 
 -- =============================================================================
 -- Detection Functions
@@ -54,8 +56,8 @@ end
 -- Scanning Functions
 -- =============================================================================
 
--- Scan WorldFrame for new nameplate children
--- Only scans NEW children since last call (ShaguPlates-style optimization)
+-- Scan immediately when the child count changes, with a throttled full rescan
+-- for reordered/replaced children or frames whose regions initialize later.
 --
 -- Parameters:
 --   registry: Table mapping frame -> nameplate (to skip already registered)
@@ -65,19 +67,20 @@ end
 --   didWork: true if new nameplates were found and processed
 function GudaPlates_Scanner.ScanForNewNameplates(registry, callback)
     local parentcount = WorldFrame:GetNumChildren()
+    local now = GetTime()
 
-    -- Only scan if there are NEW children we haven't seen before
-    if initializedChildren >= parentcount then
+    -- Keep the per-frame path cheap without permanently skipping missed plates.
+    if initializedChildren == parentcount and lastScan and now - lastScan < RESCAN_INTERVAL then
         return false
     end
 
-    -- Refresh cached children only when needed
+    lastScan = now
     cachedWorldChildren = { WorldFrame:GetChildren() }
 
     local foundNew = false
 
-    -- Only scan the NEW children (from initialized+1 to parentcount)
-    for i = initializedChildren + 1, parentcount do
+    -- Child indices are not identities; use the registry to skip known plates.
+    for i = 1, parentcount do
         local plate = cachedWorldChildren[i]
         if plate and not registry[plate] then
             if GudaPlates_Scanner.IsNamePlate(plate) then
@@ -98,6 +101,7 @@ end
 -- Reset scanner state (call on zone change to re-scan all nameplates)
 function GudaPlates_Scanner.Reset()
     initializedChildren = 0
+    lastScan = nil
     -- Clear cached children table
     for k in pairs(cachedWorldChildren) do
         cachedWorldChildren[k] = nil
